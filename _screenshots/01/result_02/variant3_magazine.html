@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FromPS/ToPS — Showcase</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#06060d;color:#e4e4f0;font-family:'Outfit',sans-serif;line-height:1.5}
+
+/* HERO */
+.hero{position:relative;padding:80px 40px 60px;text-align:center;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%,rgba(90,70,220,.1),transparent 60%);pointer-events:none}
+.hero .pill{display:inline-block;padding:4px 14px;border:1px solid rgba(130,110,240,.25);border-radius:50px;font-size:.65rem;font-weight:700;color:#b0a0ff;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-size:3.8rem;font-weight:900;letter-spacing:-.05em;line-height:1;margin-bottom:10px}
+.hero h1 span{background:linear-gradient(90deg,#b0a0ff,#00d2d3);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero .desc{font-size:1.05rem;color:#7878a0;max-width:580px;margin:0 auto 24px}
+.hero .desc b{color:#c8c8e0}
+
+/* FLOW LABEL */
+.flow-label{display:flex;align-items:center;gap:10px;max-width:1100px;margin:0 auto;padding:16px 30px;font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.flow-label .line{flex:1;height:1px;background:linear-gradient(90deg,var(--c,#3a3a60),transparent)}
+.flow-label.a{color:#b0a0ff;--c:#4a3a80}.flow-label.b{color:#00d2d3;--c:#0a5a5a}
+
+/* BLOCK ROW - 2 columns magazine style */
+.block{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1100px;margin:16px auto;padding:0 30px}
+.block.single{grid-template-columns:1fr}
+.block.triple{grid-template-columns:1fr 1fr 1fr}
+
+.panel{position:relative;border-radius:14px;overflow:hidden;background:#10101c;border:1px solid #1e1e38;transition:box-shadow .3s}
+.panel:hover{box-shadow:0 0 40px rgba(90,70,220,.1)}
+.panel img{display:block;width:100%;height:auto}
+
+/* ANNOTATION OVERLAY */
+.panel .ann{position:absolute;bottom:0;left:0;right:0;padding:28px 14px 10px;background:linear-gradient(0deg,rgba(6,6,13,.92),transparent)}
+.panel .ann .step-num{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;font-size:.7rem;font-weight:800;color:#fff;margin-right:6px;vertical-align:middle}
+.panel .ann h3{font-size:.88rem;font-weight:700;margin-bottom:2px;display:inline}
+.panel .ann p{font-size:.72rem;color:#8888a0;margin-top:3px}
+
+/* STEP COLORS */
+.s1{background:linear-gradient(135deg,#7c6df0,#9b8ff8)}.s2{background:linear-gradient(135deg,#00b4d8,#0077b6)}
+.s3{background:linear-gradient(135deg,#ff6b8a,#d63384)}.s4{background:linear-gradient(135deg,#0abf7f,#00b894)}
+.s5{background:linear-gradient(135deg,#feca57,#e17055)}.s6{background:linear-gradient(135deg,#7c6df0,#b0a4ff)}
+.s7{background:linear-gradient(135deg,#ff6b8a,#e84393)}.s8{background:linear-gradient(135deg,#0abf7f,#00d2d3)}
+
+/* ARROW CONNECTOR */
+.arrow-conn{display:flex;justify-content:center;padding:8px 0}
+.arrow-conn svg{width:20px;height:32px;stroke:#3a3a60;fill:none;stroke-width:2}
+
+/* FEATURE BAR */
+.fbar{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;max-width:900px;margin:0 auto;padding:30px 20px}
+.fbar .chip{padding:7px 14px;background:#10101c;border:1px solid #1e1e38;border-radius:8px;font-size:.75rem;font-weight:500;display:flex;align-items:center;gap:6px}
+
+/* FOOTER */
+footer{text-align:center;padding:40px;border-top:1px solid #1e1e38;color:#404060;font-size:.75rem}
+footer strong{color:#7878a0}
+
+@media(max-width:768px){.block{grid-template-columns:1fr}.block.triple{grid-template-columns:1fr}.hero h1{font-size:2.4rem}}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="pill">Photoshop Plugin</div>
+  <h1>Use <span>ANY AI</span> for Inpaint</h1>
+  <p class="desc"><b>FromPS / ToPS</b> — capture selections, generate with any AI (browser or API), and place results back seamlessly. Non-destructive. Zero lock-in.</p>
+</section>
+
+<div class="fbar">
+  <div class="chip">🎯 Pixel-Perfect Masks</div>
+  <div class="chip">🔲 Smart Object</div>
+  <div class="chip">🌫️ Auto Blur Edges</div>
+  <div class="chip">↩️ Ctrl+Z Undo</div>
+  <div class="chip">🌐 Any AI</div>
+</div>
+
+<!-- ====== PATH A ====== -->
+<div class="flow-label a"><span class="line"></span> PATH A — FREE BROWSER WORKFLOW <span class="line"></span></div>
+
+<div class="block">
+  <div class="panel"><img src="../01.png"><div class="ann"><span class="step-num s1">1</span><h3>Select Area</h3><p>Lasso around the target area in Photoshop</p></div></div>
+  <div class="panel"><img src="../02.png"><div class="ann"><span class="step-num s1">2</span><h3>Capture Selection</h3><p>Image + pixel-perfect mask · Auto 1:1 aspect ratio</p></div></div>
+</div>
+
+<div class="arrow-conn"><svg viewBox="0 0 20 32"><path d="M10 0v24M4 18l6 6 6-6"/></svg></div>
+
+<div class="block">
+  <div class="panel"><img src="../03.png"><div class="ann"><span class="step-num s2">3</span><h3>Drag Out</h3><p>Popup with 2 files (image + mask) ready</p></div></div>
+  <div class="panel"><img src="../04.png"><div class="ann"><span class="step-num s2">4</span><h3>Drop in ChatGPT</h3><p>Drag files directly into any browser AI</p></div></div>
+</div>
+
+<div class="arrow-conn"><svg viewBox="0 0 20 32"><path d="M10 0v24M4 18l6 6 6-6"/></svg></div>
+
+<div class="block single">
+  <div class="panel"><img src="../05.png"><div class="ann"><span class="step-num s3">5</span><h3>AI Generates</h3><p>"Bloody black eye + pirate earring" → AI result with image + mask</p></div></div>
+</div>
+
+<div class="arrow-conn"><svg viewBox="0 0 20 32"><path d="M10 0v24M4 18l6 6 6-6"/></svg></div>
+
+<div class="block">
+  <div class="panel"><img src="../06.png"><div class="ann"><span class="step-num s4">6</span><h3>Load Result</h3><p>Paste or load file into ToPS panel</p></div></div>
+  <div class="panel"><img src="../07.png"><div class="ann"><span class="step-num s4">7</span><h3>Place Back!</h3><p>Auto-positioned · Smart Object + Mask + Gaussian Blur</p></div></div>
+</div>
+
+<div class="arrow-conn"><svg viewBox="0 0 20 32"><path d="M10 0v24M4 18l6 6 6-6"/></svg></div>
+
+<div class="block">
+  <div class="panel"><img src="../08.png"><div class="ann"><span class="step-num s5">8</span><h3>Refine Mask</h3><p>Optional brush strokes for perfect blending</p></div></div>
+  <div class="panel"><img src="../09.png"><div class="ann"><span class="step-num s5">9</span><h3>Smart Object</h3><p>Full 1254×1254px resolution preserved inside</p></div></div>
+</div>
+
+<!-- ====== PATH B ====== -->
+<div style="height:40px"></div>
+<div class="flow-label b"><span class="line"></span> PATH B — WEBHELPER API WORKFLOW <span class="line"></span></div>
+
+<div class="block single">
+  <div class="panel" style="max-width:550px;margin:0 auto"><img src="../10.png"><div class="ann"><span class="step-num s6">1</span><h3>Send to WebHelper</h3><p>Select area · "Both to WebHelper" · 2:3 ratio</p></div></div>
+</div>
+
+<div class="arrow-conn"><svg viewBox="0 0 20 32"><path d="M10 0v24M4 18l6 6 6-6"/></svg></div>
+
+<div class="block">
+  <div class="panel"><img src="../11.png"><div class="ann"><span class="step-num s7">2</span><h3>Configure & Generate</h3><p>Seedream v4.5 · Mask overlay · Prompt</p></div></div>
+  <div class="panel"><img src="../12.png"><div class="ann"><span class="step-num s7">3</span><h3>Browse Results</h3><p>Multiple tabs · Pick the best one</p></div></div>
+</div>
+
+<div class="arrow-conn"><svg viewBox="0 0 20 32"><path d="M10 0v24M4 18l6 6 6-6"/></svg></div>
+
+<div class="block single">
+  <div class="panel"><img src="../13.png"><div class="ann"><span class="step-num s8">4</span><h3>Final Composite</h3><p>Two AI layers · Full non-destructive structure · Horizontal plugin layout</p></div></div>
+</div>
+
+<footer><p><strong>FromPS / ToPS</strong> — Free · Source-Available · CC BY-NC-SA 4.0 · Photoshop 2024+ · Windows 10/11</p></footer>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drag Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 150px;
+            height: 150px;
+            overflow: hidden;
+            background: transparent;
+            -webkit-app-region: no-drag;
+        }
+
+        .container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(30, 30, 30, 0.9);
+            border-radius: 12px;
+            border: 2px solid rgba(100, 150, 255, 0.6);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            cursor: grab;
+        }
+
+        .container:active {
+            cursor: grabbing;
+        }
+
+        #preview {
+            max-width: 130px;
+            max-height: 130px;
+            object-fit: contain;
+            border-radius: 6px;
+            pointer-events: none;
+        }
+
+        .hint {
+            position: absolute;
+            bottom: 8px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 10px;
+            pointer-events: none;
+        }
+
+        .count-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            background: #4a90d9;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" id="dragArea" draggable="true">
+        <img id="preview" src="" alt="Preview">
+        <div id="count-badge" class="count-badge"></div>
+        <div class="hint">Drag to target</div>
+    </div>
+    <script src="drag-window.js"></script>
+</body>
+
+</html>

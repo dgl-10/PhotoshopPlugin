@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebHelper for Photoshop</title>
+    <!-- Spectre.css -->
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-exp.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-icons.min.css">
+    <!-- Custom Theme -->
+    <link rel="stylesheet" href="theme.css">
+</head>
+
+<body class="wh-body">
+    <div class="container grid-lg">
+        <header class="navbar p-2">
+            <section class="navbar-section">
+                <span class="navbar-brand mr-2 text-primary">WebHelper</span>
+                <button class="btn btn-sm btn-primary tooltip tooltip-bottom ml-2"
+                    data-tooltip="Upload or Drag & Drop Image" id="btn-create-external-task">
+                    <i class="icon icon-plus"></i> New Task (Image)
+                </button>
+                <input type="file" id="external-task-upload" accept="image/*" style="display: none;">
+            </section>
+            <section class="navbar-section" id="connection-status">
+                <span class="label label-error">Disconnected (Retrying...)</span>
+            </section>
+        </header>
+
+        <div id="error-container"></div>
+
+        <div id="wh-app-wrapper" class="wh-app-wrapper">
+            <!-- Global Stage: shared reference image pool -->
+            <wh-global-stage></wh-global-stage>
+
+            <div id="task-selector-container" class="wh-task-selector-wrapper p-2" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label text-bold" for="global-task-selector">Select Active Task:</label>
+                    <select class="form-select select-lg wh-task-selector" id="global-task-selector">
+                        <!-- Options will be added dynamically -->
+                    </select>
+                </div>
+                <div class="divider"></div>
+            </div>
+
+            <main id="tasks-container" class="p-2">
+                <!-- Task Controls will be injected here -->
+                <div id="no-tasks-msg" class="empty">
+                    <div class="empty-icon">
+                        <i class="icon icon-3x icon-photo"></i>
+                    </div>
+                    <p class="empty-title h5">No tasks yet</p>
+                    <p class="empty-subtitle">Waiting for images from Photoshop, or drag and drop an image here.</p>
+                    <div class="empty-action">
+                        <button class="btn btn-primary" id="btn-empty-create-external-task">
+                            <i class="icon icon-plus"></i> Select Image
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- App configuration — edit here to enable/disable features -->
+    <script>
+        window.WHConfig = {
+            /**
+             * Called on dragstart from Global Stage.
+             * Returns true  → Electron drag was triggered, browser drag will be cancelled.
+             * Returns false → fall through to normal in-app browser drag.
+             * If this function is removed or throws — browser drag continues normally.
+             */
+            // images: string (single) or string[] (multiple base64 images)
+            tryElectronDrag(e, images) {
+                if (!window.envInfo || !window.envInfo.isLocal) return false;
+                if (!e.altKey) return false;
+                const imageArray = Array.isArray(images) ? images : [images];
+                fetch('/api/drag/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ images: imageArray })
+                }).catch(() => { /* ignore: not running in Electron mode */ });
+                return true;
+            }
+        };
+    </script>
+
+    <script src="webhelper.js" type="module"></script>
+</body>
+
+</html>

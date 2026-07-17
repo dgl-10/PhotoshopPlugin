@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an improvement to the Photoshop-to-AI workflow.
+title: "[Feature]: "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - FromPS capture
+        - ToPS placement
+        - Clipboard or drag-and-drop
+        - WebHelper interface
+        - API provider configuration
+        - Installation or updates
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Current artist workflow
+      description: Describe what you do now and which manual steps take time.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Explain how the feature should fit into Capture, WebHelper, or Place Back.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add safe mockups, screenshots, or provider documentation links when useful.

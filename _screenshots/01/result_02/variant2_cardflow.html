@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FromPS/ToPS — Card Flow</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0b0b14;color:#e8e8f4;font-family:'Outfit',sans-serif;line-height:1.5}
+
+/* HERO */
+.hero{text-align:center;padding:70px 30px 50px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:700px;height:700px;background:radial-gradient(circle,rgba(100,80,240,.1),transparent 65%);pointer-events:none}
+.hero .tag{display:inline-block;padding:4px 14px;background:rgba(100,80,240,.12);border:1px solid rgba(100,80,240,.2);border-radius:50px;font-size:.65rem;font-weight:700;color:#a99fff;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-size:3.2rem;font-weight:900;letter-spacing:-.04em;background:linear-gradient(135deg,#fff,#a99fff,#00d2d3);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px}
+.hero p{font-size:1rem;color:#8585a8;max-width:550px;margin:0 auto 20px}
+.hero p strong{color:#e8e8f4}
+.pipe-row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.pipe-item{display:flex;align-items:center;gap:6px;padding:8px 16px;background:#12121e;border:1px solid #252545;border-radius:10px;font-size:.8rem;font-weight:600}
+.pipe-arrow{color:#505068;font-size:1.4rem;display:flex;align-items:center}
+
+/* SECTION HEADER */
+.sec-head{max-width:1100px;margin:0 auto;padding:40px 30px 10px}
+.sec-head .lab{font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+.sec-head .lab.a{color:#a99fff}.sec-head .lab.b{color:#00d2d3}
+.sec-head h2{font-size:1.7rem;font-weight:800;margin-bottom:4px}
+.sec-head p{color:#8585a8;font-size:.88rem;max-width:500px}
+
+/* CARD ROW */
+.card-row{display:flex;align-items:flex-start;gap:0;max-width:1200px;margin:20px auto;padding:0 20px;overflow-x:auto}
+.card{flex:0 0 220px;background:#12121e;border:1px solid #252545;border-radius:14px;overflow:hidden;position:relative}
+.card .num{position:absolute;top:8px;left:8px;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:#fff;z-index:3}
+.card .num.g1{background:linear-gradient(135deg,#7c6df0,#9b8ff8)}
+.card .num.g2{background:linear-gradient(135deg,#00b4d8,#0077b6)}
+.card .num.g3{background:linear-gradient(135deg,#ff6b8a,#d63384)}
+.card .num.g4{background:linear-gradient(135deg,#0abf7f,#00b894)}
+.card .num.g5{background:linear-gradient(135deg,#feca57,#e17055)}
+.card .num.g6{background:linear-gradient(135deg,#7c6df0,#b0a4ff)}
+.card .num.g7{background:linear-gradient(135deg,#ff6b8a,#e84393)}
+.card .num.g8{background:linear-gradient(135deg,#0abf7f,#00d2d3)}
+.card .cimg{position:relative}
+.card .cimg img{display:block;width:100%;height:180px;object-fit:cover}
+.card .cimg .overlay{position:absolute;bottom:0;left:0;right:0;height:50%;background:linear-gradient(0deg,rgba(18,18,30,.95),transparent)}
+.card .cbody{padding:10px 12px 14px}
+.card .cbody h3{font-size:.85rem;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.card .cbody p{font-size:.72rem;color:#8585a8;line-height:1.4}
+
+.arrow-r{flex-shrink:0;display:flex;align-items:center;padding:60px 4px 0;color:#505068}
+.arrow-r svg{width:28px;height:28px}
+
+/* WIDE CARD */
+.card.wide{flex:0 0 340px}
+.card.wide .cimg img{height:220px}
+.card.xwide{flex:0 0 440px}
+.card.xwide .cimg img{height:240px}
+
+/* DIVIDER */
+.divider{text-align:center;padding:40px 20px;position:relative}
+.divider::before{content:'';position:absolute;top:50%;left:10%;right:10%;height:1px;background:linear-gradient(90deg,transparent,#252545,transparent)}
+.divider .pill{position:relative;display:inline-block;padding:9px 24px;background:#181830;border:1px solid #252545;border-radius:100px;font-size:.75rem;font-weight:700;color:#00d2d3}
+
+/* FOOTER */
+.foot{text-align:center;padding:40px;border-top:1px solid #252545;color:#505068;font-size:.75rem}
+.foot strong{color:#8585a8}
+
+/* FEATURES STRIP */
+.fstrip{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;max-width:1000px;margin:0 auto;padding:30px 20px}
+.fstrip .f{padding:8px 14px;background:#12121e;border:1px solid #252545;border-radius:8px;font-size:.76rem;font-weight:500;display:flex;align-items:center;gap:6px}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="tag">Photoshop UXP Plugin</div>
+  <h1>FromPS / ToPS</h1>
+  <p>Use <strong>ANY AI</strong> for inpaint, right inside Photoshop. No lock-in. No fees.</p>
+  <div class="pipe-row">
+    <div class="pipe-item">✂️ Select</div><div class="pipe-arrow">→</div>
+    <div class="pipe-item">📸 Capture</div><div class="pipe-arrow">→</div>
+    <div class="pipe-item">🤖 Any AI</div><div class="pipe-arrow">→</div>
+    <div class="pipe-item">🎯 Place Back</div>
+  </div>
+</section>
+
+<div class="fstrip">
+  <div class="f">🎯 Pixel-Perfect Masks</div>
+  <div class="f">🔲 Smart Object</div>
+  <div class="f">🌫️ Auto Blur Edges</div>
+  <div class="f">↩️ Single Ctrl+Z</div>
+  <div class="f">🌐 Any AI Service</div>
+</div>
+
+<!-- PATH A -->
+<div class="sec-head"><div class="lab a">● PATH A — FREE BROWSER WORKFLOW</div><h2>Drag & Drop to Any AI</h2><p>ChatGPT, Gemini, Midjourney — no API keys needed.</p></div>
+<div class="card-row">
+  <div class="card"><div class="num g1">1</div><div class="cimg"><img src="../01.png"><div class="overlay"></div></div><div class="cbody"><h3>✂️ Select</h3><p>Lasso/marquee any area on your canvas</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card"><div class="num g1">2</div><div class="cimg"><img src="../02.png"><div class="overlay"></div></div><div class="cbody"><h3>📸 Capture</h3><p>Image + mask extracted. Auto aspect ratio 1:1</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card"><div class="num g2">3</div><div class="cimg"><img src="../03.png"><div class="overlay"></div></div><div class="cbody"><h3>🖱️ Drag Out</h3><p>Compact popup with 2 files ready to drag</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card"><div class="num g2">4</div><div class="cimg"><img src="../04.png"><div class="overlay"></div></div><div class="cbody"><h3>🌐 Drop in Browser</h3><p>Drop files directly into ChatGPT</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card wide"><div class="num g3">5</div><div class="cimg"><img src="../05.png"><div class="overlay"></div></div><div class="cbody"><h3>🤖 AI Generates</h3><p>Prompt + image + mask → AI result</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card"><div class="num g4">6</div><div class="cimg"><img src="../06.png"><div class="overlay"></div></div><div class="cbody"><h3>📋 Load Result</h3><p>Paste/load into ToPS panel</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card"><div class="num g4">7</div><div class="cimg"><img src="../07.png"><div class="overlay"></div></div><div class="cbody"><h3>🎯 Place Back</h3><p>Auto-positioned · Smart Object + Mask + Blur</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card"><div class="num g5">8</div><div class="cimg"><img src="../08.png"><div class="overlay"></div></div><div class="cbody"><h3>🖌️ Refine</h3><p>Optional mask brushing for perfect blend</p></div></div>
+</div>
+
+<div class="divider"><div class="pill">⚡ ALTERNATIVE: WEBHELPER API WORKFLOW</div></div>
+
+<!-- PATH B -->
+<div class="sec-head"><div class="lab b">● PATH B — WEBHELPER API WORKFLOW</div><h2>Direct API Generation</h2><p>Grok, FLUX, Seedream & more. Bypass content filters.</p></div>
+<div class="card-row">
+  <div class="card"><div class="num g6">1</div><div class="cimg"><img src="../10.png"><div class="overlay"></div></div><div class="cbody"><h3>📤 Send to WebHelper</h3><p>"Both to WebHelper" — auto-sent</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card wide"><div class="num g7">2</div><div class="cimg"><img src="../11.png"><div class="overlay"></div></div><div class="cbody"><h3>⚡ Configure & Generate</h3><p>Select model · Write prompt · Generate</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card wide"><div class="num g7">3</div><div class="cimg"><img src="../12.png"><div class="overlay"></div></div><div class="cbody"><h3>🖼️ Browse Results</h3><p>Multiple results as tabs · Pick the best</p></div></div>
+  <div class="arrow-r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></div>
+  <div class="card xwide"><div class="num g8">4</div><div class="cimg"><img src="../13.png"><div class="overlay"></div></div><div class="cbody"><h3>✅ Final Composite</h3><p>Two AI layers · Full non-destructive layer structure</p></div></div>
+</div>
+
+<footer class="foot"><p><strong>FromPS / ToPS</strong> — Free · Source-Available · CC BY-NC-SA 4.0 · Adobe Photoshop 2024+ · Windows</p></footer>
+</body>
+</html>

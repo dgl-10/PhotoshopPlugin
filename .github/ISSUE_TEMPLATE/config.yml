@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/dgl-10/PhotoshopPlugin/security/advisories/new
+    about: Report vulnerabilities privately. Do not publish exploit details in an issue.
+  - name: Supporter-key help
+    url: https://dgl10.gumroad.com/l/photoshop-plugin
+    about: Contact the seller through Gumroad for purchase or supporter-key questions.

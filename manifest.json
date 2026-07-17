@@ -1,0 +1,85 @@
+{
+    "id": "com.fromps-tops.dev",
+    "name": "FromPS-ToPS Dev",
+    "version": "1.0.2",
+    "main": "index.html",
+    "host": {
+        "app": "PS",
+        "minVersion": "24.0.0"
+    },
+    "manifestVersion": 5,
+    "entrypoints": [
+        {
+            "type": "panel",
+            "id": "fromps-tops-panel",
+            "label": {
+                "default": "FromPS / ToPS"
+            },
+            "minimumSize": {
+                "width": 260,
+                "height": 341
+            },
+            "maximumSize": {
+                "width": 596,
+                "height": 612
+            },
+            "preferredDockedSize": {
+                "width": 260,
+                "height": 612
+            },
+            "preferredFloatingSize": {
+                "width": 260,
+                "height": 612
+            },
+            "__horizonalSize": {
+                "width": 520,
+                "height": 341
+            },
+            "icons": [
+                {
+                    "width": 24,
+                    "height": 24,
+                    "path": "icons/png/24x24.png",
+                    "scale": [
+                        1,
+                        2
+                    ],
+                    "theme": [
+                        "darkest",
+                        "dark",
+                        "light",
+                        "lightest"
+                    ]
+                }
+            ]
+        }
+    ],
+    "requiredPermissions": {
+        "localFileSystem": "request",
+        "clipboard": "readAndWrite",
+        "allowCodeGenerationFromStrings": true,
+        "network": {
+            "domains": "all"
+        }
+    },
+    "icons": [
+        {
+            "width": 48,
+            "height": 48,
+            "path": "icons/icon.png",
+            "scale": [
+                1,
+                2
+            ],
+            "theme": [
+                "darkest",
+                "dark",
+                "light",
+                "lightest"
+            ],
+            "species": [
+                "pluginList"
+            ]
+        }
+    ]
+}

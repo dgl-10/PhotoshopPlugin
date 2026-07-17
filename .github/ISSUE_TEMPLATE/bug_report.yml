@@ -1,0 +1,83 @@
+name: Bug report
+description: Report a reproducible problem in the Photoshop, Helper, or WebHelper workflow.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. Remove API keys, supporter keys, private images, and personal paths before submitting.
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Affected workflow
+      options:
+        - Capture selection or mask
+        - Save source or mask
+        - Copy or paste
+        - Drag Out
+        - Send to WebHelper
+        - WebHelper API generation
+        - Place Back into Photoshop
+        - Installation or first-run setup
+        - Update process
+        - Support reminder or supporter key
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Photoshop, FromPS / ToPS plugin, and PhotoshopHelper versions.
+      placeholder: "Photoshop 26.x; plugin 1.x; Helper 1.0.4"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 x64 or macOS 15 Apple Silicon"
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Browser tool or API provider
+      description: If relevant, name the website, provider, and model. Do not include credentials.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a Photoshop selection...
+        2. Click Capture...
+        3. Choose Send to WebHelper...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include a redacted error or short log excerpt when available.
+    validations:
+      required: true
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Additional context
+      description: Add safe screenshots or a short recording if they clarify the workflow.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Sensitive-data check
+      options:
+        - label: I removed API keys, supporter keys, private artwork, purchase data, and personal paths.
+          required: true
+        - label: I reproduced this with the latest available release.
+          required: true

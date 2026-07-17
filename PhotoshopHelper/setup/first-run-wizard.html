@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhotoshopHelper — Setup</title>
+    <!-- Spectre.css (same as webhelper.html) -->
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-exp.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-icons.min.css">
+    <!--style>
+        /* Dark-mode base to match Electron window */
+        :root {
+            --accent: #6c63ff;
+        }
+
+        body {
+            background: #0f1117;
+            color: #e8eaf0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+            user-select: none;
+        }
+
+        /* Override Spectre card for dark theme */
+        .card {
+            background: #181c27;
+            border-color: rgba(255, 255, 255, .1);
+            max-width: 540px;
+            width: 100%;
+        }
+
+        .card-header,
+        .card-body,
+        .card-footer {
+            border-color: rgba(255, 255, 255, .08);
+        }
+
+        /* Step tiles */
+        .step-tile {
+            background: rgba(255, 255, 255, .03);
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: .4rem;
+            padding: 1rem 1.2rem;
+            margin-bottom: .75rem;
+            display: grid;
+            grid-template-columns: 2rem 1fr;
+            gap: 0 .9rem;
+            align-items: start;
+        }
+
+        .step-num {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            background: var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .8rem;
+            font-weight: 700;
+            color: #fff;
+            flex-shrink: 0;
+            margin-top: .1rem;
+        }
+
+        /* Path pill */
+        .path-pill {
+            display: block;
+            background: rgba(255, 255, 255, .05);
+            border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: .2rem;
+            padding: .3rem .6rem;
+            font-size: .65rem;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            color: #8890a4;
+            margin: .4rem 0 .6rem;
+            word-break: break-all;
+        }
+
+        /* Text overrides */
+        .text-muted  { color: #8890a4 !important; }
+        .text-title  { font-size: .8rem; font-weight: 600; color: #e8eaf0; margin-bottom: .25rem; }
+
+        /* Spectre btn-primary tint */
+        .btn.btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .btn.btn-primary:hover {
+            background: #7d75ff;
+            border-color: #7d75ff;
+        }
+    </style-->
+    <style>
+        /* Path pill overrides */
+        .tile-content {
+            /* Allow container to shrink */
+            min-width: 0;
+        }
+
+        .path-pill {
+            display: block;
+            overflow: hidden;
+            text-overflow: clip;
+            /* ellipsis */
+            white-space: nowrap;
+            /* Clip the start (left side) of the path, keeping the end (right side) visible */
+            direction: rtl;
+        }
+
+        .path-pill {
+            position: relative;
+        }
+
+        .path-pill::before {
+            content: "📁";
+            position: absolute;
+            left: -1.2rem;
+            top: 0.1rem;
+            /*top: 50%;
+            transform: translateY(-50%);*/
+        }
+
+        /* Fade-out animation on Done */
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                transform: scale(.98);
+            }
+        }
+
+        .card.done {
+            animation: fadeOut .35s ease forwards;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card" id="card">
+
+        <!-- Header -->
+        <div class="card-header">
+            <div class="tile tile-centered">
+                <div class="tile-icon">
+                    <span style="font-size:1.8rem; line-height:1;">🎨</span>
+                </div>
+                <div class="tile-content">
+                    <p class="tile-title h6 mb-0" id="header-title">Welcome to PhotoshopHelper</p>
+                    <p class="tile-subtitle text-muted text-small" id="header-subtitle">One-time setup — takes less than
+                        a minute</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Steps -->
+        <div class="card-body">
+
+            <!-- Step 1: Install plugin -->
+            <div class="tile mb-2" id="step-plugin">
+                <div class="tile-icon">
+                    <figure class="avatar" data-initial="1"></figure>
+                </div>
+                <div class="tile-content">
+                    <div class="text-title">Install the Photoshop Plugin</div>
+                    <p class="text-muted text-small mb-0">
+                        Find the <code>plugin.ccx</code> file in the folder shown below
+                        and <strong>double-click</strong> it — Adobe Creative Cloud Desktop
+                        will install it automatically.
+                    </p>
+                    <code class="path-pill" id="plugin-path-display">Loading path…</code>
+                </div>
+                <div class="tile-action">
+                    <button class="btn btn-sm btn-default" id="btn-open-plugin-folder">
+                        <i class="icon icon-share"></i> Open Plugin Folder
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Configure API keys -->
+            <div class="tile mt-2" id="step-keys">
+                <div class="tile-icon">
+                    <figure class="avatar" data-initial="2"></figure>
+                </div>
+                <div class="tile-content">
+                    <div class="text-title">
+                        Configure API Keys &amp; providers.json
+                    </div>
+                    <p class="text-muted text-small mb-0">
+                        <i>This step is optional. You only need to configure these settings if you plan to use the
+                            WebHelper (component for AI generation with your own API keys).
+                            <span id="first-run-note">You can skip this for now and configure it at any time
+                                later.</span></i><br />
+                        Your settings folder contains a ready-to-fill <code>.env</code> file. Paste your API keys there
+                        and save. You can also edit <code>providers.json</code> to customize available models.
+                        <br />
+                        <span class="text-warning">Note: You need to restart the application for these changes to take
+                            effect.</span>
+                    </p>
+                    <code class="path-pill" id="settings-path-display">Loading path…</code>
+                </div>
+                <div class="tile-action">
+                    <button class="btn btn-sm btn-default" id="btn-open-settings">
+                        <i class="icon icon-edit"></i> Open Settings Folder
+                    </button>
+                </div>
+            </div>
+
+        </div><!-- /.card-body -->
+
+        <!-- Footer -->
+        <div class="card-footer" style="display: flex; justify-content: space-between; align-items: center;">
+            <button class="btn btn-link text-warning" id="btn-relaunch" style="display: none; padding-left: 0;">
+                <i class="icon icon-refresh"></i> Restart App
+            </button>
+            <div style="margin-left: auto;">
+                <button class="btn btn-primary" id="btn-done">
+                    <i class="icon icon-check"></i> <span id="btn-done-text">Done — Start the app</span>
+                </button>
+            </div>
+        </div>
+
+    </div><!-- /.card -->
+
+    <script>
+        // Paths received from the main process
+        let _userDataPath = '';
+        let _pluginPath = '';
+
+        window.wizardBridge.onInit(({ isFirstRun, userDataPath, pluginPath, pluginFilePath }) => {
+            _userDataPath = userDataPath;
+            _pluginPath = pluginPath;
+
+            // Display the plugin location
+            const display = document.getElementById('plugin-path-display');
+            display.textContent = pluginFilePath;
+            display.title = pluginFilePath;
+
+            // Display the settings location
+            const settingsDisplay = document.getElementById('settings-path-display');
+            settingsDisplay.textContent = userDataPath;
+            settingsDisplay.title = userDataPath;
+
+            // Update UI texts if it's not the first run (i.e. opened as Settings)
+            if (!isFirstRun) {
+                document.getElementById('header-title').textContent = 'PhotoshopHelper Settings';
+                document.getElementById('header-subtitle').textContent = 'Configure your API keys and plugin settings';
+                document.getElementById('btn-done-text').textContent = 'Done';
+
+                // Hide the "you can configure this later" note since we are already in settings
+                const firstRunNote = document.getElementById('first-run-note');
+                if (firstRunNote) {
+                    firstRunNote.style.display = 'none';
+                }
+            }
+        });
+
+        // Open the folder that contains plugin.ccx
+        document.getElementById('btn-open-plugin-folder').addEventListener('click', () => {
+            window.wizardBridge.openSettingsFolder(_pluginPath, 'plugin.ccx');
+        });
+
+        // Reveal the settings folder (.env / providers.json)
+        document.getElementById('btn-open-settings').addEventListener('click', () => {
+            document.getElementById('btn-relaunch').style.display = 'inline-block';
+            window.setTimeout(() => window.wizardBridge.openSettingsFolder(_userDataPath, '.env'), 500);
+        });
+
+        // Finish setup
+        document.getElementById('btn-done').addEventListener('click', () => {
+            document.getElementById('card').classList.add('done');
+            setTimeout(() => window.wizardBridge.complete(), 360);
+        });
+
+        // Restart app
+        document.getElementById('btn-relaunch').addEventListener('click', () => {
+            window.wizardBridge.relaunch();
+        });
+    </script>
+</body>
+
+</html>

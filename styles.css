@@ -1,0 +1,588 @@
+/* Main Panel Styles - UXP Spectrum Compatible */
+:root {
+    --spacing: 8px;
+    --spacing-sm: 4px;
+    --border-radius: 4px;
+    --bg-panel: #323232;
+    --bg-card: #3c3c3c;
+    --bg-preview: #1e1e1e;
+    --bg-dropzone: #2a2a2a;
+    --accent-color: #2680eb;
+    --error-color: #e34850;
+    --success-color: #2d9d78;
+    --text-primary: #e1e1e1;
+    --text-secondary: #999999;
+    --border-color: #4a4a4a;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: "Adobe Clean", "Segoe UI", sans-serif;
+    font-size: 11px;
+    color: var(--text-primary);
+    background: var(--bg-panel);
+    padding: var(--spacing);
+    user-select: none;
+    cursor: default;
+    /* Force standard arrow on panel background */
+}
+
+/* Force pointer cursor on interactive elements */
+sp-action-button,
+sp-dropdown,
+sp-picker,
+sp-menu-item,
+.close-button {
+    cursor: pointer;
+}
+
+/* Main Container - Flexible for resizing */
+.panel-container {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--spacing);
+    justify-content: center;
+    align-items: stretch;
+    width: 100%;
+    height: 100%;
+}
+
+/* Global Controls */
+.global-controls {
+    flex: 1 1 100%;
+    display: flex;
+    justify-content: center;
+    margin: 4px 0;
+}
+
+.global-controls sp-dropdown {
+    width: 100%;
+    max-width: 568px;
+    /* Two cards (280*2) + gap (8) */
+    margin: 0 4px;
+}
+
+/* Match single card width when they wrap */
+@media (max-width: 440px) {
+    .global-controls sp-dropdown {
+        max-width: 280px;
+    }
+}
+
+/* Card Styles - Flexible sizing */
+.card {
+    flex: 1 1 242px;
+    min-width: 242px;
+    max-width: 280px;
+    min-height: 260px;
+    background: var(--bg-card);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin: 4px;
+}
+
+.card-header {
+    padding: 6px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.card-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing);
+    gap: var(--spacing-sm);
+}
+
+/* Source Mode Container */
+.source-mode-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.source-mode-container sp-label {
+    flex-shrink: 0;
+}
+
+.source-mode-container sp-picker {
+    flex: 1;
+}
+
+/* Preview Area */
+.preview-area {
+    flex: 1;
+    min-height: 140px;
+    background: var(--bg-preview);
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    /* Transparent checkerboard pattern */
+    /* background-image:
+        linear-gradient(45deg, #282828 25%, transparent 25%),
+        linear-gradient(-45deg, #282828 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #282828 75%),
+        linear-gradient(-45deg, transparent 75%, #282828 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0px; */
+}
+
+.preview-area img {
+    /* Absolute positioning to stack images */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Specific class for overlay to ensure it doesn't block interactions if needed */
+.overlay-image {
+    pointer-events: none;
+    z-index: 10;
+    /* Ensure on top */
+}
+
+.preview-placeholder {
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-align: center;
+    padding: 10px;
+    line-height: 1.4;
+}
+
+/* ToPS Placeholder */
+.tops-placeholder {
+    flex: 1;
+    min-height: 120px;
+    background: var(--bg-dropzone);
+    border: 1px dashed var(--border-color);
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.placeholder-text {
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-align: center;
+    line-height: 1.4;
+}
+
+/* Close Button - Spectrum компонент в углу превью */
+.close-button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    padding: 0;
+    max-width: 28px;
+    max-height: 28px;
+    min-width: 28px;
+    z-index: 20;
+}
+
+.close-button:hover {
+    background: rgba(227, 72, 80, 0.9);
+}
+
+.std-button-container {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    height: 32px;
+    display: flex;
+    align-items: center;
+}
+
+/* Split Button Styles */
+.split-button-container {
+    width: 100%;
+    display: flex;
+    gap: 0;
+    position: relative;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    height: 32px;
+}
+
+.split-button-container .split-button-main,
+.split-button-container .split-button-dropdown {
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+}
+
+.split-button-main {
+    flex: 1;
+}
+
+.split-button-dropdown {
+    width: 24px;
+    min-width: 24px;
+    max-width: 24px;
+    padding: 0;
+    border-left: 1px solid var(--border-color) !important;
+}
+
+/* Drag Options Menu */
+.drag-options-menu,
+.save-options-menu,
+.capture-options-menu,
+.place-back-options-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 4px;
+    min-width: 120px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+}
+
+.drag-options-menu {
+    min-width: 150px;
+}
+
+.capture-options-menu {
+    min-width: 170px;
+}
+
+.place-back-options-menu {
+    min-width: 220px;
+}
+
+/* Drag menu aligned to right */
+.drag-options-menu {
+    left: auto;
+    right: 0;
+}
+
+.drag-options-menu sp-menu,
+.save-options-menu sp-menu,
+.capture-options-menu sp-menu,
+.place-back-options-menu sp-menu {
+    width: 100%;
+    padding: 4px;
+    white-space: nowrap;
+}
+
+/* Action Buttons Grid - Using Flexbox for safe fallback */
+.action-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    margin-top: 4px;
+}
+
+.action-grid>.std-button-container {
+    margin-right: 4px;
+}
+
+.action-grid>.std-button-container:last-child {
+    margin-right: 2px;
+}
+
+.action-grid>.split-button-container {
+    flex: 1;
+    min-width: 0;
+    margin-right: 4px;
+}
+
+.action-grid>.split-button-container:last-child {
+    margin-right: 2px;
+}
+
+/* Icon-only buttons */
+.icon-only {
+    padding: 0;
+    min-width: 28px;
+    max-width: 32px;
+}
+
+.icon-only svg {
+    width: 20px;
+    height: 20px;
+    left: -1px;
+    position: relative;
+}
+
+/* Icon with text buttons */
+.icon-with-text {
+    flex: 1;
+    padding: 0 6px 0 2px;
+    min-width: 0;
+    margin-right: 8px;
+    font-size: 11px;
+}
+
+.icon-with-text svg {
+    width: 20px;
+    height: 20px;
+    left: -1px;
+    position: relative;
+}
+
+/* Compact split buttons */
+.split-button-container.compact {
+    min-width: 48px;
+    max-width: 56px;
+}
+
+.split-button-container.compact .split-button-main {
+    flex: 1;
+    min-width: 28px;
+}
+
+.split-button-container.compact .split-button-dropdown {
+    width: 20px;
+    min-width: 20px;
+    max-width: 20px;
+}
+
+.toolbar-bottom {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Button row */
+.button-row {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+}
+
+/* Status Messages */
+.status-message {
+    font-size: 9px;
+    text-align: center;
+    margin-top: 4px;
+    padding: 3px 4px;
+    border-radius: 2px;
+    min-height: 16px;
+    max-height: 16px;
+    line-height: 1.2;
+}
+
+.status-message.error {
+    background: rgba(227, 72, 80, 0.15);
+    color: var(--error-color);
+}
+
+.status-message.info {
+    background: rgba(38, 128, 235, 0.15);
+    color: var(--accent-color);
+}
+
+.status-message.success {
+    background: rgba(45, 157, 120, 0.15);
+    color: var(--success-color);
+}
+
+/* ===== State visibility - FromPS ===== */
+.state-idle .captured-content {
+    display: none !important;
+}
+
+.state-idle .idle-content {
+    display: flex !important;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    flex: 1;
+}
+
+.state-captured .idle-content {
+    display: none !important;
+}
+
+.state-captured .captured-content {
+    display: flex !important;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    flex: 1;
+}
+
+/* ===== State visibility - ToPS ===== */
+.state-idle-tops .ready-content {
+    display: none !important;
+}
+
+.state-idle-tops .idle-content-tops {
+    display: flex !important;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    flex: 1;
+}
+
+.state-ready .idle-content-tops {
+    display: none !important;
+}
+
+.state-ready .ready-content {
+    display: flex !important;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    flex: 1;
+}
+
+/* Hidden utility */
+.hidden {
+    display: none !important;
+}
+
+/* Dialog Styles */
+dialog {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    padding: 12px 14px;
+    outline: none;
+}
+
+#settings-dialog form {
+    width: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 6px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    margin-bottom: 6px;
+}
+
+
+.setting-checkbox {
+    flex: 1;
+}
+
+.setting-sort-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.setting-sort-buttons sp-action-button {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.setting-sort-buttons sp-action-button svg {
+    width: 12px;
+    height: 12px;
+}
+
+.setting-sort-buttons sp-action-button:disabled,
+.setting-sort-buttons sp-action-button[disabled] {
+    background: transparent !important;
+    opacity: 0.35 !important;
+    pointer-events: none;
+}
+
+.setting-checkbox {
+    position: relative;
+    top: -3px
+}
+
+.setting-row.highlighted {
+    border-color: var(--accent-color) !important;
+    box-shadow: 0 0 4px rgba(38, 128, 235, 0.4);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.setting-sort-buttons sp-action-button:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-radius: var(--border-radius);
+}
+
+.setting-sort-buttons sp-action-button:hover svg {
+    color: var(--accent-color) !important;
+}
+
+.setting-sort-buttons sp-action-button:disabled:hover,
+.setting-sort-buttons sp-action-button[disabled]:hover {
+    background: transparent !important;
+}
+
+.setting-sort-buttons sp-action-button:disabled:hover svg,
+.setting-sort-buttons sp-action-button[disabled]:hover svg {
+    color: inherit !important;
+}
+
+
+#status-warning-container {
+    position: absolute;
+    z-index: 100;
+    top: -16px;
+    left: -22px;
+    display: none;
+}
+
+#status-warning-button {
+    border: none;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    height: auto;
+}
+
+
+#status-warning-button>sp-icon {
+    color: #ffaa00;
+    width: 10px;
+    height: 10px;
+}
+
+#status-warning-tooltip {
+    padding: 5px;
+    position: absolute;
+    left: -106px;
+    top: 33px;
+    --spectrum-tooltip-max-width: 255px;
+    min-width: 255px;
+    max-width: 255px;
+    width: 255px;
+    white-space: pre-wrap;
+    z-index: 1000;
+}

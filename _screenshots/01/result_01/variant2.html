@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FromPS to ANY AI - Features</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #090a0f;
+            --surface: #151a25;
+            --accent1: #f9a826;
+            --accent2: #ff4b2b;
+            --text-main: #ffffff;
+            --text-muted: #8b949e;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            background-image: 
+                radial-gradient(circle at 100% 0%, rgba(249, 168, 38, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 0% 100%, rgba(255, 75, 43, 0.1) 0%, transparent 40%);
+        }
+        .container {
+            width: 1500px;
+            margin: 0 auto;
+            padding: 80px 40px;
+            box-sizing: border-box;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+        h1 {
+            font-size: 72px;
+            font-weight: 800;
+            margin: 0;
+            background: linear-gradient(to right, var(--accent1), var(--accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .subtitle {
+            font-size: 28px;
+            color: var(--text-muted);
+            margin-top: 15px;
+            font-weight: 400;
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+        }
+
+        .card {
+            background: rgba(21, 26, 37, 0.7);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 40px;
+            border: 1px solid rgba(255,255,255,0.05);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 4px;
+            background: linear-gradient(90deg, var(--accent1), var(--accent2));
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .card-number {
+            font-size: 48px;
+            font-weight: 800;
+            color: rgba(255,255,255,0.1);
+            margin-right: 20px;
+            line-height: 1;
+        }
+        .card-title {
+            font-size: 32px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .card-desc {
+            font-size: 18px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .img-stack {
+            position: relative;
+            height: 450px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+        }
+        .img-stack img {
+            border-radius: 12px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.1);
+            position: absolute;
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            transition: all 0.3s ease;
+        }
+
+        /* Card 1 specific */
+        .card-1 .img-stack img:nth-child(1) { height: 85%; transform: translate(-15%, -5%); z-index: 1; }
+        .card-1 .img-stack img:nth-child(2) { height: 70%; transform: translate(30%, 10%); z-index: 2; }
+
+        /* Card 2 specific */
+        .card-2 .img-stack img:nth-child(1) { height: 80%; transform: translate(-45%, 0%); z-index: 2; }
+        .card-2 .img-stack img:nth-child(2) { height: 80%; transform: translate(0%, 0%); z-index: 1; opacity: 0.8; }
+        .card-2 .img-stack img:nth-child(3) { height: 80%; transform: translate(45%, 0%); z-index: 2; }
+
+        /* Card 3 specific */
+        .card-3 .img-stack img:nth-child(1) { height: 85%; transform: translate(-20%, -10%); z-index: 1; }
+        .card-3 .img-stack img:nth-child(2) { height: 85%; transform: translate(20%, 10%); z-index: 2; }
+
+        /* Card 4 specific */
+        .card-4 .img-stack img:nth-child(1) { height: 85%; transform: translate(0%, -10%); z-index: 2; }
+        .card-4 .img-stack img:nth-child(2) { height: 70%; transform: translate(-25%, 15%); z-index: 1; }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        .full-width .img-stack {
+            height: 500px;
+        }
+        .full-width .img-stack img {
+            width: 80%;
+            position: relative;
+            z-index: 2;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Total Creative Freedom</h1>
+            <div class="subtitle">The Missing Link Between Photoshop & Modern AI</div>
+        </header>
+
+        <div class="grid-layout">
+            
+            <div class="card card-1">
+                <div class="card-header">
+                    <div class="card-number">01</div>
+                    <div class="card-title">Instant Capture</div>
+                </div>
+                <div class="card-desc">Select any area with the Lasso or Marquee tool. The plugin automatically extracts the image and generates a pixel-perfect mask.</div>
+                <div class="img-stack">
+                    <img src="../01.png" alt="PS Selection">
+                    <img src="../02.png" alt="Plugin Capture">
+                </div>
+            </div>
+
+            <div class="card card-2">
+                <div class="card-header">
+                    <div class="card-number">02</div>
+                    <div class="card-title">Drag & Drop</div>
+                </div>
+                <div class="card-desc">Bypass file saving. Drag the image and mask directly into ChatGPT, Gemini, or Midjourney for immediate generation.</div>
+                <div class="img-stack">
+                    <img src="../03.png" alt="D&D Start">
+                    <img src="../04.png" alt="Drop">
+                    <img src="../05.png" alt="Result">
+                </div>
+            </div>
+
+            <div class="card card-3">
+                <div class="card-header">
+                    <div class="card-number">03</div>
+                    <div class="card-title">Seamless Blend</div>
+                </div>
+                <div class="card-desc">Paste the result back. It perfectly aligns to the original coordinates, applies the mask with Gaussian blur, and wraps it in a Smart Object.</div>
+                <div class="img-stack">
+                    <img src="../07.png" alt="Place Back">
+                    <img src="../08.png" alt="Blended">
+                </div>
+            </div>
+
+            <div class="card card-4">
+                <div class="card-header">
+                    <div class="card-number">04</div>
+                    <div class="card-title">API Power-Hub</div>
+                </div>
+                <div class="card-desc">Need professional models? Use the built-in WebHelper to connect directly to FLUX, Grok, or Seedream APIs via your own keys.</div>
+                <div class="img-stack">
+                    <img src="../11.png" alt="WebHelper UI">
+                    <img src="../12.png" alt="WebHelper Results">
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <div class="card-header" style="justify-content: center; text-align: center;">
+                    <div class="card-title">Pixel-Perfect Results, Every Time</div>
+                </div>
+                <div class="img-stack">
+                    <img src="../13.png" alt="Final Image Composition">
+                </div>
+            </div>
+
+        </div>
+    </div>
+</body>
+</html>

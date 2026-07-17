@@ -1,0 +1,161 @@
+name: Build App Binaries
+
+on:
+  workflow_dispatch: # Trigger manually only via GitHub Actions tab
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-version:
+    name: Validate release version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate semantic version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Invalid semantic version: $RELEASE_VERSION"
+            exit 1
+          fi
+
+  # Build for Windows
+  build-windows:
+    name: Build for Windows
+    needs: validate-version
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: ./PhotoshopHelper
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: PhotoshopHelper/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version in package.json
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npm version $env:RELEASE_VERSION --no-git-tag-version --allow-same-version
+
+      - name: Build and Publish Windows Installer
+        run: npm run dist:win -- --publish always
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build for macOS
+  build-mac:
+    name: Build for macOS
+    needs: validate-version
+    runs-on: macos-latest
+
+    defaults:
+      run:
+        working-directory: ./PhotoshopHelper
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: PhotoshopHelper/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version in package.json
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npm pkg set "version=$RELEASE_VERSION"
+
+      - name: Build and Publish macOS DMG & ZIP
+        run: npm run dist:mac -- --publish always
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false # Disables code signing certificate lookup to prevent build failures without them
+
+  verify-release:
+    name: Verify draft release
+    needs: [validate-version, build-windows, build-mac]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify draft release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          VALIDATION_RESULT: ${{ needs.validate-version.result }}
+          WINDOWS_RESULT: ${{ needs.build-windows.result }}
+          MAC_RESULT: ${{ needs.build-mac.result }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = `v${process.env.RELEASE_VERSION}`;
+            const validationSucceeded = process.env.VALIDATION_RESULT === 'success';
+            const buildsSucceeded = process.env.WINDOWS_RESULT === 'success' && process.env.MAC_RESULT === 'success';
+
+            if (!validationSucceeded) {
+              core.setFailed('Release version validation failed; no draft was modified.');
+              return;
+            }
+
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner,
+              repo,
+              per_page: 100
+            });
+            const draft = releases.find((release) => release.draft && release.tag_name === tag);
+
+            if (!buildsSucceeded) {
+              core.setFailed(`Build results: Windows=${process.env.WINDOWS_RESULT}, macOS=${process.env.MAC_RESULT}. Any draft was left unchanged for manual review.`);
+              return;
+            }
+
+            if (!draft) {
+              core.setFailed(`Draft release ${tag} was not found.`);
+              return;
+            }
+
+            const assetNames = draft.assets.map((asset) => asset.name);
+            const checks = [
+              ['latest.yml', () => assetNames.includes('latest.yml')],
+              ['latest-mac.yml', () => assetNames.includes('latest-mac.yml')],
+              ['Windows installer', () => assetNames.some((name) => name.endsWith('.exe'))],
+              ['Windows blockmap', () => assetNames.some((name) => name.endsWith('.exe.blockmap'))],
+              ['two macOS DMG files', () => assetNames.filter((name) => name.endsWith('.dmg')).length >= 2],
+              ['two macOS ZIP files', () => assetNames.filter((name) => name.endsWith('.zip')).length >= 2]
+            ];
+            const missing = checks
+              .filter(([, predicate]) => !predicate())
+              .map(([label]) => label);
+
+            if (missing.length > 0) {
+              core.setFailed(`Draft ${tag} is incomplete. Missing required assets: ${missing.join(', ')}. The draft was left unchanged for manual review.`);
+              return;
+            }
+
+            core.notice(`Draft ${tag} is complete with ${assetNames.length} assets and is ready for review.`);

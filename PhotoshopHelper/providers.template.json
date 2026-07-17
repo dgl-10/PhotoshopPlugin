@@ -1,0 +1,1078 @@
+{
+    // ---------------------------------------------------------------------------
+    // providers.template.json
+    //
+    // This file is shipped inside the app bundle and copied to the user's
+    // settings folder (userData) on first launch as providers.json.
+    //
+    // All API keys are referenced by name via {{env:KEY_NAME}} — never hardcoded.
+    // Add your own providers following the same pattern.
+    // See Providers_Configuration_Guide.md for the full schema reference.
+    // ---------------------------------------------------------------------------
+    "response_handlers": {
+        // Universal sync handler — no polling, result extracted from the submit response directly.
+        // Required params: "images" — object with "format" and "extract" fields (same schema as in async handlers)
+        "sync": {
+            "type": "sync",
+            "result": {
+                "source": "submit_response",
+                "images": {
+                    "format": "{{format}}",
+                    "extract": [
+                        "{{extract}}"
+                    ]
+                }
+            }
+        },
+        // FAL async queue: poll status endpoint, then GET result from separate endpoint
+        "fal": {
+            "type": "async_poll_and_get",
+            "polling": {
+                // FAL returns status_url directly in submit response
+                "url_template": "{{status_url}}",
+                "variables_from_submit": {
+                    "request_id": "request_id",
+                    "status_url": "status_url",
+                    "response_url": "response_url"
+                },
+                "method": "GET",
+                "use_request_headers": true,
+                "interval_ms": 2000,
+                "timeout_ms": 180000,
+                "status": {
+                    "path": "status",
+                    "in_progress": [
+                        "IN_QUEUE",
+                        "IN_PROGRESS"
+                    ],
+                    "completed": [
+                        "COMPLETED"
+                    ],
+                    "failed": [
+                        "FAILED",
+                        "ERROR"
+                    ]
+                },
+                "error_path": "error"
+            },
+            "result": {
+                "source": "separate_request",
+                // FAL returns response_url directly in submit response
+                "url_template": "{{response_url}}",
+                "method": "GET",
+                "use_request_headers": true,
+                "images": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "images",
+                            "mode": "array",
+                            "item_path": "url"
+                        },
+                        {
+                            "path": "image",
+                            "mode": "single",
+                            "item_path": "url"
+                        }
+                    ]
+                }
+            }
+        },
+        "replicate": {
+            "type": "async_poll",
+            "polling": {
+                "url_template": "{{polling_url}}",
+                "variables_from_submit": {
+                    "polling_url": "urls.get"
+                },
+                "method": "GET",
+                "use_request_headers": true,
+                "interval_ms": 2000,
+                "timeout_ms": 180000,
+                "status": {
+                    "path": "status",
+                    "in_progress": [
+                        "starting",
+                        "processing"
+                    ],
+                    "completed": [
+                        "succeeded",
+                        "successful"
+                    ],
+                    "failed": [
+                        "failed",
+                        "canceled"
+                    ]
+                },
+                "error_path": "error"
+            },
+            "result": {
+                "source": "poll_response",
+                "images": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "output",
+                            "mode": "array"
+                        },
+                        {
+                            "path": "output",
+                            "mode": "single"
+                        }
+                    ]
+                }
+            }
+        },
+        // BFL async poll: polling_url returned directly in submit response, result comes in the poll response
+        "bfl": {
+            "type": "async_poll",
+            "polling": {
+                // polling_url is returned directly in the submit response body
+                "url_template": "{{polling_url}}",
+                "variables_from_submit": {
+                    "polling_url": "polling_url"
+                },
+                "method": "GET",
+                "headers": {
+                    "accept": "application/json",
+                    "x-key": "{{env:BFL_API_KEY}}"
+                },
+                "interval_ms": 2000,
+                "timeout_ms": 180000,
+                "status": {
+                    "path": "status",
+                    "in_progress": [
+                        "Pending",
+                        "Processing"
+                    ],
+                    "completed": [
+                        "Ready"
+                    ],
+                    "failed": [
+                        "Error",
+                        "Failed",
+                        "Content Moderated",
+                        "Request Moderated",
+                        "Insufficient credits"
+                    ]
+                },
+                "error_path": "status"
+            },
+            "result": {
+                // Result comes directly in the poll response — no separate GET needed
+                "source": "poll_response",
+                "images": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "result.sample",
+                            "mode": "single"
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    "providers": [
+        {
+            "id": "grok_imagine_i2i",
+            "name": "Grok Imagine - via XAI API Key (from $0.022/$0.08 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
+            "remarks": "Aspect ratio adjustments are only supported when at least one additional reference image is provided. <br/>Note that all generations that do not pass moderation are charged at full cost.",
+            "image_format": "data_uri",
+            "max_reference_images": 4,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                //"supported": true,
+                //"type": "separate_field",
+                //"field_name": "mask"
+                //"supported": false,
+                //"required": false
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "images"
+            },
+            "allowed_aspect_ratios": [ // works only when at least one referential image provided
+                "2:1",
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "3:4",
+                "2:3",
+                "9:16",
+                "1:2"
+            ],
+            "nice_name": {
+                "default": "Grok Imagine Standard (XAI Key)",
+                "depends_on": "model_xai",
+                "values": {
+                    "grok-imagine-image": "Grok Imagine Standard (XAI Key)",
+                    "grok-imagine-image-quality": "Grok Imagine Quality (XAI Key)"
+                }
+            },
+            "filename_suffix": {
+                "depends_on": "model_xai",
+                "values": {
+                    "grok-imagine-image-quality": "grok_imagine_quality_i2i"
+                }
+            },
+            "request_config": {
+                "endpoint_url": "https://api.x.ai/v1/images/edits",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:XAI_API_KEY}}"
+                },
+                "reference_item_template": {
+                    "url": "{{item}}",
+                    "type": "image_url"
+                },
+                "body_template": {
+                    "model": "{{model_xai}}",
+                    "prompt": "{{prompt}}",
+                    "n": "{{num_images}}",
+                    "resolution": "{{resolution}}",
+                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                    "images": [
+                        {
+                            "url": "{{source_image}}",
+                            "type": "image_url"
+                        },
+                        "{{resolved_references}}"
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "sync",
+                "params": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "data",
+                            "mode": "array",
+                            "item_path": "url"
+                        }
+                    ]
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "model_xai",
+                    "type": "dropdown",
+                    "label": "Model",
+                    "options": [
+                        {
+                            "value": "grok-imagine-image",
+                            "label": "Standard ($0.02/per output image + $0.002/per input image)"
+                        },
+                        {
+                            "value": "grok-imagine-image-quality",
+                            "label": "Quality ($0.05(1K)/$0.07(2K)/per output image + $0.01/per input image)"
+                        }
+                    ],
+                    "default": "grok-imagine-image"
+                },
+                {
+                    "name": "resolution",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Resolution",
+                    "options": [
+                        {
+                            "value": "1k",
+                            "alias": "std"
+                        },
+                        {
+                            "value": "2k",
+                            "alias": "high"
+                        },
+                        {
+                            "value": "2k",
+                            "alias": "ultra",
+                            "hidden": true
+                        }
+                    ],
+                    "default": "1k"
+                }
+            ]
+        },
+        {
+            "id": "seedream_v4_5_i2i_replicate",
+            "name": "Seedream v4.5 via Replicate API Key ($0.04/per image)",
+            "nice_name": "Seedream v4.5 (REPLICATE Key)",
+            "filename_suffix": "seedream_v4_5_i2i",
+            "image_format": "data_uri",
+            "max_reference_images": 13,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image_urls"
+            },
+            "allowed_aspect_ratios": [
+                "21:9",
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "3:4",
+                "2:3",
+                "9:16"
+            ],
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "filter_by": "{{aspect_ratio}}",
+                        "filter_type": "empty"
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                "endpoint_url": "https://api.replicate.com/v1/models/bytedance/seedream-4.5/predictions",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:REPLICATE_API_KEY}}"
+                },
+                "body_template": {
+                    "input": {
+                        "prompt": "{{prompt}}",
+                        "disable_safety_checker": true,
+                        "size": "{{image_size}}",
+                        "{{?!aspect_ratio}}aspect_ratio": "{{calculated_output_aspect_ratio}}", //"match_input_image",
+                        "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                        "{{?!sequential_image_generation}}sequential_image_generation": "disabled", //"auto" or "disabled"
+                        "{{?sequential_image_generation}}sequential_image_generation": "auto",
+                        "{{?sequential_image_generation}}max_images": "{{sequential_image_generation}}",
+                        //"output_format": "png",
+                        "image_input": [
+                            "{{source_image}}",
+                            "{{resolved_image_array}}"
+                        ]
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "replicate",
+                "params": {
+                    "model_path": "bytedance/seedream-4.5"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "image_size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Output Size",
+                    "options": [
+                        {
+                            "value": "2K",
+                            "alias": "std",
+                            "hidden": true
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "high"
+                        },
+                        {
+                            "value": "4K",
+                            "alias": "ultra"
+                        }
+                    ],
+                    "default": "2K"
+                },
+                {
+                    "name": "sequential_image_generation",
+                    "type": "dropdown",
+                    "alias": "sequential_image_generation",
+                    "label": "Model decides whether to generate multiple related images",
+                    "options": [
+                        {
+                            "value": 0,
+                            "alias": "0",
+                            "label": "No"
+                        },
+                        {
+                            "value": 2,
+                            "alias": "2",
+                            "label": "Up to 2"
+                        },
+                        {
+                            "value": 3,
+                            "alias": "3",
+                            "label": "Up to 3"
+                        },
+                        {
+                            "value": 4,
+                            "alias": "4",
+                            "label": "Up to 4"
+                        },
+                        {
+                            "value": 5,
+                            "alias": "5",
+                            "label": "Up to 5"
+                        }
+                    ],
+                    "default": 0
+                }
+            ]
+        },
+        {
+            "id": "seedream_v4_5_i2i_fal",
+            "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
+            "nice_name": "Seedream v4.5 (FAL Key)",
+            "filename_suffix": "seedream_v4_5_i2i",
+            "image_format": "data_uri",
+            "max_reference_images": 9,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image_urls"
+            },
+            // "allowed_aspect_ratios": [
+            //     "16:9",
+            //     "4:3",
+            //     "1:1",
+            //     "3:4",
+            //     "9:16"
+            // ],
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": "{{image_size}}",
+                        "auto_resize_2_max": true,
+                        "filter_by": "{{aspect_ratio}}",
+                        "filter_type": "not_empty"
+                    }
+                }
+            ],
+            "request_config": {
+                "endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v4.5/edit",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Key {{env:FAL_API_KEY}}",
+                    "X-Fal-Store-IO": "0"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "enable_safety_checker": false,
+                    "{{?!aspect_ratio}}image_size": "auto_{{image_size}}",
+                    "{{?aspect_ratio}}image_size": "{{calculated_output_size}}",
+                    "num_images": "{{num_images}}",
+                    "{{?!max_images}}max_images": 1,
+                    "{{?max_images}}max_images": "{{max_images}}",
+                    "image_urls": [
+                        "{{source_image}}",
+                        "{{resolved_image_array}}"
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "fal",
+                "params": {
+                    "model_path": "fal-ai/bytedance/seedream/v4.5/edit"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "image_size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Output Size",
+                    "options": [
+                        {
+                            "value": "2K",
+                            "alias": "std",
+                            "hidden": true
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "high"
+                        },
+                        {
+                            "value": "4K",
+                            "alias": "ultra"
+                        }
+                    ],
+                    "default": "2K"
+                },
+                {
+                    "name": "max_images",
+                    "type": "dropdown",
+                    "alias": "sequential_image_generation",
+                    "label": "Model decides whether to generate multiple related images",
+                    "options": [
+                        {
+                            "value": 0,
+                            "alias": "0",
+                            "label": "No"
+                        },
+                        {
+                            "value": 2,
+                            "alias": "2",
+                            "label": "Up to 2"
+                        },
+                        {
+                            "value": 3,
+                            "alias": "3",
+                            "label": "Up to 3"
+                        },
+                        {
+                            "value": 4,
+                            "alias": "4",
+                            "label": "Up to 4"
+                        },
+                        {
+                            "value": 5,
+                            "alias": "5",
+                            "label": "Up to 5"
+                        }
+                    ],
+                    "default": 0
+                }
+            ]
+        },
+        {
+            "id": "seedream_v5_0_lite_i2i_fal",
+            "name": "Seedream v5.0 lite via Fal API Key ($0.35/per image)",
+            "nice_name": "Seedream v5.0 Lite (FAL Key)",
+            "filename_suffix": "seedream_v5_i2i",
+            "image_format": "data_uri",
+            "max_reference_images": 9,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image_urls"
+                //"supported": false,
+                //"required": false
+            },
+            // "allowed_aspect_ratios": [
+            //     "16:9",
+            //     "4:3",
+            //     "1:1",
+            //     "3:4",
+            //     "9:16"
+            // ],
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": "{{image_size}}",
+                        "auto_resize_2_max": true,
+                        "filter_by": "{{aspect_ratio}}",
+                        "filter_type": "not_empty"
+                    }
+                }
+            ],
+            "request_config": {
+                "endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v5/lite/edit",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Key {{env:FAL_API_KEY}}",
+                    "X-Fal-Store-IO": "0"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "enable_safety_checker": false,
+                    "{{?!aspect_ratio}}image_size": "auto_{{image_size}}",
+                    "{{?aspect_ratio}}image_size": "{{calculated_output_size}}",
+                    "num_images": "{{num_images}}",
+                    "{{?!max_images}}max_images": 1,
+                    "{{?max_images}}max_images": "{{max_images}}",
+                    "image_urls": [
+                        "{{source_image}}",
+                        "{{resolved_image_array}}"
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "fal",
+                "params": {
+                    "model_path": "fal-ai/bytedance/seedream/v5/lite/edit"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "image_size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Output Size",
+                    "options": [
+                        {
+                            "value": "2K",
+                            "alias": "std",
+                            "hidden": true
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "high"
+                        },
+                        {
+                            "value": "3K",
+                            "alias": "ultra"
+                        }
+                    ],
+                    "default": "2K"
+                },
+                {
+                    "name": "max_images",
+                    "type": "dropdown",
+                    "alias": "sequential_image_generation",
+                    "label": "Model decides whether to generate multiple related images",
+                    "options": [
+                        {
+                            "value": 0,
+                            "alias": "0",
+                            "label": "No"
+                        },
+                        {
+                            "value": 2,
+                            "alias": "2",
+                            "label": "Up to 2"
+                        },
+                        {
+                            "value": 3,
+                            "alias": "3",
+                            "label": "Up to 3"
+                        },
+                        {
+                            "value": 4,
+                            "alias": "4",
+                            "label": "Up to 4"
+                        },
+                        {
+                            "value": 5,
+                            "alias": "5",
+                            "label": "Up to 5"
+                        }
+                    ],
+                    "default": 0
+                }
+            ]
+        },
+        {
+            "id": "alibaba_i2i_fal",
+            "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
+            "nice_name": {
+                "depends_on": "model_alibaba",
+                "values": {
+                    "fal-ai/qwen-image-2/edit": "Qwen 2 (FAL Key)",
+                    "fal-ai/qwen-image-2/pro/edit": "Qwen 2 Pro (FAL Key)",
+                    "wan/v2.6/image-to-image": "Wan 2.6 (FAL Key)",
+                    "fal-ai/wan/v2.7/edit": "Wan 2.7 (FAL Key)",
+                    "fal-ai/wan/v2.7/pro/edit": "Wan 2.7 Pro (FAL Key)",
+                    "fal-ai/wan-25-preview/image-to-image": "Wan 2.5 (FAL Key)"
+                }
+            },
+            "image_format": "data_uri",
+            "filename_suffix": {
+                "depends_on": "model_alibaba",
+                "values": {
+                    "fal-ai/qwen-image-2/edit": "qwen_v2_i2i",
+                    "fal-ai/qwen-image-2/pro/edit": "qwen_v2_pro_i2i",
+                    "wan/v2.6/image-to-image": "wan_v2_6_i2i",
+                    "fal-ai/wan/v2.7/edit": "wan_v2_7_i2i",
+                    "fal-ai/wan/v2.7/pro/edit": "wan_v2_7_pro_i2i",
+                    "fal-ai/wan-25-preview/image-to-image": "wan_v2_5_i2i"
+                }
+            },
+            "max_reference_images": {
+                "default": 2,
+                "depends_on": "model_alibaba",
+                "values": {
+                    "fal-ai/qwen-image-2/edit": 2,
+                    "fal-ai/qwen-image-2/pro/edit": 2,
+                    "fal-ai/wan-25-preview/image-to-image": 1,
+                    "wan/v2.6/image-to-image": 2,
+                    "fal-ai/wan/v2.7/edit": 3,
+                    "fal-ai/wan/v2.7/pro/edit": 3
+                }
+            },
+            "supports_negative_prompt": true,
+            "english_only": false,
+            "mask_handling": {
+                "supported": false,
+                "required": false
+            },
+            "preprocessor": [
+                {
+                    "name": "image_optimizer_by_min_size",
+                    "args": {
+                        "min_size": 384,
+                        "uscale_2_min": "{{allow_uscale_2_min}}",
+                        "filter_by": "{{model_alibaba}}",
+                        "filter_type": "contains",
+                        "values": [
+                            "wan/v2.6/",
+                            "wan-25"
+                        ]
+                    }
+                },
+                {
+                    "name": "image_optimizer_by_min_size",
+                    "args": {
+                        "min_size": 272,
+                        "min_area": 589824,
+                        "uscale_2_min": "{{allow_uscale_2_min}}",
+                        "filter_by": "{{model_alibaba}}",
+                        "filter_type": "contains",
+                        "values": "wan/v2.7/"
+                    }
+                },
+                {
+                    "name": "image_get_size_mp",
+                    "args": {
+                        "output_resolution_mp": 4, //qwen
+                        "min_size": 512,
+                        "auto_resize_2_max": "{{auto_resize_2_max}}",
+                        "filter_by": "{{model_alibaba}}",
+                        "filter_type": "contains",
+                        "values": "qwen-image-2"
+                    }
+                },
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 1280, //wan 2.6-2.7
+                        "min_size": 768,
+                        "auto_resize_2_max": "{{auto_resize_2_max}}",
+                        "filter_by": "{{model_alibaba}}",
+                        "filter_type": "contains",
+                        "values": "wan/"
+                    }
+                },
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 1440, //wan 2.5
+                        "min_size": 384,
+                        "filter_by": "{{model_alibaba}}",
+                        "auto_resize_2_max": "{{auto_resize_2_max}}",
+                        "filter_type": "contains",
+                        "values": "wan-25-preview"
+                    }
+                }
+            ],
+            "request_config": {
+                "endpoint_url": "https://queue.fal.run/{{model_alibaba}}",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Key {{env:FAL_API_KEY}}",
+                    "X-Fal-Store-IO": "0"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "{{?negative_prompt}}negative_prompt": "{{negative_prompt}}",
+                    "enable_safety_checker": false,
+                    "enable_prompt_expansion": false,
+                    "image_size": "{{calculated_output_size}}",
+                    "num_images": "{{num_images}}",
+                    "output_format": "png",
+                    "image_urls": [
+                        "{{source_image}}",
+                        "{{resolved_image_array}}"
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "fal",
+                "params": {
+                    "model_path": "{{model_alibaba}}"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "negative_prompt",
+                    "type": "string",
+                    "alias": "negative_prompt",
+                    "label": "Negative Prompt",
+                    "default": "censored, nsfw censored"
+                },
+                {
+                    "name": "model_alibaba",
+                    "type": "dropdown",
+                    "label": "Model",
+                    "options": [
+                        {
+                            "value": "fal-ai/wan/v2.7/edit",
+                            "label": "Wan 2.7 (0.03 per image) - 1280 px"
+                        },
+                        {
+                            "value": "fal-ai/wan/v2.7/pro/edit",
+                            "label": "Wan 2.7 Pro (0.075 per image) - 1280 px"
+                        },
+                        {
+                            "value": "fal-ai/qwen-image-2/edit",
+                            "label": "Qwen 2 (0.035 per image) - 2048 px"
+                        },
+                        {
+                            "value": "fal-ai/qwen-image-2/pro/edit",
+                            "label": "Qwen 2 Pro (0.075 per image) - 2048 px"
+                        },
+                        {
+                            "value": "wan/v2.6/image-to-image",
+                            "label": "Wan 2.6 (0.03 per image) - 1280 px"
+                        },
+                        {
+                            "value": "fal-ai/wan-25-preview/image-to-image",
+                            "label": "Wan 2.5 (0.05 per image) - 1440 px"
+                        }
+                    ],
+                    "default": "fal-ai/qwen-image-2/edit"
+                },
+                {
+                    "name": "auto_resize_2_max",
+                    "type": "boolean",
+                    "label": "Auto resize to max size — the model will resize the output image to its maximum size",
+                    "default": true
+                },
+                {
+                    "name": "allow_uscale_2_min",
+                    "alias": "allow_uscale_2_min",
+                    "type": "boolean",
+                    "label": "Allow upscale to minimum size - only for Wan models",
+                    "default": false
+                }
+            ]
+        },
+        {
+            "id": "bfl_flux2_i2i",
+            "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
+            "nice_name": {
+                "default": "FLUX.2 {{model_flux2}} (BFL Key)",
+                "depends_on": "model_flux2",
+                "values": {
+                    "pro": "FLUX.2 Pro (BFL Key)",
+                    "max": "FLUX.2 Max (BFL Key)",
+                    "klein-9b": "FLUX.2 Klein 9B (BFL Key)",
+                    "klein-4b": "FLUX.2 Klein 4B (BFL Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "flux2_{{model_flux2}}_i2i",
+                "depends_on": "model_flux2",
+                "values": {
+                    "klein-9b": "flux2_klein_9b_i2i",
+                    "klein-4b": "flux2_klein_4b_i2"
+                }
+            },
+            "remarks": "<b>Pricing:</b> based on megapixels (1 MP = 1024x1024). Each image (input and output) is rounded up to the next MP. Each reference photo counts as at least 1 MP. Max 4 MP.<br><table style='width:100%; font-size: 0.8em; border-top: 1px solid #555; margin-top: 4px;'><tr><td>Model</td><td>1st MP</td><td>Next</td><td>Refs</td></tr><tr><td><b>Pro</b></td><td>$0.03</td><td>$0.015</td><td>$0.015</td></tr><tr><td><b>Max</b></td><td>$0.07</td><td>$0.03</td><td>$0.03</td></tr><tr><td><b>9B (K)</b></td><td>$0.015</td><td>$0.002</td><td>$0.002</td></tr><tr><td><b>4B (K)</b></td><td>$0.014</td><td>$0.001</td><td>$0.001</td></tr></table><br>Note: all generations that do not pass moderation are charged at full cost.",
+            "image_format": "base64_raw",
+            "max_reference_images": {
+                "default": 7,
+                "depends_on": "model_flux2",
+                "values": {
+                    "klein-9b": 3,
+                    "klein-4b": 3
+                }
+            },
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image_urls"
+            },
+            "preprocessor": [
+                {
+                    "name": "image_optimizer_mp",
+                    "args": {
+                        "optimization_mode": "{{input_optimization}}",
+                        "output_resolution_mp": "{{output_resolution_mp}}",
+                        "min_size": 64,
+                        "step": 16
+                    }
+                },
+                {
+                    "name": "image_get_size_mp",
+                    "args": {
+                        "output_resolution_mp": "{{output_resolution_mp}}",
+                        "min_size": 64,
+                        "step": 16,
+                        "always_output": false
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                "endpoint_url": "https://api.bfl.ai/v1/flux-2-{{model_flux2}}",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "x-key": "{{env:BFL_API_KEY}}"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "output_format": "png",
+                    "safety_tolerance": 5,
+                    "disable_pup": true,
+                    "transparent_bg": "{{transparent_bg}}",
+                    "{{?calculated_output_size_width}}width": "{{calculated_output_size_width}}",
+                    "{{?calculated_output_size_height}}height": "{{calculated_output_size_height}}",
+                    "input_image": "{{source_image}}",
+                    "{{?reference_1}}input_image_2": "{{reference_1}}",
+                    "{{?reference_2}}input_image_3": "{{reference_2}}",
+                    "{{?reference_3}}input_image_4": "{{reference_3}}",
+                    "{{?reference_4}}input_image_5": "{{reference_4}}",
+                    "{{?reference_5}}input_image_6": "{{reference_5}}",
+                    "{{?reference_6}}input_image_7": "{{reference_6}}",
+                    "{{?reference_7}}input_image_8": "{{reference_7}}"
+                }
+            },
+            "response_config": {
+                "$ref": "bfl"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "model_flux2",
+                    "type": "dropdown",
+                    "label": "Model Variant",
+                    "options": [
+                        {
+                            "value": "pro",
+                            "label": "Flux 2 Pro (from $0.045 per image)"
+                        },
+                        {
+                            "value": "max",
+                            "label": "Flux 2 Max (from $0.1 per image)"
+                        },
+                        {
+                            "value": "klein-9b",
+                            "label": "Flux 2 Klein 9B (from $0.017 per image)"
+                        },
+                        {
+                            "value": "klein-4b",
+                            "label": "Flux 2 Klein 4B (from $0.015 per image)"
+                        }
+                    ],
+                    "default": "pro"
+                },
+                {
+                    "alias": "output_resolution_mp",
+                    "name": "output_resolution_mp",
+                    "type": "dropdown",
+                    "label": "Output Resolution",
+                    "options": [
+                        {
+                            "value": "1-",
+                            "label": "up to 1mp [~ 1K]"
+                        },
+                        {
+                            "value": "1",
+                            "label": "1mp [~ 1K]"
+                        },
+                        {
+                            "value": "2-",
+                            "label": "up to 2mp [~ 1.5K]"
+                        },
+                        {
+                            "value": "2",
+                            "label": "2mp [~ 1.5K]"
+                        },
+                        {
+                            "value": "3-",
+                            "label": "up to 3mp [~ 1.7K]"
+                        },
+                        {
+                            "value": "3",
+                            "label": "3mp [~ 1.7K]"
+                        },
+                        {
+                            "value": "4-",
+                            "label": "up to 4mp [~ 2K]"
+                        },
+                        {
+                            "value": "4",
+                            "label": "4mp [~ 2K]"
+                        }
+                    ],
+                    "default": "1-"
+                },
+                {
+                    "name": "input_optimization",
+                    "type": "dropdown",
+                    "label": "Price optimization input images",
+                    "options": [
+                        {
+                            "value": "auto",
+                            "label": "Auto - all images will be downscaled to chosen Output Resolution"
+                        },
+                        {
+                            "value": "auto_plus",
+                            "label": "Auto - main image will be downscaled to chosen Output Resolution, reference images will be downscaled to 1MP each"
+                        },
+                        {
+                            "value": "refs_2_1mp",
+                            "label": "Only reference images up to 1MP each"
+                        },
+                        {
+                            "value": "all_1mp",
+                            "label": "All images up to 1MP each"
+                        }
+                    ],
+                    "default": "auto_plus"
+                },
+                {
+                    "name": "transparent_bg",
+                    "type": "boolean",
+                    "label": "Transparent Background",
+                    "default": false
+                }
+            ]
+        }
+    ]
+}

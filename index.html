@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FromPS / ToPS</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="panel-container">
+
+        <!-- Global Source Selection -->
+        <div class="global-controls">
+            <sp-dropdown id="source-selection" placeholder="Select source">
+                <sp-menu slot="options">
+                </sp-menu>
+            </sp-dropdown>
+        </div>
+
+        <!-- Card A: FromPS -->
+        <div class="card state-idle" id="card-fromps">
+
+            <div class="card-content">
+
+                <!-- Idle State Content -->
+                <div class="idle-content">
+                    <div class="source-mode-container">
+                        <sp-label>PsSource:</sp-label>
+                        <sp-dropdown id="source-mode" placeholder="Select source">
+                            <sp-menu slot="options">
+                                <sp-menu-item value="copyMerged" selected>Copy merged</sp-menu-item>
+                                <sp-menu-item value="currentLayer">Copy layer</sp-menu-item>
+                            </sp-menu>
+                        </sp-dropdown>
+                    </div>
+
+                    <div class="tops-placeholder">
+                        <div class="placeholder-text">
+                            Select an area in Photoshop<br>and click "Capture"
+                        </div>
+                    </div>
+
+                    <div class="action-grid">
+                        <div class="split-button-container" style="flex: 1;">
+                            <sp-action-button id="btn-capture" quiet style="flex: 1;">
+                                Capture Selection
+                            </sp-action-button>
+                            <sp-action-button id="btn-capture-options" quiet class="split-button-dropdown icon-only"
+                                title="Capture options">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <path fill="currentColor"
+                                        d="M4,7.01a1,1,0,0,1,1.7055-.7055l3.289,3.286,3.289-3.286a1,1,0,0,1,1.437,1.3865l-.0245.0245L9.7,11.7075a1,1,0,0,1-1.4125,0L4.293,7.716A.9945.9945,0,0,1,4,7.01Z" />
+                                </svg>
+                            </sp-action-button>
+                            <div class="capture-options-menu" id="capture-options-menu" style="display: none;">
+                                <sp-menu selects="single">
+                                    <sp-menu-item value="direct" selected>Fast</sp-menu-item>
+                                    <sp-menu-item value="viaTempDoc">Slow with transparency</sp-menu-item>
+                                    <sp-menu-divider></sp-menu-divider>
+                                    <sp-menu-item value="fullDoc">Full Doc Mask — Fast</sp-menu-item>
+                                    <sp-menu-item value="fullDocViaTempDoc">Full Doc Mask — Slow</sp-menu-item>
+                                </sp-menu>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Captured State Content -->
+                <div class="captured-content">
+                    <div class="preview-area" id="preview-fromps">
+                        <img id="img-fromps" alt="Captured preview" style="display: none;">
+                        <img id="img-overlay-fromps" class="overlay-image" alt="Mask overlay" style="display: none;">
+                        <sp-action-button class="close-button" id="btn-clear-fromps" quiet title="Clear / Close">
+                            <sp-icon name="ui:CrossMedium" size="s" slot="icon"></sp-icon>
+                        </sp-action-button>
+                    </div>
+
+                    <!-- Action Buttons Grid -->
+                    <div class="action-grid">
+                        <!-- Save Split Button -->
+                        <div class="split-button-container compact">
+                            <sp-action-button id="btn-save-image" quiet title="Save as PNG"
+                                class="split-button-main icon-only">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <path fill="currentColor"
+                                        d="M16.5,12h-1a.5.5,0,0,0-.5.5V15H3V12.5a.5.5,0,0,0-.5-.5h-1a.5.5,0,0,0-.5.5v4a.5.5,0,0,0,.5.5h15a.5.5,0,0,0,.5-.5v-4A.5.5,0,0,0,16.5,12Z" />
+                                    <path fill="currentColor"
+                                        d="M8.8245,13.428a.25.25,0,0,0,.35,0L12.9,9.6655a.391.391,0,0,0,.1-.263.4.4,0,0,0-.4-.4H10V1.5A.5.5,0,0,0,9.5,1h-1a.5.5,0,0,0-.5.5V9H5.4a.4.4,0,0,0-.4.4.391.391,0,0,0,.1.263Z" />
+                                </svg>
+                            </sp-action-button>
+                            <sp-action-button id="btn-save-options" quiet class="split-button-dropdown icon-only"
+                                title="Save options">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <path fill="currentColor"
+                                        d="M4,7.01a1,1,0,0,1,1.7055-.7055l3.289,3.286,3.289-3.286a1,1,0,0,1,1.437,1.3865l-.0245.0245L9.7,11.7075a1,1,0,0,1-1.4125,0L4.293,7.716A.9945.9945,0,0,1,4,7.01Z" />
+                                </svg>
+                            </sp-action-button>
+                            <div class="save-options-menu" id="save-options-menu" style="display: none;">
+                                <sp-menu selects="single">
+                                    <sp-menu-item value="imageOnly" selected>Image Only</sp-menu-item>
+                                    <sp-menu-item value="maskOnly">Mask Only</sp-menu-item>
+                                    <sp-menu-item value="imageAndMask">Both</sp-menu-item>
+                                </sp-menu>
+                            </div>
+                        </div>
+
+                        <!-- Copy Image Button -->
+                        <div class="std-button-container compact">
+                            <sp-action-button id="btn-copy" quiet title="Copy Image to Clipboard" class="icon-only">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="9" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="7" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="5" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="3" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="14" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="12" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="10" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="8" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="3" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="5" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="7" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="9" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="8" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="10" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="12" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="14" y="11" />
+                                    <path fill="currentColor"
+                                        d="M5,6H1.5a.5.5,0,0,0-.5.5v10a.5.5,0,0,0,.5.5h10a.5.5,0,0,0,.5-.5V13H5.5a.5.5,0,0,1-.5-.5Z" />
+                                </svg>
+                            </sp-action-button>
+                        </div>
+
+                        <!-- Copy Mask Button -->
+                        <div class="std-button-container compact">
+                            <sp-action-button id="btn-copy-mask" quiet title="Copy Mask to Clipboard"
+                                class="icon-with-text">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="9" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="7" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="5" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="3" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="16" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="14" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="12" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="10" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="8" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="1" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="3" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="5" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="7" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="9" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="6" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="8" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="10" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="12" y="11" />
+                                    <rect fill="currentColor" height="1" rx="0.25" width="1" x="14" y="11" />
+                                    <path fill="currentColor"
+                                        d="M5,6H1.5a.5.5,0,0,0-.5.5v10a.5.5,0,0,0,.5.5h10a.5.5,0,0,0,.5-.5V13H5.5a.5.5,0,0,1-.5-.5Z" />
+                                </svg>
+                                Mask
+                            </sp-action-button>
+                        </div>
+
+                        <!-- Drag Out Split Button -->
+                        <div class="split-button-container compact">
+                            <sp-action-button id="btn-drag" quiet title="Drag image + mask to external app"
+                                class="split-button-main icon-only">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <rect fill="currentColor" height="3" width="1" x="1" y="10" />
+                                    <rect fill="currentColor" height="3" width="1" x="1" y="5" />
+                                    <path fill="currentColor" d="M2,16V15H1v1.5555A.4445.4445,0,0,0,1.4445,17H3V16Z" />
+                                    <rect fill="currentColor" height="1" width="3" x="5" y="16" />
+                                    <rect fill="currentColor" height="3" width="1" x="16" y="5" />
+                                    <path fill="currentColor"
+                                        d="M16.5555,1H15V2h1V3h1V1.4445A.4445.4445,0,0,0,16.5555,1Z" />
+                                    <rect fill="currentColor" height="1" width="3" x="10" y="1" />
+                                    <rect fill="currentColor" height="1" width="3" x="5" y="1" />
+                                    <path fill="currentColor" d="M3,1H1.5a.5.5,0,0,0-.5.5V3H2V2H3Z" />
+                                    <path fill="currentColor"
+                                        d="M17.442,12.342l-2.0155-1.7685A.24452.24452,0,0,0,15.25,10.5a.25.25,0,0,0-.25.25V12H13V10h1.25a.25.25,0,0,0,.25-.25.245.245,0,0,0-.074-.175L12.658,7.5585a.25.25,0,0,0-.3165,0L10.5735,9.575A.24446.24446,0,0,0,10.5,9.75a.25.25,0,0,0,.25.25H12v2H10V10.75a.25.25,0,0,0-.25-.25.24448.24448,0,0,0-.175.0735L7.558,12.342a.25.25,0,0,0,0,.316l2.017,1.768a.245.245,0,0,0,.175.074.25.25,0,0,0,.25-.25V13h2v2H10.75a.25.25,0,0,0-.25.25.24352.24352,0,0,0,.0735.175l1.768,2.017a.25.25,0,0,0,.3165,0l1.768-2.017a.244.244,0,0,0,.074-.175.25.25,0,0,0-.25-.25H13V13h2v1.25a.25.25,0,0,0,.25.25.245.245,0,0,0,.175-.074l2.017-1.768A.25.25,0,0,0,17.442,12.342Z" />
+                                </svg>
+                            </sp-action-button>
+                            <sp-action-button id="btn-drag-options" quiet class="split-button-dropdown icon-only"
+                                title="Drag options">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <path fill="currentColor"
+                                        d="M4,7.01a1,1,0,0,1,1.7055-.7055l3.289,3.286,3.289-3.286a1,1,0,0,1,1.437,1.3865l-.0245.0245L9.7,11.7075a1,1,0,0,1-1.4125,0L4.293,7.716A.9945.9945,0,0,1,4,7.01Z" />
+                                </svg>
+                            </sp-action-button>
+                            <!-- Dropdown Menu (hidden by default) -->
+                            <div class="drag-options-menu" id="drag-options-menu" style="display: none;">
+                                <sp-menu selects="single">
+                                    <sp-menu-item value="imageOnly" selected>Image Only</sp-menu-item>
+                                    <sp-menu-item value="maskOnly">Mask Only</sp-menu-item>
+                                    <sp-menu-item value="imageAndMask">Both</sp-menu-item>
+                                    <sp-menu-item value="imageAndMask2WebHelper">Both to WebHelper</sp-menu-item>
+                                </sp-menu>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Message -->
+                <div class="status-message" id="status-fromps"></div>
+
+            </div>
+        </div>
+
+        <!-- status warning icon -->
+        <div style="position: relative;">
+            <div id="status-warning-container"><sp-action-button id="status-warning-button" quiet><sp-icon
+                        name="ui:AlertSmall" size="xxs"></sp-icon><sp-tooltip id="status-warning-tooltip" self-managed
+                        placement="bottom"></sp-tooltip></sp-action-button>
+            </div>
+        </div>
+
+        <!-- Card B: ToPS -->
+        <div class="card state-idle-tops" id="card-tops">
+
+            <div class="card-content">
+
+                <!-- Idle State Content -->
+                <div class="idle-content-tops">
+                    <div class="tops-placeholder">
+                        <sp-icon-folder size="l"></sp-icon-folder>
+                        <div class="placeholder-text">
+                            Load an image<br>using buttons below
+                        </div>
+                    </div>
+
+                    <div class="action-grid">
+                        <div class="std-button-container" style="flex: 1;">
+                            <sp-action-button id="btn-load-file" quiet style="width: 100%;">
+                                Load File...
+                            </sp-action-button>
+                        </div>
+                        <div class="std-button-container" style="flex: 1;">
+                            <sp-action-button id="btn-paste" quiet style="width: 100%;">
+                                Paste
+                            </sp-action-button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ready State Content -->
+                <div class="ready-content">
+                    <div class="preview-area" id="preview-tops">
+                        <img id="img-tops" alt="Result preview" style="display: none;">
+                        <sp-action-button class="close-button" id="btn-clear-tops" quiet title="Clear / Close">
+                            <sp-icon name="ui:CrossMedium" size="s" slot="icon"></sp-icon>
+                        </sp-action-button>
+                    </div>
+
+                    <div class="action-grid">
+                        <div class="split-button-container" style="flex: 1;">
+                            <sp-action-button id="btn-place-back" quiet class="split-button-main icon-with-text"
+                                style="flex: 1;">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <path fill="currentColor"
+                                        d="M9.6185,13.4l4.542,2.5315a.4095.4095,0,0,0,.54967-.18234l.00033-.00066,3.2425-8.073Z" />
+                                    <path fill="currentColor"
+                                        d="M8.0415,13.8815V17.6a.25.25,0,0,0,.412.1905l2.66-2.2625Z" />
+                                    <path fill="currentColor"
+                                        d="M3.831,12H2V2H16V5.9l.98-.3055H17V1.5a.5.5,0,0,0-.5-.5H1.5a.5.5,0,0,0-.5.5v11a.5.5,0,0,0,.5.5H5.8335Z" />
+                                    <path fill="currentColor"
+                                        d="M17.3955,6.7675,4.539,10.722a.2045.2045,0,0,0-.033.3795L8.063,12.841Z" />
+                                </svg>
+                                Place Back
+                            </sp-action-button>
+                            <sp-action-button id="btn-place-back-options" quiet class="split-button-dropdown icon-only"
+                                title="Place Back options">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18"
+                                    slot="icon">
+                                    <path fill="currentColor"
+                                        d="M4,7.01a1,1,0,0,1,1.7055-.7055l3.289,3.286,3.289-3.286a1,1,0,0,1,1.437,1.3865l-.0245.0245L9.7,11.7075a1,1,0,0,1-1.4125,0L4.293,7.716A.9945.9945,0,0,1,4,7.01Z" />
+                                </svg>
+                            </sp-action-button>
+                            <div class="place-back-options-menu" id="place-back-options-menu" style="display: none;">
+                                <sp-menu selects="single">
+                                    <sp-menu-item value="smartObjectFast" selected>Fast &
+                                        Recomended</sp-menu-item>
+                                    <sp-menu-item value="smartObjectSlow">Editable, Slow &
+                                        Larger File Size</sp-menu-item>
+                                    <sp-menu-item value="maskSmartObject">Custom Inpaint
+                                        Mask</sp-menu-item>
+                                </sp-menu>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Message -->
+                <div class="status-message" id="status-tops"></div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Settings Dialog -->
+    <dialog id="settings-dialog">
+        <form method="dialog">
+            <sp-heading level="2" style="margin-top: 0;">Settings</sp-heading>
+            <sp-divider size="medium" style="margin-bottom: 12px;"></sp-divider>
+
+            <sp-body style="margin-bottom: 8px;">Allowed Aspect Ratios:</sp-body>
+            <div id="settings-ratios-list">
+                <!-- Rows will be injected dynamically -->
+            </div>
+
+            <sp-divider size="small" style="margin-top: 12px; margin-bottom: 12px;"></sp-divider>
+            <footer style="display: flex; justify-content: flex-end; gap: 8px;">
+                <sp-button variant="secondary" quiet id="btn-settings-cancel">Cancel</sp-button>
+                <sp-button variant="cta" id="btn-settings-save">Save</sp-button>
+            </footer>
+        </form>
+    </dialog>
+
+    <script src="index.js"></script>
+</body>
+
+</html>

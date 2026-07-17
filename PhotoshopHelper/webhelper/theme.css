@@ -1,0 +1,428 @@
+/* Custom Theme for WebHelper */
+:root {
+  --wh-brand-primary: #5755d9;
+  --wh-bg-base: #f7f8f9;
+  --wh-bg-dark: #1b1b1b;
+  --wh-text-dark: #eee;
+  --wh-border-color: #e7e9ed;
+}
+
+body.wh-body {
+  background-color: var(--wh-bg-base);
+  min-height: 100vh;
+  overscroll-behavior: contain;
+}
+
+/* Dark theme style for Photoshop consistency */
+body.wh-body.dark-mode {
+  background-color: var(--wh-bg-dark);
+  color: var(--wh-text-dark);
+}
+
+.wh-body.dark-mode .card,
+.wh-body.dark-mode .empty,
+.wh-body.dark-mode .form-input,
+.wh-body.dark-mode .form-select,
+.wh-body.dark-mode .tab .tab-item a {
+  background-color: #2b2b2b;
+  border-color: #444;
+  color: #ddd;
+}
+
+.wh-body.dark-mode .tab .tab-item a:hover {
+  background-color: #3b3b3b;
+}
+
+.wh-body.dark-mode .tab .tab-item.active a {
+  border-color: var(--wh-brand-primary);
+  color: var(--wh-brand-primary);
+}
+
+/* Task Control styles */
+.wh-app-wrapper {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  transition: border-color 0.3s ease;
+  padding: 0.5rem;
+  margin-top: 1rem;
+  background: white;
+}
+
+.wh-body.dark-mode .wh-app-wrapper {
+  background: #2b2b2b;
+}
+
+/* Colors for tasks */
+:root {
+  --wh-task-color-0: #e74c3c;
+  /* Red */
+  --wh-task-color-1: #3498db;
+  /* Blue */
+  --wh-task-color-2: #2ecc71;
+  /* Green */
+  --wh-task-color-3: #f1c40f;
+  /* Yellow */
+  --wh-task-color-4: #9b59b6;
+  /* Purple */
+  --wh-task-color-5: #e67e22;
+  /* Orange */
+  --wh-task-color-6: #1abc9c;
+  /* Teal */
+  --wh-task-color-7: #d35400;
+  /* Pumpkin */
+  --wh-task-color-8: #34495e;
+  /* Navy */
+  --wh-task-color-9: #c0392b;
+  /* Dark Red */
+}
+
+.wh-task-control {
+  margin-bottom: 0;
+  border: none;
+}
+
+.wh-task-control-header {
+  border-bottom: 1px solid var(--wh-border-color);
+  padding: 0.8rem;
+}
+
+.wh-task-control-tabs {
+  margin: 0;
+  padding: 0.5rem 0.8rem 0;
+  border-bottom: 1px solid var(--wh-border-color);
+}
+
+/* Source Tab Preview Area */
+.wh-source-tab-preview {
+  position: relative;
+  width: 100%;
+  max-height: 600px;
+  overflow: hidden;
+  background-color: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.wh-source-tab-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+.wh-source-tab-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: block;
+}
+
+/* In overlay mode, white becomes transparent, black tints the image */
+.wh-source-tab-overlay.overlay-mode {
+  mix-blend-mode: multiply;
+  opacity: 0.7;
+  /* Controls how dark the non-masked areas are */
+}
+
+.wh-source-tab-overlay.mask-only {
+  mix-blend-mode: normal;
+  opacity: 1;
+}
+
+/* Settings and Forms */
+.wh-source-tab-settings {
+  padding: 1rem;
+}
+
+.wh-source-tab-prompt {
+  margin-bottom: 1rem;
+}
+
+.wh-source-tab-generate {
+  margin-top: 0;
+}
+
+/* Result Tab Image */
+.wh-result-tab-image {
+  max-width: 100%;
+  display: block;
+  margin: 0 auto 1rem;
+}
+
+.wh-result-tab-params {
+  padding: 0.5rem;
+  background-color: rgba(0, 0, 0, 0.05);
+  font-size: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.wh-result-tab-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.wh-source-tab-references {
+  border: 2px dashed #ccc;
+  border-radius: 4px;
+  padding: 0.5rem;
+  transition: all 0.2s ease;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.wh-source-tab-references.drag-over {
+  border-color: var(--wh-brand-primary);
+  background: #f0f0ff;
+}
+
+.wh-body.dark-mode .wh-source-tab-references.drag-over {
+  background: #35354a;
+}
+
+.wh-reference-item {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+  cursor: grab;
+  transition: opacity 0.15s ease, box-shadow 0.15s ease;
+  touch-action: none;
+  /* Disables browser pan/zoom on touch so our handlers fire cleanly */
+  -webkit-touch-callout: none;
+  /* iOS: suppresses "Save Image" callout on long-press */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Item being dragged */
+.wh-reference-item.dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+
+/* Vertical separator shown between items during drag-to-sort */
+.wh-ref-drop-separator {
+  width: 3px;
+  height: 80px;
+  background: var(--wh-brand-primary);
+  border-radius: 2px;
+  flex-shrink: 0;
+  align-self: center;
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(87, 85, 217, 0.5);
+}
+
+/* @imageN badge at the bottom of the thumbnail */
+.wh-reference-item .ref-index-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.5rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 1px 0;
+  border-radius: 0 0 4px 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.wh-reference-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--wh-border-color);
+}
+
+.wh-reference-item .btn-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.wh-reference-add-btn {
+  width: 80px;
+  height: 80px;
+  border: 2px dashed #ccc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.wh-reference-add-btn:hover {
+  border-color: var(--wh-brand-primary);
+  color: var(--wh-brand-primary);
+}
+
+.wh-reference-add-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.wh-loading {
+  padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.wh-error-banner {
+  margin: 1rem 0;
+}
+
+/* Viewport adjustments */
+.wh-image-container {
+  position: relative;
+  display: inline-block;
+}
+
+.wh-view-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+  gap: 0.5rem;
+}
+
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* .wh-source-toast-notification.toast {
+  animation: appear 0.3s ease-out;
+} */
+
+/* ===== Global Stage ===== */
+.wh-global-stage {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.wh-global-stage-accordion {
+  position: relative;
+}
+
+.wh-global-stage-header {
+  cursor: pointer;
+  padding: 0.5rem 0.8rem;
+  user-select: none;
+}
+
+.wh-global-stage-header:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.wh-global-stage-body {
+  position: absolute;
+  z-index: 100;
+  top: 100%;
+  left: 0;
+  min-width: 100%;
+  border: 2px dashed #ccc;
+  border-radius: 4px;
+  padding: 0.5rem;
+  transition: all 0.2s ease;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.wh-global-stage-accordion.drag-over {
+  border: 2px dashed var(--wh-brand-primary);
+  border-radius: 4px;
+}
+
+.wh-global-stage-accordion.drag-over .wh-global-stage-body {
+  background: #f0f0ff;
+}
+
+.wh-body.dark-mode .wh-global-stage-accordion.drag-over .wh-global-stage-body {
+  background: #35354a;
+}
+
+.wh-glb-item {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+  cursor: grab;
+  transition: opacity 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.wh-glb-item.dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+
+.wh-glb-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--wh-border-color);
+}
+
+.wh-glb-item .wh-glb-index-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.5rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 1px 0;
+  border-radius: 0 0 4px 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.wh-glb-item .wh-glb-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+/* Dark mode support */
+.wh-body.dark-mode .wh-global-stage-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.wh-body.dark-mode .wh-global-stage-body {
+  border-color: #444;
+  background: #2b2b2b;
+}
+
+.wh-body.dark-mode .wh-glb-item .wh-glb-remove {
+  background: #333;
+}
