@@ -694,6 +694,193 @@
             ]
         },
         {
+            "id": "seedream_v5_0_pro_i2i_replicate",
+            "name": "Seedream v5.0 Pro via Replicate API Key (from $0.045/per image)",
+            "nice_name": "Seedream 5.0 Pro (REPLICATE Key)",
+            "filename_suffix": "seedream_5_pro_i2i",
+            "image_format": "data_uri",
+            "max_reference_images": 9,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image_input"
+            },
+            "allowed_aspect_ratios": [
+                "21:9",
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "3:4",
+                "2:3",
+                "9:16"
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                "endpoint_url": "https://api.replicate.com/v1/models/bytedance/seedream-5-pro/predictions",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:REPLICATE_API_KEY}}"
+                },
+                "body_template": {
+                    "input": {
+                        "prompt": "{{prompt}}",
+                        "size": "{{image_size}}",
+                        "{{?!aspect_ratio}}aspect_ratio": "match_input_image",
+                        "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                        "output_format": "png",
+                        "image_input": [
+                            "{{source_image}}",
+                            "{{resolved_image_array}}"
+                        ]
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "replicate",
+                "params": {
+                    "model_path": "bytedance/seedream-5-pro"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "image_size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Output Size",
+                    "options": [
+                        {
+                            "value": "1K",
+                            "alias": "std",
+                            "label": "1K ($0.045/image)"
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "high",
+                            "label": "2K ($0.090/image)"
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "ultra",
+                            "hidden": true
+                        }
+                    ],
+                    "default": "2K"
+                }
+            ]
+        },
+        {
+            "id": "seedream_v5_0_pro_i2i_fal",
+            "name": "Seedream v5.0 Pro via Fal API Key (from $0.0675/per image)",
+            "nice_name": "Seedream v5.0 Pro (FAL Key)",
+            "filename_suffix": "seedream_v5_pro_i2i",
+            "image_format": "data_uri",
+            "remarks": "Main input image is included into the base price. For additional images from 2nd to 9th will be charged $0.0045 each.",
+            "max_reference_images": 9,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image_urls"
+            },
+            "preprocessor": [
+                {
+                    // The 1K UI option maps custom aspect ratios to a 2 MP output.
+                    // This stays below Fal's 1536x1536 (2.25 MP) lower-price threshold.
+                    "name": "image_get_size_mp",
+                    "args": {
+                        "output_resolution_mp": 2,
+                        "auto_resize_2_max": true,
+                        "filter_by": "{{image_size}}",
+                        "filter_type": "equals",
+                        "values": "1K"
+                    }
+                },
+                {
+                    // The 2K UI option maps custom aspect ratios to the 4 MP maximum.
+                    // This is above the lower-price threshold and within Fal's 2048x2048 area limit.
+                    "name": "image_get_size_mp",
+                    "args": {
+                        "output_resolution_mp": 4,
+                        "auto_resize_2_max": true,
+                        "filter_by": "{{image_size}}",
+                        "filter_type": "equals",
+                        "values": "2K"
+                    }
+                }
+            ],
+            "request_config": {
+                "endpoint_url": "https://queue.fal.run/bytedance/seedream/v5/pro/edit",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Key {{env:FAL_API_KEY}}",
+                    "X-Fal-Store-IO": "0"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "enable_safety_checker": false,
+                    "{{?!aspect_ratio}}image_size": "auto_{{image_size}}",
+                    "{{?aspect_ratio}}image_size": "{{calculated_output_size}}",
+                    "num_images": "{{num_images}}",
+                    "image_urls": [
+                        "{{source_image}}",
+                        "{{resolved_image_array}}"
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "fal",
+                "params": {
+                    "model_path": "bytedance/seedream/v5/pro/edit"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "image_size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Output Size",
+                    "options": [
+                        {
+                            "value": "1K",
+                            "alias": "std",
+                            "label": "1K ($0.0675/image + $0.0045/per extra input image"
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "high",
+                            "label": "2K ($0.1350/image + $0.0045/per extra input image"
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "ultra",
+                            "hidden": true
+                        }
+                    ],
+                    "default": "2K"
+                }
+            ]
+        },
+        {
             "id": "alibaba_i2i_fal",
             "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
             "nice_name": {
