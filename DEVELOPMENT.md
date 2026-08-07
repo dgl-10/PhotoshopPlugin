@@ -127,6 +127,7 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     ├── providers.template.json           # Template for AI provider parameter configuration
     ├── providers.json                    # Configuration for AI providers and parameters
     ├── .env.template                     # Template for environment variables
+    ├── Prompt_Providers_Configuration.md # LLM prompt for generating new provider configurations
     ├── Providers_Configuration_Guide.md  # Detailed guide for configuring providers and APIs
     ├── donation-manager.js               # Manages usage tracking and donation prompts
     ├── drag-window.html                  # Overlay window for the Drag & Drop files-to-browser feature

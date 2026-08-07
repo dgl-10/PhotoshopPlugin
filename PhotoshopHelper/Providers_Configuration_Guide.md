@@ -55,6 +55,7 @@
      - 9.4.2 [`image_get_size_mp`](#942-image_get_size_mp)
      - 9.4.3 [`image_optimizer_mp`](#943-image_optimizer_mp)
      - 9.4.4 [`image_optimizer_by_min_size`](#944-image_optimizer_by_min_size)
+     - 9.4.5 [`convert_mask_to_alpha`](#945-convert_mask_to_alpha)
    - 9.5 [Preprocessor Output Variables](#95-preprocessor-output-variables)
 10. [The `depends_on` Pattern — Dynamic Configuration](#10-the-depends_on-pattern--dynamic-configuration)
 11. [Server-Side Processing Flow](#11-server-side-processing-flow)
@@ -66,6 +67,7 @@
     - 13.4 [FLUX.2 (BFL, Multiple Models, Megapixel Preprocessors)](#134-flux2-bfl-multiple-models-megapixel-preprocessors)
     - 13.5 [Alibaba / Wan / Qwen (Multi-Model with Conditional Preprocessors)](#135-alibaba--wan--qwen-multi-model-with-conditional-preprocessors)
     - 13.6 [FLUX Kontext (BFL, English-Only, Simple)](#136-flux-kontext-bfl-english-only-simple)
+    - 13.7 [GPT-Image-2 (OpenAI, Megapixel Preprocessors, Mask Alpha Conversion)](#137-gpt-image-2-openai-megapixel-preprocessors-mask-alpha-conversion)
 
 ---
 
@@ -726,7 +728,11 @@ Some alias values have special meaning — parameters with these aliases are **n
 |-------|-------------|-------|
 | `"prompt"` | Fixed text area at the top of Source Tab | **Must** be declared in `parameters` so the value gets collected and sent to the server. |
 | `"negative_prompt"` | Text area below the main prompt | Only shown when `supports_negative_prompt: true`. Must be declared in `parameters`. |
-| `"num_images"` | Fixed number input next to the "Generate" button | **Global variable.** Extracted from the root payload, NOT from `parameters`. Including it in `parameters` is optional (for structural completeness only — UI ignores its min/max/default). |
+| `"num_images"` | Fixed number input next to the "Generate" button | **Global variable.** Extracted from the root payload, NOT from `parameters`. Do NOT declare in `parameters` — it is not needed and will be ignored by the UI. |
+| `"aspect_ratio"` | Fixed dropdown at the top of Source Tab | **Global variable.** Managed by a fixed UI control. Do NOT declare in `parameters`. Use `allowed_aspect_ratios` (§3.6) to restrict available values. Available as `{{aspect_ratio}}` in templates. |
+
+> [!CAUTION]
+> `aspect_ratio` and `num_images` are **global system variables**, not provider parameters. They are managed by fixed UI controls and are always available as `{{aspect_ratio}}` and `{{num_images}}` in templates. **Never** create a parameter with `alias: "aspect_ratio"` or `alias: "num_images"`. To restrict available aspect ratios, use the `allowed_aspect_ratios` provider field (§3.6).
 
 ### 6.4 Alias Persistence Across Provider Switches
 
@@ -1056,6 +1062,40 @@ Preprocessors can have filter conditions that determine whether they should exec
 ]
 ```
 
+**Example: Fixed-set size APIs (different `max_size` per aspect ratio)**
+
+Some APIs accept only a fixed set of size strings (e.g., OpenAI GPT-Image: `"1024x1024"`, `"1536x1024"`, `"1024x1536"`). Since `image_get_size` assigns `max_size` to the longer side, a single call cannot produce correct values for all ratios (e.g., `max_size: 1536` gives `1536x1536` for `1:1`, but the API requires `1024x1024`). Use multiple preprocessors with `filter_type: "equals"` to match specific aspect ratios:
+
+```jsonc
+"allowed_aspect_ratios": ["3:2", "1:1", "2:3"],
+"preprocessor": [
+    {
+        "name": "image_get_size",
+        "args": {
+            "max_size": 1024,                      // 1:1 → 1024×1024
+            "filter_by": "{{aspect_ratio}}",
+            "filter_type": "equals",
+            "values": "1:1"
+        }
+    },
+    {
+        "name": "image_get_size",
+        "args": {
+            "max_size": 1536,                      // 3:2 → 1536×1024, 2:3 → 1024×1536
+            "filter_by": "{{aspect_ratio}}",
+            "filter_type": "equals",
+            "values": ["3:2", "2:3"]
+        }
+    }
+]
+```
+
+In the `body_template`, use conditional keys to pass the default when no aspect ratio is selected, or the calculated dimensions when one is:
+```jsonc
+"{{?!aspect_ratio}}size": "auto",
+"{{?aspect_ratio}}size": "{{calculated_output_size_width}}x{{calculated_output_size_height}}"
+```
+
 ### 9.4 Available Preprocessors
 
 #### 9.4.1 `image_get_size`
@@ -1087,6 +1127,7 @@ Preprocessors can have filter conditions that determine whether they should exec
 | `auto_resize_2_max` | `boolean` | `false` | If `true`, upscale to target resolution. If `false`, only downscale if larger. |
 | `output_resolution_mp` | `string` | `"1"` | Target megapixels. Format: `"N"` (exact) or `"N-"` (up to, no upscaling, `auto_resize_2_max` has priority). Examples: `"1"`, `"2-"`, `"4"`. |
 | `min_size` | `number` | `256` | Minimum dimension. |
+| `min_area` | `number` / `string` | `0` | Minimum allowed total area. Can be a number (e.g., `1048576`) or a string formula (e.g., `"1024*1024"`). |
 | `step` | `number` | `1` | Rounding step. |
 | `always_output` | `boolean` | `true` | If `false`, skip setting output variables when no resize is needed. |
 
@@ -1100,7 +1141,13 @@ Preprocessors can have filter conditions that determine whether they should exec
 
 #### 9.4.3 `image_optimizer_mp`
 
-**Purpose:** Resizes the actual image data (source, mask, and references) to optimize for per-megapixel pricing. Unlike the `image_get_size*` preprocessors that only *calculate* dimensions, this one actually **transforms the image buffers**.
+**Purpose:** Reduces the dimensions of the actual input image data (source, mask, and references) to optimize for per-megapixel pricing and save on API costs. 
+
+> **Important:** This preprocessor **never upscales** images. It evaluates whether the image needs to be reduced and only downscales it if it exceeds the target resolution. If the original image is smaller, its size remains unchanged.
+
+This optimizer is highly effective for cost-saving strategies. For example, if you are requesting a provider to generate a 4 MP output image, sending a 4 MP input image can be expensive. By using this optimizer (e.g., in `"all_1mp"` mode), you can downscale the input image to 1 MP before sending it, while the generation request variables will still instruct the model to produce a 4 MP output. This approach drastically cuts input costs while maintaining the desired output resolution.
+
+Unlike the `image_get_size*` preprocessors that only *calculate* dimensions, this one actually **transforms the image buffers**.
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -1134,6 +1181,32 @@ Preprocessors can have filter conditions that determine whether they should exec
 | `step` | `number` | `1` | Rounding step for the final dimensions. |
 
 **Returns modified images:** If upscaling was needed, it returns new upscaled image data (`source_image`, `mask_image`, `reference_images`) that replaces the originals in the pipeline. References are returned unmodified.
+
+#### 9.4.5 `convert_mask_to_alpha`
+
+**Purpose:** Converts a white/black mask image into a PNG with alpha channel transparency. Required by APIs (e.g., OpenAI GPT-Image) that expect mask transparency to indicate editable areas, rather than white/black pixel values.
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `mode` | `string` | `"white_to_transparent"` | Which color becomes transparent. `"white_to_transparent"`: white pixels → transparent. `"black_to_transparent"`: black pixels → transparent. |
+| `threshold` | `number` | `128` | Grayscale threshold (0–255). Pixels above threshold are treated as "white", below as "black". |
+| `filter_by` | `string` | — | Filter value for conditional execution. |
+| `filter_type` | `string` | — | Filter comparison type. |
+
+**Returns modified images:** Returns a new `mask_image` with the alpha channel applied, replacing the original mask in the pipeline. The mask is re-encoded as PNG with transparency.
+
+**Typical usage (only runs when mask is present):**
+```jsonc
+{
+    "name": "convert_mask_to_alpha",
+    "args": {
+        "mode": "white_to_transparent",
+        "threshold": 128,
+        "filter_by": "{{mask_image}}",
+        "filter_type": "not_empty"
+    }
+}
+```
 
 ### 9.5 Preprocessor Output Variables
 
@@ -1507,6 +1580,18 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
 {
     "id": "bfl_flux2_i2i",
     "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
+    
+    // Nice name support for dynamic result tab headers
+    "nice_name": {
+        "default": "FLUX.2 {{model_flux2}} (BFL Key)",
+        "depends_on": "model_flux2",
+        "values": {
+            "pro": "FLUX.2 Pro (BFL Key)",
+            "max": "FLUX.2 Max (BFL Key)",
+            "klein-9b": "FLUX.2 Klein 9B (BFL Key)",
+            "klein-4b": "FLUX.2 Klein 4B (BFL Key)"
+        }
+    },
 
     // Dynamic filename suffix with per-model overrides and default with placeholder
     "filename_suffix": {
@@ -1514,12 +1599,12 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
         "depends_on": "model_flux2",
         "values": {
             "klein-9b": "flux2_klein_9b_i2i",
-            "klein-4b": "flux2_klein_4b_i2i"
+            "klein-4b": "flux2_klein_4b_i2"
         }
     },
 
     // HTML remarks with pricing table
-    "remarks": "<b>Pricing:</b> based on megapixels ...",
+    "remarks": "<b>Pricing:</b> based on megapixels (1 MP = 1024x1024). Each image (input and output) is rounded up to the next MP. Each reference photo counts as at least 1 MP. Max 4 MP.<br><table style='width:100%; font-size: 0.8em; border-top: 1px solid #555; margin-top: 4px;'><tr><td>Model</td><td>1st MP</td><td>Next</td><td>Refs</td></tr><tr><td><b>Pro</b></td><td>$0.03</td><td>$0.015</td><td>$0.015</td></tr><tr><td><b>Max</b></td><td>$0.07</td><td>$0.03</td><td>$0.03</td></tr><tr><td><b>9B (K)</b></td><td>$0.015</td><td>$0.002</td><td>$0.002</td></tr><tr><td><b>4B (K)</b></td><td>$0.014</td><td>$0.001</td><td>$0.001</td></tr></table><br>Note: all generations that do not pass moderation are charged at full cost.",
 
     "image_format": "base64_raw",
 
@@ -1527,12 +1612,19 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
     "max_reference_images": {
         "default": 7,
         "depends_on": "model_flux2",
-        "values": { "klein-9b": 3, "klein-4b": 3 }
+        "values": {
+            "klein-9b": 3,
+            "klein-4b": 3
+        }
     },
 
     "supports_negative_prompt": false,
     "english_only": false,
-    "mask_handling": { "supported": false, "required": false },
+    "mask_handling": {
+        "supported": true,
+        "type": "first_referential",
+        "field_name": "image_urls"
+    },
 
     // ═══════════════ TWO CHAINED PREPROCESSORS ═══════════════
     "preprocessor": [
@@ -1570,14 +1662,14 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
         },
         "body_template": {
             "prompt": "{{prompt}}",
-            "input_image": "{{source_image}}",
             "output_format": "png",
             "safety_tolerance": 5,
-            "disable_pup": false,
+            "disable_pup": true,
             "transparent_bg": "{{transparent_bg}}",
             // Conditional width/height — only included if preprocessor set them
             "{{?calculated_output_size_width}}width": "{{calculated_output_size_width}}",
             "{{?calculated_output_size_height}}height": "{{calculated_output_size_height}}",
+            "input_image": "{{source_image}}",
             // Flat reference fields — each conditionally included
             "{{?reference_1}}input_image_2": "{{reference_1}}",
             "{{?reference_2}}input_image_3": "{{reference_2}}",
@@ -1589,12 +1681,22 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
         }
     },
 
-    "response_config": { "$ref": "bfl" },
+    "response_config": {
+        "$ref": "bfl"
+    },
 
     "parameters": [
-        { "name": "prompt", "type": "string", "alias": "prompt", "label": "Text Prompt", "default": "" },
         {
-            "name": "model_flux2", "type": "dropdown", "label": "Model Variant",
+            "name": "prompt",
+            "type": "string",
+            "alias": "prompt",
+            "label": "Text Prompt",
+            "default": ""
+        },
+        {
+            "name": "model_flux2",
+            "type": "dropdown",
+            "label": "Model Variant",
             "options": [
                 { "value": "pro", "label": "Flux 2 Pro (from $0.045 per image)" },
                 { "value": "max", "label": "Flux 2 Max (from $0.1 per image)" },
@@ -1606,7 +1708,9 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
         {
             // Output resolution in megapixels
             "alias": "output_resolution_mp",
-            "name": "output_resolution_mp", "type": "dropdown", "label": "Output Resolution",
+            "name": "output_resolution_mp",
+            "type": "dropdown",
+            "label": "Output Resolution",
             "options": [
                 { "value": "1-", "label": "up to 1mp [~ 1K]" },
                 { "value": "1", "label": "1mp [~ 1K]" },
@@ -1621,16 +1725,23 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
         },
         {
             // Input optimization mode for cost savings
-            "name": "input_optimization", "type": "dropdown", "label": "Price optimization input images",
+            "name": "input_optimization",
+            "type": "dropdown",
+            "label": "Price optimization input images",
             "options": [
                 { "value": "auto", "label": "Auto - all images will be downscaled to chosen Output Resolution" },
-                { "value": "auto_plus", "label": "Auto - main image to Output Resolution, refs to 1MP each" },
+                { "value": "auto_plus", "label": "Auto - main image will be downscaled to chosen Output Resolution, reference images will be downscaled to 1MP each" },
                 { "value": "refs_2_1mp", "label": "Only reference images up to 1MP each" },
                 { "value": "all_1mp", "label": "All images up to 1MP each" }
             ],
             "default": "auto_plus"
         },
-        { "name": "transparent_bg", "type": "boolean", "label": "Transparent Background", "default": false }
+        {
+            "name": "transparent_bg",
+            "type": "boolean",
+            "label": "Transparent Background",
+            "default": false
+        }
     ]
 }
 ```
@@ -1816,6 +1927,164 @@ A straightforward BFL provider with a dynamic endpoint URL and the `english_only
                 { "value": "max" }
             ],
             "default": "pro"
+        }
+    ]
+}
+```
+
+### 13.7 GPT-Image-2 (OpenAI, Megapixel Preprocessors, Mask Alpha Conversion)
+
+Demonstrates several unique patterns:
+- **Megapixel Preprocessors** — `image_optimizer_mp` and `image_get_size_mp` chain for complex price optimization
+- **Mask alpha conversion** — `convert_mask_to_alpha` preprocessor to convert white/black masks to alpha transparency
+- **Optional mask** — `separate_field` mask with conditional `{{?mask_image}}` inclusion
+- **Hardcoded values** — `moderation` and `output_format` baked into `body_template` (not exposed as UI parameters)
+- **Sync response** — with `b64_json`/`url` extraction fallback
+
+```jsonc
+{
+    "id": "gpt_image_2_i2i_openai",
+    "name": "GPT-Image-2 via OpenAI API Key (from ~$0.01)",
+    "nice_name": "GPT-Image-2 (OpenAI Key)",
+    "filename_suffix": "gpt_image_2_i2i",
+    "image_format": "data_uri",
+    "max_reference_images": 15,
+    "supports_negative_prompt": false,
+    "english_only": false,
+    "remarks": "<b>Empirical price guide (Medium quality):</b><br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Resolution</b></td><td><b>Square</b></td><td><b>Landscape / Portrait (2:3)</b></td></tr><tr><td>0.63 MP</td><td>$0.052 (816×816)</td><td>$0.035 (656×1008)</td></tr><tr><td>1.0 MP</td><td>$0.061 (1024×1024)</td><td>$0.043 (832×1248)</td></tr><tr><td>1.5 MP</td><td>$0.071 (1248×1248)</td><td>$0.051 (1024×1536)</td></tr><tr><td>2.0 MP</td><td>$0.080 (1440×1440)</td><td>$0.056 (1168×1760)</td></tr><tr><td>3.0 MP</td><td>$0.098 (1760×1760)</td><td>$0.068 (1440×2160)</td></tr><tr><td>3.5 MP</td><td>$0.107 (1904×1904)</td><td>$0.074 (1552×2336)</td></tr></table><br><i>Note: Table prices are approximate empirical estimates for Medium quality. Low quality is ~3–5× cheaper, while High quality is ~4× more expensive.</i><br><br>Billed by tokens ($30 / 1M output + $8 / 1M image input).<br><b>Quality</b> is the main cost driver. Input images also cost money.<br><b>Tip:</b> Use Low/Medium + Input Optimization to save money.",
+    "mask_handling": {
+        "supported": true,
+        "required": false,
+        "type": "separate_field",
+        "field_name": "mask"
+    },
+    "preprocessor": [
+        {
+            "name": "image_optimizer_mp",
+            "args": {
+                "optimization_mode": "{{input_optimization}}",
+                "output_resolution_mp": "{{output_resolution_mp}}",
+                "min_size": 64,
+                "step": 16
+            }
+        },
+        {
+            "name": "image_get_size_mp",
+            "args": {
+                "output_resolution_mp": "{{output_resolution_mp}}",
+                "min_area": 655360,
+                "min_size": 64,
+                "step": 16,
+                "always_output": true
+            }
+        },
+        {
+            "name": "convert_mask_to_alpha",
+            "args": {
+                "mode": "white_to_transparent",
+                "threshold": 128,
+                "filter_by": "{{mask_image}}",
+                "filter_type": "not_empty"
+            }
+        }
+    ],
+    "request_config": {
+        "endpoint_url": "https://api.openai.com/v1/images/edits",
+        "method": "POST",
+        "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer {{env:OPENAI_API_KEY}}"
+        },
+        "reference_item_template": {
+            "image_url": "{{item}}"
+        },
+        "body_template": {
+            "model": "gpt-image-2",
+            "prompt": "{{prompt}}",
+            "images": [
+                {
+                    "image_url": "{{source_image}}"
+                },
+                "{{resolved_references}}"
+            ],
+            "{{?mask_image}}mask": {
+                "image_url": "{{mask_image}}"
+            },
+            "n": "{{num_images}}",
+            "quality": "{{quality}}",
+            "moderation": "low",
+            "output_format": "png",
+            "{{?!calculated_output_size}}size": "auto",
+            "{{?calculated_output_size}}size": "{{calculated_output_size_width}}x{{calculated_output_size_height}}"
+        }
+    },
+    "response_config": {
+        "$ref": "sync",
+        "params": {
+            "extract": [
+                {
+                    "path": "data",
+                    "mode": "array",
+                    "item_path": "b64_json"
+                },
+                {
+                    "path": "data",
+                    "mode": "array",
+                    "item_path": "url"
+                }
+            ]
+        }
+    },
+    "parameters": [
+        {
+            "name": "prompt",
+            "type": "string",
+            "alias": "prompt",
+            "label": "Text Prompt",
+            "default": ""
+        },
+        {
+            "name": "quality",
+            "type": "dropdown",
+            "label": "Quality",
+            "options": [
+                { "value": "auto", "label": "Auto" },
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High" }
+            ],
+            "default": "medium"
+        },
+        {
+            "name": "output_resolution_mp",
+            "type": "dropdown",
+            "alias": "output_resolution_mp",
+            "label": "Output Resolution (MP)",
+            "options": [
+                { "value": "0.63", "label": "0.63mp - minimum for this model" },
+                { "value": "1-", "label": "up to 1mp [~ 1K]" },
+                { "value": "1", "label": "1mp [~ 1K]" },
+                { "value": "1.5", "label": "1.5mp - OpenAI default (Auto)" },
+                { "value": "2-", "label": "up to 2mp [~ 1.5K]" },
+                { "value": "2", "label": "2mp [~ 1.5K]" },
+                { "value": "3-", "label": "up to 3mp [~ 1.7K]" },
+                { "value": "3", "label": "3mp [~ 1.7K]" },
+                { "value": "3.5-", "label": "up to 3.5mp [~ 1.85K]" },
+                { "value": "3.5", "label": "3.5mp [~ 1.85K]" }
+            ],
+            "default": "2-"
+        },
+        {
+            "name": "input_optimization",
+            "type": "dropdown",
+            "label": "Input images optimization (экономия на входных токенах)",
+            "options": [
+                { "value": "auto", "label": "Auto - all images will be downscaled to chosen Output Resolution" },
+                { "value": "auto_plus", "label": "Auto - main image will be downscaled to chosen Output Resolution, reference images will be downscaled to 1MP each" },
+                { "value": "refs_2_1mp", "label": "Only reference images up to 1MP each" },
+                { "value": "all_1mp", "label": "All images up to 1MP each" }
+            ],
+            "default": "auto_plus"
         }
     ]
 }

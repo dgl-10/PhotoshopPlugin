@@ -22,7 +22,7 @@ The main components are:
 
 ## Provider contributions
 
-Follow [Providers_Configuration_Guide.md](PhotoshopHelper/Providers_Configuration_Guide.md). Keep API credentials out of provider definitions and reference them through `{{env:VARIABLE_NAME}}`. A submitted template must remain usable without the contributor's private account or local paths.
+Follow [Providers_Configuration_Guide.md](PhotoshopHelper/Providers_Configuration_Guide.md) and use [Prompt_Providers_Configuration.md](PhotoshopHelper/Prompt_Providers_Configuration.md) to generate configurations with LLMs. Keep API credentials out of provider definitions and reference them through `{{env:VARIABLE_NAME}}`. A submitted template must remain usable without the contributor's private account or local paths.
 
 ## Local verification
 

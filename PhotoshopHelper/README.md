@@ -102,6 +102,7 @@ PhotoshopHelper/
 ├── preload.js                        # Context bridge for secure inter-process communication
 ├── providers.template.json           # Template for AI provider parameter configuration
 ├── providers.json                    # Configuration for AI providers and parameters
+├── Prompt_Providers_Configuration.md # LLM prompt for generating new provider configurations
 ├── Providers_Configuration_Guide.md  # Detailed guide for provider and API configuration
 ├── donation-manager.js               # Manages usage tracking and donation prompts
 ├── drag-window.html                  # Overlay window for Drag & Drop to browser

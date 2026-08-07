@@ -64,6 +64,10 @@
                 "to": "providers.template.json"
             },
             {
+                "from": "Prompt_Providers_Configuration.md",
+                "to": "Prompt_Providers_Configuration.md"
+            },
+            {
                 "from": "Providers_Configuration_Guide.md",
                 "to": "Providers_Configuration_Guide.md"
             }

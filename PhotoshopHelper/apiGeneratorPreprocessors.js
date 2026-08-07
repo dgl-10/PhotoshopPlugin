@@ -287,11 +287,11 @@ const preprocessors = {
         const { aspect_ratio, source_image, mask_image, reference_images, user_params, args } = payload;
 
         // Resolve optimization parameters from args
-        const resolutionRaw = String(args.output_resolution_mp || '1');
-        const resolutionMatch = resolutionRaw.match(/^([1-4])(-)?/);
-        const resolutionMp = resolutionMatch ? Number(resolutionMatch[1]) : 1;
+        const resolutionRaw = String(args.output_resolution_mp || '1').trim();
+        const resolutionMatch = resolutionRaw.match(/^(\d+(?:[.,]\d+)?)(-)?/);
+        const resolutionMp = resolutionMatch ? Number(resolutionMatch[1].replace(',', '.')) : 1;
         let allowUpscale;
-        // Проверяем, НЕТ ли ключа в объекте args, и есть ли модификатор
+        // Check if auto_resize_2_max key is NOT in args object, and if modifier exists
         if (!('auto_resize_2_max' in args)) {
             if (resolutionMatch) {
                 if (resolutionMatch[2]) {
@@ -308,7 +308,18 @@ const preprocessors = {
         const alwaysOutput = args.always_output ?? true; // if false - don't output if no needs to change image dimensions
 
         const minSize = Number(args.min_size) || 256;
+        const minAreaRaw = args.min_area || 0;
         const step = Number(args.step) || 1;
+
+        let minArea = 0;
+        if (typeof minAreaRaw === 'string' && minAreaRaw.includes('*')) {
+            const parts = minAreaRaw.split('*').map(p => parseInt(p.trim(), 10));
+            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                minArea = parts[0] * parts[1];
+            }
+        } else {
+            minArea = Number(minAreaRaw) || 0;
+        }
 
         let width, height;
         let originalWidth = 0, originalHeight = 0;
@@ -329,6 +340,9 @@ const preprocessors = {
             if (!allowUpscale && originalWidth && originalHeight) {
                 targetArea = Math.min(targetArea, originalWidth * originalHeight);
             }
+            if (minArea > 0) {
+                targetArea = Math.max(targetArea, minArea);
+            }
 
             // Ideal dimensions
             width = Math.floor(Math.sqrt(targetArea * ar));
@@ -347,6 +361,13 @@ const preprocessors = {
             [width, height] = getSizeByMegapixels(sourceParsed, resolutionMp, minSize, step, allowUpscale);
         } else {
             return null; // Nothing to work with
+        }
+
+        // Ensure calculated area satisfies minArea if specified
+        if (minArea > 0 && width > 0 && height > 0 && (width * height) < minArea) {
+            const scale = Math.sqrt(minArea / (width * height));
+            width = Math.max(minSize, Math.ceil((width * scale) / step) * step);
+            height = Math.max(minSize, Math.ceil((height * scale) / step) * step);
         }
 
         const isChanged = width !== originalWidth || height !== originalHeight;
@@ -426,9 +447,9 @@ const preprocessors = {
 
         // Resolve optimization parameters from args
         const mode = args.optimization_mode;   // "auto", "auto_plus", "refs_2_1mp", "all_1mp"
-        const resRaw = String(args.output_resolution_mp || '1');
-        const resMatch = resRaw.match(/^([1-4])(-)?/);
-        const resolution_mp = resMatch ? Number(resMatch[1]) : 1;
+        const resRaw = String(args.output_resolution_mp || '1').trim();
+        const resMatch = resRaw.match(/^(\d+(?:[.,]\d+)?)(-)?/);
+        const resolution_mp = resMatch ? Number(resMatch[1].replace(',', '.')) : 1;
         //const modifier_mp = (resMatch && resMatch[2]) || ''; // Extracted modifier, e.g. "-"
 
         const minSize = Number(args.min_size) || 256;
@@ -507,6 +528,47 @@ const preprocessors = {
             source_image: out_source,
             mask_image: out_mask,
             reference_images: out_refs
+        };
+    },
+    async convert_mask_to_alpha(provider, payload) {
+        const { source_image, mask_image, reference_images, args } = payload;
+        if (!mask_image) return null;
+
+        const maskParsed = parseImageInput(mask_image);
+        if (!maskParsed) return null;
+
+        const { width, height } = maskParsed.size;
+        const threshold = Number(args.threshold ?? 128);
+        const mode = args.mode || 'white_to_transparent';
+        const isBlackToTransparent = mode === 'black_to_transparent' || args.invert === true;
+
+        const bitmap = maskParsed.image.toBitmap();
+        const newBuffer = Buffer.from(bitmap);
+
+        for (let i = 0; i < newBuffer.length; i += 4) {
+            const b = newBuffer[i];
+            const g = newBuffer[i + 1];
+            const r = newBuffer[i + 2];
+
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+            let alpha = 255;
+            if (isBlackToTransparent) {
+                alpha = lum <= threshold ? 0 : 255;
+            } else {
+                alpha = lum > threshold ? 0 : 255;
+            }
+
+            newBuffer[i + 3] = alpha;
+        }
+
+        const modifiedImg = nativeImage.createFromBitmap(newBuffer, { width, height });
+        const out_mask = maskParsed.pack(modifiedImg, 'image/png');
+
+        return {
+            source_image: source_image,
+            mask_image: out_mask,
+            reference_images: reference_images
         };
     }
 };
