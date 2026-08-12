@@ -75,6 +75,7 @@ const express = require('express');
 const { spawnSync } = require('node:child_process');
 const JSON5 = require('json5');
 const { generate } = require('./apiGenerator');
+const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -356,12 +357,25 @@ function startHttpServer() {
     expressApp.use((req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.header('Access-Control-Allow-Headers', 'Content-Type');
+        // Authorization headers are included so browser-based local clients can use
+        // the optional shared token without failing their CORS preflight request.
+        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
         if (req.method === 'OPTIONS') {
             return res.sendStatus(200);
         }
         next();
     });
+
+    // Mount the local service-to-service generation API over the existing provider
+    // pipeline. The server itself listens only on 127.0.0.1; a shared token adds an
+    // optional boundary for machines where untrusted local software is a concern.
+    expressApp.use(LOCAL_API_PREFIX, createLocalGenerationRouter({
+        generate,
+        tasks: global.tasks,
+        tempDir: WEBHELPER_TEMP_DIR,
+        token: process.env.LOCAL_GENERATION_API_TOKEN || '',
+        onGenerationAccepted: () => trackUsage(2)
+    }));
 
     // GET /api/status - Health check endpoint
     expressApp.get('/api/status', (req, res) => {

@@ -70,6 +70,10 @@
             {
                 "from": "Providers_Configuration_Guide.md",
                 "to": "Providers_Configuration_Guide.md"
+            },
+            {
+                "from": "Local_Generation_API.md",
+                "to": "Local_Generation_API.md"
             }
         ],
         "extraFiles": [

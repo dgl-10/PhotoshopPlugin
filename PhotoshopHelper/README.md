@@ -79,6 +79,14 @@ The application will minimize to the system tray. The server will be available a
 - `POST /api/webhelper/generate` — Start the generation process via the selected AI provider.
 - `POST /api/webhelper/file/copy2clipboard` — Copy any file from the working directory to the clipboard at full resolution.
 
+### Local Generation Service
+
+- `POST /api/local/v1/tasks` — Create a reusable task containing absolute source and mask paths.
+- `POST /api/local/v1/tasks/:taskId/generations` — Start an asynchronous provider generation on that task.
+- `GET /api/local/v1/tasks/:taskId` — Return the task and summaries of all its generation runs.
+- `GET /api/local/v1/tasks/:taskId/generations/:generationId` — Return one generation's state and absolute output paths.
+- See [Local_Generation_API.md](Local_Generation_API.md) for the complete request schema, polling flow, authentication option, and examples.
+
 ---
 
 ## 📁 Project Structure
@@ -104,10 +112,12 @@ PhotoshopHelper/
 ├── providers.json                    # Configuration for AI providers and parameters
 ├── Prompt_Providers_Configuration.md # LLM prompt for generating new provider configurations
 ├── Providers_Configuration_Guide.md  # Detailed guide for provider and API configuration
+├── Local_Generation_API.md           # File-path-based localhost automation API guide
 ├── donation-manager.js               # Manages usage tracking and donation prompts
 ├── drag-window.html                  # Overlay window for Drag & Drop to browser
 ├── drag-window.js                    # File capture and drag-and-drop logic
 ├── apiGenerator.js                   # Generation core: context assembly and request templating
+├── localGenerationApi.js             # Asynchronous local service-to-service API adapter
 ├── apiGeneratorResultsGetter.js      # Results module: polling and response parsing
 ├── apiGeneratorPreprocessors.js      # Preprocessors: resizing, MP optimization, and filtering
 ├── imageUtils.js                     # Image processing utilities (MIME, Base64, NativeImage)

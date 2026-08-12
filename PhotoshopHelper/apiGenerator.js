@@ -14,6 +14,34 @@ function getProvidersConfig() {
     return JSON5.parse(providersRaw);
 }
 
+/**
+ * Resolve an image identifier into the file path read by the generation pipeline.
+ *
+ * Browser tasks refer to files through the WebHelper HTTP prefix, while local API
+ * tasks intentionally retain absolute paths so they can use files anywhere on the
+ * same machine without copying or encoding them first.
+ *
+ * @param {string|null|undefined} imagePath - WebHelper URL, absolute path, or temp-relative filename.
+ * @param {string} tempDir - Existing WebHelper task and output directory.
+ * @returns {string|null} Resolved local file path, or null when no image was provided.
+ */
+function resolveImageFilePath(imagePath, tempDir) {
+    if (!imagePath) return null;
+
+    const webHelperPrefix = '/api/webhelper/file/';
+    if (imagePath.startsWith(webHelperPrefix)) {
+        return path.join(tempDir, imagePath.slice(webHelperPrefix.length));
+    }
+
+    if (path.isAbsolute(imagePath)) {
+        return path.normalize(imagePath);
+    }
+
+    // Preserve the historic behavior for any internal caller that supplies a
+    // filename relative to the WebHelper temp directory.
+    return path.join(tempDir, imagePath);
+}
+
 // Convert local file to requested format
 function formatImage(filePath, format) {
     if (!filePath || !fs.existsSync(filePath)) return null;
@@ -164,8 +192,9 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
         });
     }
 
-    // Convert paths to actual absolute file paths (removing API prefix)
-    const resolveFilePath = (apiPath) => apiPath ? path.join(tempDir, apiPath.replace('/api/webhelper/file/', '')) : null;
+    // Bind the current task directory once so all source, mask, and reference paths
+    // use the same browser/local resolution rules.
+    const resolveFilePath = imagePath => resolveImageFilePath(imagePath, tempDir);
 
     const sourcePath = resolveFilePath(task.sourceImage);
     const maskPath = use_mask ? resolveFilePath(task.maskImage) : null;
@@ -404,5 +433,6 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
 }
 
 module.exports = {
-    generate
+    generate,
+    resolveImageFilePath
 };

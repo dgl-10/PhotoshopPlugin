@@ -30,6 +30,14 @@ Most AI plugins for Photoshop require an embedded API key and charge a fee for e
 - Finished generations can be copied and pasted back into Photoshop via ToPS in one click
 - Can operate either alongside the plugin or fully standalone
 
+### Local Generation API (Service-to-Service)
+- Runs on the same loopback-only Helper server: `http://127.0.0.1:18345`
+- Lets another local process reuse one source image and optional mask across multiple provider runs
+- Exchanges absolute local file paths only; generated image bytes are not returned by the API
+- Uses the active `providers.json`, the same provider preprocessors, and the same output directory as WebHelper
+- Saves results in `%TEMP%\ps_webhelper_tasks` and returns their absolute paths after completion
+- Uses asynchronous polling. Webhooks are not part of the current local contract.
+
 ## 🚀 Installation & Setup
 
 ### Requirements
@@ -133,9 +141,11 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     ├── drag-window.html                  # Overlay window for the Drag & Drop files-to-browser feature
     ├── drag-window.js                    # File capture and drag logic
     ├── apiGenerator.js                   # Generation core: context assembly and request templating
+    ├── localGenerationApi.js             # Reusable-task local REST API adapter
     ├── apiGeneratorResultsGetter.js      # Results module: polling and response parsing
     ├── apiGeneratorPreprocessors.js      # Preprocessors: resizing, MP optimization, and filtering
     ├── imageUtils.js                     # Image processing utilities (MIME, Base64, NativeImage)
+    ├── Local_Generation_API.md           # Complete local API schema and integration examples
     ├── tray-icon.png                     # Application icon for the system tray
     ├── user-settings.js                  # Persistent settings manager using electron-store
     ├── user-settings.json                # Runtime configuration state file (dev mode only, excluded from build)
@@ -163,6 +173,85 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
 ### Reloading
 - UXP Developer Tools → click the "Reload" button on the plugin
 - Or press Ctrl+R in the debug window
+
+### Running PhotoshopHelper locally
+
+```powershell
+cd PhotoshopHelper
+npm install
+npm start
+```
+
+The Electron Helper should expose `GET http://127.0.0.1:18345/api/status` after startup.
+If `npm start` fails with `TypeError: Cannot read properties of undefined (reading
+'isPackaged')`, check whether the shell inherited `ELECTRON_RUN_AS_NODE=1`. Remove it
+only for the Helper process, without changing the system environment:
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+npm start
+```
+
+### Local Generation API workflow
+
+The local API keeps source/mask data on a reusable task and provider-specific settings
+on independent child generation resources:
+
+```text
+POST /api/local/v1/tasks
+    -> 201 { taskId, taskUrl, status: "ready" }
+
+POST /api/local/v1/tasks/:taskId/generations
+    -> 202 { generationId, statusUrl, status: "queued" }
+
+GET /api/local/v1/tasks/:taskId/generations/:generationId
+    -> poll until status is "completed" or "failed"
+```
+
+`POST /api/local/v1/tasks` accepts an absolute `sourceImagePath` and optional absolute
+`maskImagePath`. It validates that each supplied path is a readable regular file, but
+does not copy it into the task directory. Use the same `taskId` for multiple model,
+prompt, reference-image, or `use_mask` variations.
+
+The `taskId` is passed as part of the generation URL, not in the JSON body. Store the
+returned `taskUrl` and append `/generations`, for example:
+
+```text
+taskUrl:       /api/local/v1/tasks/local_task_123
+generationUrl: /api/local/v1/tasks/local_task_123/generations
+```
+
+Post the first and every later variation to that same `generationUrl`. Each POST returns
+a new `generationId` and `statusUrl`, while the reusable `taskId` stays the same.
+
+`POST /api/local/v1/tasks/:taskId/generations` accepts `providerId`, `params`, optional
+`referenceImagePaths`, `num_images`, `aspect_ratio`, `use_mask`, and
+`force_separate_requests`. The caller is responsible for supplying provider parameters
+that match the current `providers.json`.
+
+Poll `statusUrl` every 1–2 seconds. A completed response contains `outputPaths` with
+absolute paths under `%TEMP%\ps_webhelper_tasks`; a failed response contains `error`.
+One failed generation does not invalidate its parent task, so it can be retried with a
+different provider or parameters.
+
+For the full request and response schema, authentication option, and PowerShell
+examples, see `PhotoshopHelper/Local_Generation_API.md`.
+
+### Testing the local API
+
+```powershell
+cd PhotoshopHelper
+npm test
+```
+
+The automated tests start an isolated Express server with a mocked generator. They
+validate task reuse, polling states, absolute-path validation, optional token protection,
+and error isolation; they do not contact external providers and do not create permanent
+files in `%TEMP%\ps_webhelper_tasks`.
+
+To verify a provider integration manually, start Helper first, create a task, submit one
+generation, and poll its `statusUrl`. This makes a real provider request and may incur
+provider charges. Use a low-cost provider/model and one output image for smoke tests.
 
 ### Preparing to release a new version
 
