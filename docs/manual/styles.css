@@ -1,0 +1,1411 @@
+/*
+ * FromPS / ToPS manual
+ * --------------------
+ * This stylesheet deliberately reuses the landing page's coral, violet, sky, and warm-paper palette.
+ * The layout itself remains documentation-first: compact navigation, readable measure, and restrained motion.
+ * All assets and fonts are local so the page works when opened directly from an installed folder.
+ */
+
+:root {
+  --bg: #fff4ea;
+  --paper: rgba(255, 255, 255, 0.9);
+  --paper-soft: rgba(255, 255, 255, 0.72);
+  --ink: #1f1630;
+  --ink-soft: #514463;
+  --ink-faint: #786c89;
+  --line: rgba(80, 40, 120, 0.12);
+  --line-strong: rgba(80, 40, 120, 0.2);
+  --coral: #ff5c8a;
+  --sun: #ff9f43;
+  --sky: #4da3ff;
+  --mint: #20b98d;
+  --violet: #7c5cff;
+  --shadow: 0 18px 48px rgba(80, 40, 120, 0.11);
+  --shadow-small: 0 8px 24px rgba(80, 40, 120, 0.09);
+  --radius: 24px;
+  --radius-small: 15px;
+  --wrap: 1180px;
+  --header-height: 68px;
+  --font: "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* A predictable box model keeps screenshots, callouts, and text aligned at every breakpoint. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--header-height) + 18px);
+}
+
+body {
+  margin: 0;
+  min-width: 300px;
+  min-height: 100vh;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--violet);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--coral);
+}
+
+strong {
+  font-weight: 750;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 0.05em 0.35em;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font: 700 0.82em/1.4 var(--font);
+  text-align: center;
+}
+
+/* The art is softened so it supplies continuity with the landing page without reducing documentation contrast. */
+.bg-art {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-color: var(--bg);
+  background-image: linear-gradient(rgba(255, 248, 242, 0.72), rgba(255, 244, 234, 0.82)),
+    url("assets/bg.svg");
+  background-repeat: no-repeat;
+  background-position: center top;
+  background-size: cover;
+  pointer-events: none;
+}
+
+.wrap {
+  width: min(var(--wrap), calc(100% - 2.4rem));
+  margin-inline: auto;
+}
+
+/* The skip link is invisible during pointer navigation but immediately available to keyboard users. */
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: -999px;
+  z-index: 100;
+  padding: 0.55rem 0.95rem;
+  color: #fff;
+  background: var(--violet);
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  left: 0.75rem;
+}
+
+/* The header is deliberately smaller than the landing header and contains no sales navigation. */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  min-height: var(--header-height);
+  background: rgba(255, 248, 242, 0.82);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-height: var(--header-height);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--ink);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.brand-icon {
+  border-radius: 27px;
+  box-shadow: 0 5px 14px rgba(124, 92, 255, 0.24);
+  width: 55px;
+}
+
+.brand-slash {
+  color: var(--violet);
+}
+
+.header-label {
+  padding-left: 0.9rem;
+  color: var(--ink-faint);
+  border-left: 1px solid var(--line-strong);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.back-link {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* The introduction uses only one prominent heading and a small two-direction legend. */
+.manual-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 3rem;
+  align-items: end;
+  padding-block: clamp(3.2rem, 8vw, 6.5rem) clamp(2.4rem, 5vw, 4.2rem);
+}
+
+.eyebrow,
+.section-kicker {
+  margin: 0 0 0.45rem;
+  color: var(--violet);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.manual-intro h1 {
+  max-width: 750px;
+  margin: 0;
+  font-size: clamp(2.7rem, 6.4vw, 5.5rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.intro-lede {
+  max-width: 760px;
+  margin: 1.4rem 0 0;
+  color: var(--ink-soft);
+  font-size: clamp(1.03rem, 1.6vw, 1.22rem);
+}
+
+.direction-key {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.direction-item {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow-small);
+}
+
+.direction-arrow {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.direction-from .direction-arrow {
+  background: linear-gradient(135deg, var(--coral), var(--violet));
+}
+
+.direction-to .direction-arrow {
+  background: linear-gradient(135deg, var(--sky), var(--mint));
+}
+
+.direction-item strong,
+.direction-item span:not(.direction-arrow) {
+  display: block;
+}
+
+.direction-item strong {
+  line-height: 1.2;
+}
+
+.direction-item div span {
+  margin-top: 0.1rem;
+  color: var(--ink-faint);
+  font-size: 0.84rem;
+}
+
+/* The two-column shell is a familiar documentation pattern and collapses cleanly on small screens. */
+.manual-layout {
+  display: grid;
+  grid-template-columns: 205px minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 4.6rem);
+  align-items: start;
+}
+
+.manual-sidebar {
+  position: sticky;
+  top: calc(var(--header-height) + 1.5rem);
+  padding-bottom: 2rem;
+}
+
+.contents-nav {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.contents-title {
+  margin: 0 0 0.55rem;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.contents-nav a {
+  display: grid;
+  grid-template-columns: 1.9rem 1fr;
+  gap: 0.2rem;
+  align-items: baseline;
+  padding: 0.47rem 0.35rem;
+  color: var(--ink-soft);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.contents-nav a span {
+  color: var(--ink-faint);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.contents-nav a:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.sidebar-note {
+  margin: 1.2rem 0 0;
+  padding-top: 1rem;
+  color: var(--ink-faint);
+  border-top: 1px solid var(--line);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.manual-main {
+  min-width: 0;
+}
+
+/* Every major topic gets a generous vertical boundary but no decorative divider maze. */
+.doc-section {
+  margin-bottom: clamp(4.2rem, 9vw, 7.5rem);
+  scroll-margin-top: calc(var(--header-height) + 1rem);
+}
+
+.section-heading {
+  display: grid;
+  grid-template-columns: 2.6rem 1fr;
+  gap: 0.85rem;
+  align-items: start;
+  margin-bottom: 1.8rem;
+}
+
+.section-number {
+  margin: 0.38rem 0 0;
+  color: var(--coral);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.section-heading h2,
+.project-links h2 {
+  margin: 0;
+  font-size: clamp(1.85rem, 4vw, 2.8rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.section-heading p:last-child {
+  max-width: 720px;
+  margin: 0.55rem 0 0;
+  color: var(--ink-soft);
+}
+
+/* Workflow cards keep the explanatory text above the image at narrow widths and beside it on wide screens. */
+.workflow-list {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.workflow-step {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  gap: 1.4rem;
+  align-items: center;
+  padding: clamp(1rem, 2.5vw, 1.35rem);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-small);
+}
+
+.workflow-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  padding: 0.45rem;
+}
+
+.workflow-step-item {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+.step-badge {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(135deg, var(--coral), var(--violet));
+  border-radius: 50%;
+  font-size: 0.86rem;
+  font-weight: 850;
+  box-shadow: 0 7px 18px rgba(124, 92, 255, 0.24);
+}
+
+.workflow-copy h3,
+.control-group h3,
+.global-card h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+
+.workflow-copy p {
+  margin: 0.55rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.93rem;
+}
+
+.workflow-figure,
+.detail-figure,
+.compact-figure,
+.settings-figure,
+.annotated-panel {
+  margin: 0;
+}
+
+.workflow-figure {
+  position: relative;
+  overflow: hidden;
+  background: #2e2e2e;
+  border: 1px solid rgba(31, 22, 48, 0.13);
+  border-radius: calc(var(--radius) - 8px);
+}
+
+.workflow-figure img {
+  width: 100%;
+  aspect-ratio: 1.09 / 1;
+  object-fit: cover;
+}
+
+.workflow-figure figcaption,
+.detail-figure figcaption {
+  padding: 0.65rem 0.85rem;
+  color: var(--ink-faint);
+  background: rgba(255, 255, 255, 0.97);
+  font-size: 0.78rem;
+}
+
+/* Notes use a strong left icon but stay compact enough not to interrupt reading. */
+.note {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  margin-top: 1.2rem;
+  padding: 0.95rem 1.05rem;
+  color: var(--ink-soft);
+  background: rgba(77, 163, 255, 0.09);
+  border: 1px solid rgba(77, 163, 255, 0.2);
+  border-radius: var(--radius-small);
+}
+
+.note-important {
+  background: rgba(255, 92, 138, 0.075);
+  border-color: rgba(255, 92, 138, 0.2);
+}
+
+.note-icon {
+  display: grid;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #fff;
+  background: var(--sky);
+  border-radius: 50%;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.note-important .note-icon {
+  background: var(--coral);
+}
+
+.note p {
+  margin: 0.05rem 0 0;
+  font-size: 0.9rem;
+}
+
+/* The map image remains at native panel proportions; circles are positioned as percentages of that crop. */
+.panel-map-card {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(320px, 1.28fr);
+  gap: clamp(1.5rem, 4vw, 3.2rem);
+  align-items: center;
+  padding: clamp(1.2rem, 4vw, 2.2rem);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.annotated-panel {
+  position: relative;
+  width: min(100%, 340px);
+  justify-self: center;
+  overflow: visible;
+  background: #303030;
+  border: 1px solid rgba(31, 22, 48, 0.24);
+  border-radius: 12px;
+  box-shadow: 0 18px 42px rgba(31, 22, 48, 0.2);
+}
+
+.annotated-panel img {
+  width: 100%;
+  border-radius: 11px;
+}
+
+.marker {
+  position: absolute;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #fff;
+  background: var(--coral);
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 4px 14px rgba(31, 22, 48, 0.35);
+  font-size: 0.73rem;
+  font-weight: 900;
+  transform: translate(-50%, -50%);
+}
+
+.marker-1 {
+  top: 2.2%;
+  left: 49%;
+}
+
+.marker-2 {
+  top: 17%;
+  left: 7%;
+}
+
+.marker-3 {
+  top: 8.7%;
+  left: 86%;
+}
+
+.marker-4 {
+  top: 39%;
+  left: 50%;
+}
+
+.marker-5 {
+  top: 62%;
+  left: 7%;
+}
+
+.marker-6 {
+  top: 50.5%;
+  left: 86%;
+}
+
+.marker-7 {
+  top: 86%;
+  left: 50%;
+}
+
+.wf-marker-1 {
+  top: calc(56% - 53px);
+  left: 18.5%;
+}
+
+.wf-marker-2 {
+  top: 89.5%;
+  left: 57%;
+}
+
+/* These workflow markers point to the ToPS import buttons and the final Place Back button. */
+.wf-marker-3 {
+  top: 79%;
+  left: 15.5%;
+}
+
+.wf-marker-4 {
+  top: calc(49.5% + 10px);
+  left: 47%;
+}
+
+.ratio-focus-rect {
+  position: absolute;
+  top: calc(53.5% - 35px);
+  left: 41.5%;
+  width: calc(37.5% - 115px);
+  height: 6.2%;
+  border: 1.5px dashed rgba(112, 186, 255, 0.85);
+  border-radius: 6px;
+  background: rgba(112, 186, 255, 0.1);
+  box-shadow: 0 0 14px rgba(112, 186, 255, 0.3);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ratio-callout-tag {
+  position: absolute;
+  top: 51.5%;
+  left: 60%;
+  transform: translate(-50%, -100%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.65rem;
+  background: rgba(18, 14, 32, 0.92);
+  border: 1px solid rgba(160, 120, 255, 0.6);
+  border-radius: 20px;
+  box-shadow: 0 0 16px rgba(124, 92, 255, 0.35), 0 4px 12px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+  pointer-events: none;
+  font-size: 0.76rem;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.ratio-callout-tag::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid rgba(160, 120, 255, 0.8);
+}
+
+.ratio-callout-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--coral);
+  box-shadow: 0 0 8px var(--coral);
+}
+
+.ratio-callout-label strong {
+  color: #70baff;
+  font-weight: 700;
+}
+
+.map-legend-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.map-legend-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  background: rgba(255, 248, 242, 0.45);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.map-legend-grid-2col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.map-legend-item-full {
+  grid-column: 1 / -1;
+}
+
+.map-legend-item {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 0.65rem;
+  align-items: start;
+  padding: 0.75rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.map-legend-item>span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: var(--coral);
+  background: #fff;
+  border: 1px solid rgba(255, 92, 138, 0.24);
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.map-legend-item strong,
+.map-legend-item small {
+  display: block;
+}
+
+.map-legend-item strong {
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.map-legend-item small {
+  margin-top: 0.2rem;
+  color: var(--ink-faint);
+  font-size: 0.75rem;
+  line-height: 1.38;
+}
+
+/* Reference rows alternate the image and copy while preserving a consistent reading order in the HTML. */
+.reference-grid {
+  display: grid;
+  grid-template-columns: minmax(290px, 0.9fr) minmax(330px, 1.1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  align-items: start;
+}
+
+.reference-grid-reverse {
+  grid-template-columns: minmax(330px, 1.1fr) minmax(290px, 0.9fr);
+}
+
+.detail-figure {
+  overflow: hidden;
+  background: #303030;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow-small);
+}
+
+.detail-figure img {
+  width: 100%;
+}
+
+.control-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.control-group {
+  padding: 1.1rem 1.2rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+}
+
+.control-group h3 {
+  padding-bottom: 0.72rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.control-group dl,
+.inline-definitions {
+  margin: 0;
+}
+
+.control-group dl>div {
+  display: grid;
+  grid-template-columns: minmax(125px, 0.65fr) minmax(0, 1.35fr);
+  gap: 0.8rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.control-group dl>div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.control-group dt,
+.inline-definitions dt {
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.control-group dd,
+.inline-definitions dd {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  line-height: 1.48;
+}
+
+.tag {
+  display: inline-flex;
+  margin-left: 0.25rem;
+  padding: 0.08rem 0.38rem;
+  color: #6548da;
+  background: rgba(124, 92, 255, 0.1);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 0.12em;
+}
+
+/* Asterisks identify controls that cross the UXP sandbox through the companion desktop application. */
+.helper-mark {
+  margin-left: 0.08em;
+  color: var(--coral);
+  font-size: 0.78em;
+  font-weight: 900;
+  line-height: 0;
+  vertical-align: 0.34em;
+}
+
+/* History and Settings stack as two independent cards because their screenshots have very different proportions. */
+.global-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.2rem;
+}
+
+.global-card {
+  display: grid;
+  gap: 1.15rem;
+  align-content: start;
+  padding: 1.15rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-small);
+}
+
+.compact-figure,
+.settings-figure {
+  position: relative;
+  overflow: hidden;
+  background: #303030;
+  border-radius: var(--radius-small);
+}
+
+/* Highlight frame for the panel header sandwich menu icon */
+.menu-focus-rect {
+  position: absolute;
+  top: 1.5%;
+  left: 42%;
+  width: 4.2%;
+  height: 3.8%;
+  border: 1.5px dashed rgba(112, 186, 255, 0.85);
+  border-radius: 4px;
+  background: rgba(112, 186, 255, 0.15);
+  box-shadow: 0 0 14px rgba(112, 186, 255, 0.4);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.compact-figure {
+  max-height: 295px;
+}
+
+.compact-figure img {
+  width: 100%;
+  transform: translateY(-2px);
+}
+
+.settings-figure img {
+  width: 100%;
+}
+
+.global-card p {
+  margin: 0.6rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.format-example {
+  padding: 0.65rem 0.75rem;
+  background: rgba(124, 92, 255, 0.07);
+  border: 1px solid rgba(124, 92, 255, 0.13);
+  border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.format-example span {
+  color: var(--violet);
+  font-weight: 800;
+}
+
+.plain-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.15rem;
+  color: var(--ink-soft);
+  font-size: 0.83rem;
+}
+
+.plain-list li+li {
+  margin-top: 0.35rem;
+}
+
+.inline-definitions>div {
+  display: grid;
+  grid-template-columns: 95px 1fr;
+  gap: 0.7rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.inline-definitions>div:last-child {
+  border-bottom: 0;
+}
+
+/* Native details elements keep troubleshooting functional with JavaScript disabled. */
+.troubleshooting-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.troubleshooting-list details {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow-small);
+}
+
+.troubleshooting-list summary {
+  position: relative;
+  padding: 1rem 3rem 1rem 1.1rem;
+  cursor: pointer;
+  font-size: 0.94rem;
+  font-weight: 750;
+  list-style: none;
+}
+
+.troubleshooting-list summary::-webkit-details-marker {
+  display: none;
+}
+
+.troubleshooting-list summary::after {
+  content: "+";
+  position: absolute;
+  top: 50%;
+  right: 1.1rem;
+  color: var(--violet);
+  font-size: 1.2rem;
+  font-weight: 500;
+  transform: translateY(-50%);
+}
+
+.troubleshooting-list details[open] summary::after {
+  content: "−";
+}
+
+.troubleshooting-list details[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.troubleshooting-list details p {
+  margin: 0;
+  padding: 0.9rem 1.1rem 1.05rem;
+  color: var(--ink-soft);
+  font-size: 0.89rem;
+}
+
+/* The Helper legend appears once, after the complete reference, and explicitly lists both sides of the boundary. */
+.helper-requirement {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 1.1rem;
+  align-items: start;
+  margin: -2.5rem 0 1.2rem;
+  padding: clamp(1.25rem, 4vw, 1.8rem);
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 92, 138, 0.22);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-small);
+}
+
+.helper-symbol {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  padding-top: 0.2em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--coral), var(--violet));
+  border-radius: 50%;
+  box-shadow: 0 8px 20px rgba(124, 92, 255, 0.22);
+  font-size: 2rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.helper-requirement h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
+.helper-requirement p {
+  margin: 0.65rem 0 0;
+  font-size: 0.9rem;
+}
+
+.helper-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.helper-actions li {
+  padding: 0.65rem 0.72rem;
+  color: var(--ink);
+  background: rgba(255, 92, 138, 0.07);
+  border: 1px solid rgba(255, 92, 138, 0.16);
+  border-radius: 10px;
+}
+
+.helper-actions strong,
+.helper-actions span {
+  display: block;
+}
+
+.helper-actions strong {
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.helper-actions span {
+  margin-top: 0.15rem;
+  color: var(--ink-faint);
+  font-size: 0.73rem;
+  line-height: 1.35;
+}
+
+.helper-independent {
+  padding: 0.72rem 0.82rem;
+  background: rgba(32, 185, 141, 0.07);
+  border: 1px solid rgba(32, 185, 141, 0.18);
+  border-radius: 10px;
+}
+
+/* The support area is a quiet utility panel, not a second promotional hero. */
+.project-links {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4rem;
+  padding: clamp(1.3rem, 4vw, 2rem);
+  background: linear-gradient(130deg, rgba(255, 255, 255, 0.92), rgba(246, 241, 255, 0.88));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.project-links h2 {
+  font-size: 1.55rem;
+}
+
+.project-links p:last-child {
+  margin: 0.45rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0.62rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.button-primary {
+  color: #fff;
+  background: linear-gradient(125deg, var(--coral), var(--violet), var(--sky));
+  border: none;
+  background-clip: padding-box;
+  overflow: hidden;
+  box-shadow: 0 9px 22px rgba(124, 92, 255, 0.22);
+}
+
+.button-primary:hover {
+  color: #fff;
+  filter: brightness(1.04);
+}
+
+.button-secondary {
+  color: var(--ink);
+  background: #fff;
+  border-color: var(--line-strong);
+}
+
+.site-footer {
+  color: var(--ink-faint);
+  background: rgba(255, 248, 242, 0.62);
+  border-top: 1px solid var(--line);
+}
+
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 78px;
+  font-size: 0.8rem;
+}
+
+.footer-inner a {
+  color: var(--ink-soft);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* Tablet layout: move the contents navigation above the document and keep it horizontally scrollable. */
+@media (max-width: 960px) {
+  .manual-intro {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .direction-key {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .manual-layout {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  .manual-sidebar {
+    position: static;
+    overflow-x: auto;
+    padding-bottom: 0.45rem;
+    scrollbar-width: none;
+  }
+
+  /* WebKit browsers need their own scrollbar rule for the compact horizontal contents strip. */
+  .manual-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .contents-nav {
+    display: flex;
+    width: max-content;
+    gap: 0.4rem;
+  }
+
+  .contents-title,
+  .sidebar-note {
+    display: none;
+  }
+
+  .contents-nav a {
+    display: inline-flex;
+    gap: 0.4rem;
+    padding: 0.5rem 0.72rem;
+    background: rgba(255, 255, 255, 0.66);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+}
+
+/* Narrow desktop and large phone layout: stack image-reference rows and reduce screenshot width. */
+@media (max-width: 760px) {
+  .header-label {
+    display: none;
+  }
+
+  .workflow-step,
+  .panel-map-card,
+  .reference-grid,
+  .reference-grid-reverse,
+  .global-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-copy {
+    padding: 0.2rem;
+  }
+
+  .workflow-figure {
+    order: 2;
+  }
+
+  .annotated-panel {
+    width: min(78vw, 330px);
+  }
+
+  .map-legend {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-figure {
+    width: min(100%, 610px);
+    justify-self: center;
+  }
+
+  .reference-grid-reverse .detail-figure {
+    grid-row: 1;
+  }
+
+  .project-links {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .helper-requirement {
+    margin-top: -1.5rem;
+  }
+
+  .project-actions {
+    justify-content: flex-start;
+  }
+}
+
+/* Phone layout: retain comfortable tap targets while minimizing decorative spacing. */
+@media (max-width: 520px) {
+  :root {
+    --header-height: 62px;
+  }
+
+  .wrap {
+    width: min(100% - 1.25rem, var(--wrap));
+  }
+
+  .header-inner {
+    gap: 0.55rem;
+  }
+
+  .brand {
+    font-size: 0.88rem;
+  }
+
+  .brand-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .back-link {
+    font-size: 0;
+  }
+
+  .back-link::before {
+    content: "← Landing";
+    font-size: 0.78rem;
+  }
+
+  .manual-intro {
+    padding-block: 3rem 2rem;
+  }
+
+  .manual-intro h1 {
+    font-size: clamp(2.35rem, 13vw, 3.35rem);
+  }
+
+  .intro-lede {
+    font-size: 0.98rem;
+  }
+
+  .direction-key {
+    grid-template-columns: 1fr;
+  }
+
+  .section-heading {
+    grid-template-columns: 2rem 1fr;
+    gap: 0.5rem;
+  }
+
+  .workflow-step,
+  .panel-map-card,
+  .global-card {
+    padding: 0.85rem;
+    border-radius: 18px;
+  }
+
+  .workflow-copy {
+    gap: 0.65rem;
+  }
+
+  .control-group dl>div {
+    grid-template-columns: 1fr;
+    gap: 0.18rem;
+  }
+
+  .control-group dd {
+    padding-left: 0;
+  }
+
+  .inline-definitions>div {
+    grid-template-columns: 82px 1fr;
+  }
+
+  .project-actions,
+  .button {
+    width: 100%;
+  }
+
+  .helper-requirement {
+    grid-template-columns: 1fr;
+  }
+
+  .helper-symbol {
+    width: 44px;
+    height: 44px;
+    font-size: 1.7rem;
+  }
+
+  .helper-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .footer-inner {
+    gap: 0.8rem;
+    min-height: 70px;
+  }
+}
+
+/* Print mode removes navigation and colored backgrounds while keeping references and images together where possible. */
+@media print {
+  :root {
+    --ink: #111;
+    --ink-soft: #333;
+    --ink-faint: #555;
+  }
+
+  body {
+    background: #fff;
+    font-size: 10pt;
+  }
+
+  .bg-art,
+  .site-header,
+  .manual-sidebar,
+  .project-links,
+  .site-footer {
+    display: none !important;
+  }
+
+  .wrap {
+    width: 100%;
+  }
+
+  .manual-intro {
+    padding-block: 0 1.5rem;
+  }
+
+  .manual-intro h1 {
+    font-size: 32pt;
+  }
+
+  .manual-layout,
+  .workflow-step,
+  .reference-grid,
+  .reference-grid-reverse {
+    display: block;
+  }
+
+  .doc-section {
+    margin-bottom: 2rem;
+  }
+
+  .workflow-step,
+  .panel-map-card,
+  .control-group,
+  .global-card,
+  .troubleshooting-list details {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .workflow-step+.workflow-step,
+  .control-group+.control-group {
+    margin-top: 0.8rem;
+  }
+
+  a {
+    color: inherit;
+  }
+}
+
+/* Users who request reduced motion should never receive smooth-scroll movement. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FromPS / ToPS — Plugin Manual</title>
+  <meta name="description"
+    content="A practical guide to every FromPS / ToPS control: capture a Photoshop selection, send the image and mask out, and place a result back." />
+  <link rel="icon" type="image/png" href="./assets/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+  <link rel="shortcut icon" href="./assets/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png" />
+  <link rel="manifest" href="./assets/site.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <!-- The shared art keeps the manual related to the landing page without turning it into a sales page. -->
+  <div class="bg-art" aria-hidden="true"></div>
+
+  <a class="skip-link" href="#manual-content">Skip to the manual</a>
+
+  <!-- The compact header provides only documentation-relevant navigation. -->
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="../index.html" aria-label="FromPS / ToPS landing page">
+        <img class="brand-icon" src="./assets/plugin-icon.png" alt="" />
+        <span>FromPS <span class="brand-slash">/</span> ToPS</span>
+      </a>
+      <span class="header-label">Plugin manual</span>
+      <a class="back-link" href="../index.html">← Back to product page</a>
+    </div>
+  </header>
+
+  <main id="manual-content">
+    <!-- The introduction tells a new user what the page covers and establishes the two panel directions. -->
+    <section class="manual-intro wrap" aria-labelledby="manual-title">
+      <div class="intro-copy">
+        <p class="eyebrow">FromPS / ToPS documentation</p>
+        <h1 id="manual-title">Capture. Send out. Place back.</h1>
+        <p class="intro-lede">
+          This guide explains every control in the Photoshop panel and the shortest complete workflow.
+          Keep it open beside Photoshop, or use it offline from the installed application folder.
+        </p>
+      </div>
+      <div class="direction-key" aria-label="Panel direction key">
+        <div class="direction-item direction-from">
+          <span class="direction-arrow" aria-hidden="true">→</span>
+          <div>
+            <strong>FromPS</strong>
+            <span>Photoshop to an AI tool</span>
+          </div>
+        </div>
+        <div class="direction-item direction-to">
+          <span class="direction-arrow" aria-hidden="true">←</span>
+          <div>
+            <strong>ToPS</strong>
+            <span>Generated image back to Photoshop</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- A documentation sidebar makes the longer reference easy to scan on desktop and becomes chips on mobile. -->
+    <div class="manual-layout wrap">
+      <aside class="manual-sidebar" aria-label="Manual contents">
+        <nav class="contents-nav">
+          <p class="contents-title">On this page</p>
+          <a href="#quick-start"><span>01</span> Quick start</a>
+          <a href="#panel-map"><span>02</span> Panel map</a>
+          <a href="#capture-controls"><span>03</span> Capture controls</a>
+          <a href="#output-controls"><span>04</span> Send image &amp; mask</a>
+          <a href="#place-controls"><span>05</span> Place back</a>
+          <a href="#history-settings"><span>06</span> History &amp; settings</a>
+          <a href="#troubleshooting"><span>07</span> Troubleshooting</a>
+        </nav>
+        <p class="sidebar-note">
+          Requires Adobe Photoshop 2024 or newer and the FromPS / ToPS panel open.
+        </p>
+      </aside>
+
+      <div class="manual-main">
+        <!-- Three workflow cards use the only full Photoshop screenshots retained from the source composite. -->
+        <section class="doc-section" id="quick-start" aria-labelledby="quick-start-title">
+          <div class="section-heading">
+            <p class="section-number">01</p>
+            <div>
+              <p class="section-kicker">The complete loop</p>
+              <h2 id="quick-start-title">Quick start</h2>
+              <p>For most jobs, these are the only four steps you need.</p>
+            </div>
+          </div>
+
+          <div class="workflow-list">
+            <article class="workflow-step">
+              <div class="workflow-copy">
+                <div class="workflow-step-item">
+                  <span class="step-badge">1</span>
+                  <div>
+                    <h3>Select and capture</h3>
+                    <p>
+                      Make a selection in Photoshop. In <strong>FromPS</strong>, leave
+                      <strong>PsSource</strong> on <strong>Copy merged</strong> for the visible composite, then click
+                      <strong>Capture Selection</strong>.
+                    </p>
+                  </div>
+                </div>
+                <div class="workflow-step-item">
+                  <span class="step-badge">2</span>
+                  <div>
+                    <h3>Send the capture out</h3>
+                    <p>
+                      Export via <strong>Drag<sup class="helper-mark"
+                          aria-label="Requires Photoshop Helper">*</sup></strong>,
+                      <strong>Copy Image<sup class="helper-mark"
+                          aria-label="Requires Photoshop Helper">*</sup></strong>,
+                      <strong>Copy Mask<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></strong>,
+                      or <strong>Save as PNG</strong>. <strong>FromPS</strong> calculates and displays the exact aspect
+                      ratio (e.g., <strong>[3:4]</strong>) alongside pixel dimensions — set the matching ratio preset in
+                      your AI generator to prevent image stretching and distortion.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <figure class="workflow-figure">
+                <img src="assets/workflow-02-captured.jpg"
+                  alt="A captured selection in the FromPS panel with the source image, mask controls, ratio, and dimensions"
+                  width="920" height="820" />
+                <span class="marker wf-marker-1" aria-hidden="true">1</span>
+                <span class="marker wf-marker-2" aria-hidden="true">2</span>
+                <!-- Subtle aspect ratio highlight frame -->
+                <div class="ratio-focus-rect" aria-hidden="true"></div>
+                <figcaption>The capture remembers its dimensions, mask, and original coordinates.</figcaption>
+              </figure>
+            </article>
+
+            <article class="workflow-step">
+              <div class="workflow-copy">
+                <div class="workflow-step-item">
+                  <span class="step-badge">3</span>
+                  <div>
+                    <h3>Load the generated image</h3>
+                    <p>
+                      In <strong>ToPS</strong>, use <strong>Load File…</strong> or
+                      <strong>Paste<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></strong>
+                      to add the generated image to the panel.
+                    </p>
+                  </div>
+                </div>
+                <div class="workflow-step-item">
+                  <span class="step-badge">4</span>
+                  <div>
+                    <h3>Place it back in Photoshop</h3>
+                    <p>
+                      Confirm the correct history item is selected, then click <strong>Place Back</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <figure class="workflow-figure">
+                <img src="assets/workflow-03-returned.jpg"
+                  alt="An AI-edited image placed back at the original coordinates in Photoshop" width="890"
+                  height="820" />
+                <!-- Markers correspond to the loading controls and the final placement action in steps 3 and 4. -->
+                <span class="marker wf-marker-3" aria-hidden="true">3</span>
+                <span class="marker wf-marker-4" aria-hidden="true">4</span>
+                <figcaption>The result returns aligned to the source capture.</figcaption>
+              </figure>
+            </article>
+          </div>
+
+          <aside class="note note-important">
+            <span class="note-icon" aria-hidden="true">!</span>
+            <p>
+              <strong>Before Place Back:</strong> choose the history entry that belongs to the result. That entry stores
+              the coordinates and mask used for placement.
+            </p>
+          </aside>
+        </section>
+
+        <!-- The numbered overlay answers “where is that button?” before the detailed descriptions begin. -->
+        <section class="doc-section" id="panel-map" aria-labelledby="panel-map-title">
+          <div class="section-heading">
+            <p class="section-number">02</p>
+            <div>
+              <p class="section-kicker">Where everything lives</p>
+              <h2 id="panel-map-title">Panel map</h2>
+              <p>The upper card sends material out; the lower card accepts a result and brings it back.</p>
+            </div>
+          </div>
+
+          <div class="panel-map-card">
+            <figure class="annotated-panel">
+              <img src="assets/panel-map.png"
+                alt="FromPS / ToPS panel with both the captured source and generated result loaded" width="262"
+                height="610" />
+              <!-- Markers are decorative; the adjacent numbered list contains the accessible descriptions. -->
+              <span class="marker marker-1" aria-hidden="true">1</span>
+              <span class="marker marker-2" aria-hidden="true">2</span>
+              <span class="marker marker-3" aria-hidden="true">3</span>
+              <span class="marker marker-4" aria-hidden="true">4</span>
+              <span class="marker marker-5" aria-hidden="true">5</span>
+              <span class="marker marker-6" aria-hidden="true">6</span>
+              <span class="marker marker-7" aria-hidden="true">7</span>
+            </figure>
+
+            <div class="map-legend-groups">
+              <!-- Group 1: Active capture & history selection -->
+              <div class="map-legend-group">
+                <div class="map-legend-item">
+                  <span>1</span>
+                  <div><strong>Capture history</strong><small>Switches the active source, dimensions, mask, and
+                      placement
+                      coordinates.</small></div>
+                </div>
+              </div>
+
+              <!-- Group 2: FromPS controls -->
+              <div class="map-legend-group map-legend-grid-2col">
+                <div class="map-legend-item">
+                  <span>2</span>
+                  <div><strong>FromPS preview</strong><small>The image captured from the current Photoshop
+                      selection.</small></div>
+                </div>
+                <div class="map-legend-item">
+                  <span>3</span>
+                  <div><strong>Clear capture</strong><small>Clears this preview; history remains available.</small>
+                  </div>
+                </div>
+                <div class="map-legend-item map-legend-item-full">
+                  <span>4</span>
+                  <div><strong>Output toolbar</strong><small>Save, copy image<sup class="helper-mark"
+                        aria-label="Requires Photoshop Helper">*</sup>, copy mask<sup class="helper-mark"
+                        aria-label="Requires Photoshop Helper">*</sup>, or drag<sup class="helper-mark"
+                        aria-label="Requires Photoshop Helper">*</sup> to another app.</small>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Group 3: ToPS controls -->
+              <div class="map-legend-group map-legend-grid-2col">
+                <div class="map-legend-item">
+                  <span>5</span>
+                  <div><strong>ToPS preview</strong><small>The external image waiting to be placed back.</small></div>
+                </div>
+                <div class="map-legend-item">
+                  <span>6</span>
+                  <div><strong>Clear loaded image</strong><small>Removes the incoming image without changing capture
+                      history.</small></div>
+                </div>
+                <div class="map-legend-item map-legend-item-full">
+                  <span>7</span>
+                  <div><strong>Place Back</strong><small>Inserts the incoming image at the active capture's original
+                      coordinates.</small></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Each reference section pairs a focused crop with a semantic definition list. -->
+        <section class="doc-section" id="capture-controls" aria-labelledby="capture-controls-title">
+          <div class="section-heading">
+            <p class="section-number">03</p>
+            <div>
+              <p class="section-kicker">FromPS card</p>
+              <h2 id="capture-controls-title">Capture controls</h2>
+              <p>Choose what Photoshop should copy, then choose how accurately it should be extracted.</p>
+            </div>
+          </div>
+
+          <div class="reference-grid">
+            <figure class="detail-figure">
+              <img src="assets/capture-modes.png"
+                alt="PsSource and Capture Selection menus showing all available capture modes" width="565"
+                height="610" />
+              <figcaption>PsSource menu on the left; Capture modes on the right.</figcaption>
+            </figure>
+
+            <div class="control-list">
+              <div class="control-group">
+                <h3>PsSource</h3>
+                <dl>
+                  <div>
+                    <dt>Copy merged <span class="tag">default</span></dt>
+                    <dd>Captures the combined appearance of all visible layers inside the selection.</dd>
+                  </div>
+                  <div>
+                    <dt>Copy layer</dt>
+                    <dd>Captures only the currently active Photoshop layer.</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div class="control-group">
+                <h3>Capture Selection</h3>
+                <dl>
+                  <div>
+                    <dt>Main button</dt>
+                    <dd>Captures the current selection with the currently chosen mode.</dd>
+                  </div>
+                  <div>
+                    <dt>Fast <span class="tag">default</span></dt>
+                    <dd>Quick bounding-box capture for opaque work where preserved transparency is not required.</dd>
+                  </div>
+                  <div>
+                    <dt>Slow with transparency</dt>
+                    <dd>Uses a temporary document to preserve transparent pixels and soft selection edges.</dd>
+                  </div>
+                  <div>
+                    <dt>Full Doc Mask — Fast</dt>
+                    <dd>Creates a mask at the full document size without transparency processing.</dd>
+                  </div>
+                  <div>
+                    <dt>Full Doc Mask — Slow</dt>
+                    <dd>Creates a full-canvas mask while preserving transparency.</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          </div>
+
+          <aside class="note">
+            <span class="note-icon" aria-hidden="true">i</span>
+            <p><strong>Rule of thumb:</strong> start with Fast. Use a Slow mode when soft or transparent edges matter.
+            </p>
+          </aside>
+        </section>
+
+        <section class="doc-section" id="output-controls" aria-labelledby="output-controls-title">
+          <div class="section-heading">
+            <p class="section-number">04</p>
+            <div>
+              <p class="section-kicker">FromPS toolbar</p>
+              <h2 id="output-controls-title">Send the image and mask</h2>
+              <p>Pick the transport that best matches the external AI application.</p>
+            </div>
+          </div>
+
+          <div class="reference-grid reference-grid-reverse">
+            <div class="control-list">
+              <div class="control-group">
+                <h3>Save as PNG</h3>
+                <dl>
+                  <div>
+                    <dt>Main button</dt>
+                    <dd>Saves using the currently selected save option.</dd>
+                  </div>
+                  <div>
+                    <dt>Image Only</dt>
+                    <dd>Saves the color image.</dd>
+                  </div>
+                  <div>
+                    <dt>Mask Only</dt>
+                    <dd>Saves the black-and-white selection mask.</dd>
+                  </div>
+                  <div>
+                    <dt>Both<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></dt>
+                    <dd>Saves image and mask as separate PNG files.</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div class="control-group">
+                <h3>Clipboard buttons</h3>
+                <dl>
+                  <div>
+                    <dt>Copy Image<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></dt>
+                    <dd>Copies the captured color image to the system clipboard.</dd>
+                  </div>
+                  <div>
+                    <dt>Copy Mask<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></dt>
+                    <dd>Copies the selection mask to the system clipboard.</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div class="control-group">
+                <h3>Drag<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></h3>
+                <dl>
+                  <div>
+                    <dt>Main button</dt>
+                    <dd>Click and drag from the icon into a browser or desktop application.</dd>
+                  </div>
+                  <div>
+                    <dt>Image Only</dt>
+                    <dd>Stages only the color image for dragging.</dd>
+                  </div>
+                  <div>
+                    <dt>Mask Only</dt>
+                    <dd>Stages only the mask.</dd>
+                  </div>
+                  <div>
+                    <dt>Both</dt>
+                    <dd>Stages image and mask together; the drag badge confirms two ready files.</dd>
+                  </div>
+                  <div>
+                    <dt>Both to WebHelper<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></dt>
+                    <dd>Sends both items directly to WebHelper without drag-and-drop.</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+
+            <figure class="detail-figure">
+              <img src="assets/output-modes.png" alt="Save and Drag menus with image and mask output options"
+                width="583" height="610" />
+              <figcaption>Save options on the left; Drag options on the right.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="doc-section" id="place-controls" aria-labelledby="place-controls-title">
+          <div class="section-heading">
+            <p class="section-number">05</p>
+            <div>
+              <p class="section-kicker">ToPS card</p>
+              <h2 id="place-controls-title">Load and place back</h2>
+              <p>Bring in one generated image and choose how Photoshop should insert it.</p>
+            </div>
+          </div>
+
+          <div class="reference-grid">
+            <figure class="detail-figure">
+              <img src="assets/place-modes.png" alt="ToPS ready state and the three Place Back modes" width="567"
+                height="610" />
+              <figcaption>A loaded result on the left; Place Back modes on the right.</figcaption>
+            </figure>
+
+            <div class="control-list">
+              <div class="control-group">
+                <h3>Load an image</h3>
+                <dl>
+                  <div>
+                    <dt>Load File…</dt>
+                    <dd>Opens a file picker for an image stored on disk.</dd>
+                  </div>
+                  <div>
+                    <dt>Paste<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></dt>
+                    <dd>Loads an image from the system clipboard.</dd>
+                  </div>
+                  <div>
+                    <dt>Close ×</dt>
+                    <dd>Clears the loaded image so another result can be loaded.</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div class="control-group">
+                <h3>Place Back</h3>
+                <dl>
+                  <div>
+                    <dt>Main button</dt>
+                    <dd>Places the image using the currently selected mode and active history
+                      entry.</dd>
+                  </div>
+                  <div>
+                    <dt>Fast &amp; Recommended <span class="tag">default</span></dt>
+                    <dd>Quickly inserts the image as a standard Smart Object. Best for normal use.</dd>
+                  </div>
+                  <div>
+                    <dt>Editable, Slow &amp; Larger File Size</dt>
+                    <dd>Creates a more editable Smart Object at the cost of time and a larger PSD.</dd>
+                  </div>
+                  <div>
+                    <dt>Custom Inpaint Mask</dt>
+                    <dd>Adds the original custom mask to the Smart Object. <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + click its
+                      thumbnail to reload the mask as a selection.</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="doc-section" id="history-settings" aria-labelledby="history-settings-title">
+          <div class="section-heading">
+            <p class="section-number">06</p>
+            <div>
+              <p class="section-kicker">Global controls</p>
+              <h2 id="history-settings-title">History, status, and settings</h2>
+              <p>These controls affect the whole panel rather than a single card.</p>
+            </div>
+          </div>
+
+          <div class="global-grid">
+            <article class="global-card">
+              <figure class="compact-figure">
+                <img src="assets/history.png" alt="Capture history dropdown with two stored captures" width="262"
+                  height="610" />
+              </figure>
+              <div>
+                <h3>Capture history</h3>
+                <p>Each entry follows this pattern:</p>
+                <p class="format-example"><strong>2:</strong> <span>[3:4]</span> (518×690) — Background</p>
+                <ul class="plain-list">
+                  <li><strong>2</strong> is the capture number.</li>
+                  <li><strong>[3:4]</strong> is the closest enabled aspect ratio.</li>
+                  <li><strong>(518×690)</strong> is the exact pixel size to reuse in an AI tool.</li>
+                  <li><strong>Background</strong> is the source layer name.</li>
+                </ul>
+                <p>Changing the entry restores that capture's image, mask, coordinates, and layer context.</p>
+              </div>
+            </article>
+
+            <article class="global-card">
+              <figure class="settings-figure">
+                <img src="assets/settings.png" alt="Allowed Aspect Ratios settings dialog" width="586" height="590" />
+                <!-- Highlight frame for native panel menu icon -->
+                <div class="menu-focus-rect" aria-hidden="true"></div>
+              </figure>
+              <div>
+                <h3>Panel menu and Settings</h3>
+                <p>
+                  Open Photoshop's panel menu with the <strong>≡</strong> icon in the panel header. This native menu is
+                  drawn by Photoshop, so it is not visible in the screenshot.
+                </p>
+                <dl class="inline-definitions">
+                  <div>
+                    <dt>Clear All</dt>
+                    <dd>Removes all capture history and resets both cards.</dd>
+                  </div>
+                  <div>
+                    <dt>Settings…</dt>
+                    <dd>Opens the allowed aspect-ratio list shown above.</dd>
+                  </div>
+                  <div>
+                    <dt>Checkboxes</dt>
+                    <dd>Enable the ratios you want the plugin to recognize.</dd>
+                  </div>
+                  <div>
+                    <dt>Up / Down</dt>
+                    <dd>Change the order in which enabled ratios are evaluated.</dd>
+                  </div>
+                  <div>
+                    <dt>Save</dt>
+                    <dd>Stores the ratio configuration locally.</dd>
+                  </div>
+                </dl>
+              </div>
+            </article>
+          </div>
+
+          <aside class="note">
+            <span class="note-icon" aria-hidden="true">!</span>
+            <p>
+              <strong>Status messages:</strong> the narrow bar beneath a card reports success, warnings, and errors.
+              If an action does not complete, read this message before retrying.
+            </p>
+          </aside>
+        </section>
+
+        <!-- Troubleshooting is intentionally short and action-oriented so it remains useful inside an installer. -->
+        <section class="doc-section" id="troubleshooting" aria-labelledby="troubleshooting-title">
+          <div class="section-heading">
+            <p class="section-number">07</p>
+            <div>
+              <p class="section-kicker">Fast fixes</p>
+              <h2 id="troubleshooting-title">Troubleshooting</h2>
+              <p>Check these items before repeating a capture or placement.</p>
+            </div>
+          </div>
+
+          <div class="troubleshooting-list">
+            <details open>
+              <summary>Capture is empty or contains the wrong pixels</summary>
+              <p>Confirm that a Photoshop document and selection are active. Check <strong>PsSource</strong>: use Copy
+                merged for the visible composite, or Copy layer for only the active layer.</p>
+            </details>
+            <details>
+              <summary>Soft or transparent edges were lost</summary>
+              <p>Repeat the capture with <strong>Slow with transparency</strong>, or use <strong>Full Doc Mask —
+                  Slow</strong> when the mask must keep the full document size.</p>
+            </details>
+            <details>
+              <summary>The generated result is stretched</summary>
+              <p>Use the ratio and exact dimensions from the active history entry in the external generator. Prefer
+                exact dimensions when the service allows them.</p>
+            </details>
+            <details>
+              <summary>The result returned to the wrong location</summary>
+              <p>Select the matching capture in the history dropdown before clicking <strong>Place Back</strong>. The
+                active history entry determines the target coordinates.</p>
+            </details>
+            <details>
+              <summary>Drag-and-drop<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup> is not
+                accepted by the target application</summary>
+              <p>Use <strong>Copy Image<sup class="helper-mark"
+                    aria-label="Requires Photoshop Helper">*</sup></strong>/<strong>Copy Mask<sup class="helper-mark"
+                    aria-label="Requires Photoshop Helper">*</sup></strong> or <strong>Save as PNG</strong> instead.
+                Some browser and desktop targets do not accept multiple dragged files.</p>
+            </details>
+          </div>
+        </section>
+
+        <!-- This single legend explains every asterisk without repeating the same warning beside each control. -->
+        <aside class="helper-requirement" id="helper-requirement" aria-labelledby="helper-requirement-title">
+          <span class="helper-symbol" aria-hidden="true">*</span>
+          <div>
+            <p class="section-kicker">Why a companion app?</p>
+            <h2 id="helper-requirement-title"><span aria-hidden="true">*</span> Requires Photoshop Helper</h2>
+            <p>
+              Photoshop keeps plugins inside a restricted sandbox, so they cannot directly perform some everyday
+              operating-system actions. Photoshop Helper is a small local companion app that handles those tasks and
+              makes the plugin faster and more convenient to use. Controls marked with <strong>*</strong> need Photoshop
+              Helper running in the system tray.
+            </p>
+            <ul class="helper-actions" aria-label="Actions that require Photoshop Helper">
+              <li>
+                <strong>Save two files at once</strong>
+                <span>Image + mask in one action</span>
+              </li>
+              <li>
+                <strong>Use the system clipboard</strong>
+                <span>Copy Image, Copy Mask, and Paste</span>
+              </li>
+              <li>
+                <strong>Drag and drop</strong>
+                <span>Start any Drag operation from the panel</span>
+              </li>
+              <li>
+                <strong>Export to WebHelper</strong>
+                <span>Send the image and mask directly</span>
+              </li>
+            </ul>
+            <p class="helper-independent">
+              <strong>Works without Helper:</strong> anything performed directly inside Photoshop, including Capture
+              and Place Back; panel controls such as history, Clear, and Settings; and single-file operations such as
+              Load File, Image Only, and Mask Only.
+            </p>
+          </div>
+        </aside>
+
+        <!-- Support links are kept subdued and clearly separate from the documentation itself. -->
+        <aside class="project-links" aria-label="Project links">
+          <div>
+            <p class="section-kicker">Need more help?</p>
+            <h2>Project links</h2>
+            <p>Report a problem on GitHub, or support continued development on Gumroad.</p>
+          </div>
+          <div class="project-actions">
+            <a class="button button-secondary" href="https://github.com/dgl-10/PhotoshopPlugin/issues" target="_blank"
+              rel="noopener">Report an issue</a>
+            <a class="button button-primary" href="https://dgl10.gumroad.com/l/photoshop-plugin" target="_blank"
+              rel="noopener">Support on Gumroad</a>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <p>FromPS / ToPS plugin manual</p>
+      <a href="#manual-content">Back to top ↑</a>
+    </div>
+  </footer>
+</body>
+
+</html>

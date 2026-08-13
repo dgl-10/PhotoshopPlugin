@@ -256,7 +256,7 @@ provider charges. Use a low-cost provider/model and one output image for smoke t
 ### Preparing to release a new version
 
 1. Prepare a new version for the Photoshop plugin (if needed):
-   1. Update the version number in `manifest.json` and update `ps-plugin-version` in `PhotoshopHelper/package.json` to match it.
+   1. Update the version number in `manifest.json` and update `ps-plugin-version` in `PhotoshopHelper/package.json` to match it. Also update `APP_VERSION` at the top of `docs/script.js` so the GitHub Pages download links and displayed version point to the new release.
    2. Run `prepare-package-ccx.bat` (it copies all needed files to the `_PluginToCCX` directory).
    3. Open Adobe UXP Developer Tools, load the plugin from the `_PluginToCCX` directory, and select "Package..." to build the CCX.
    4. Rename the generated package to `plugin.ccx` and move it to the root of the workspace.

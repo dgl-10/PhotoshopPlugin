@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FromPS / ToPS — Photoshop bridge for AI inpainting</title>
+  <meta name="description"
+    content="Capture a Photoshop selection with its exact mask, send it to any AI tool, and place the result back perfectly aligned. Free workflow bridge for artists and retouchers." />
+  <meta property="og:title" content="FromPS / ToPS — Free Photoshop AI workflow bridge" />
+  <meta property="og:description"
+    content="Not another AI model — just a bridge for the tools you already use. Capture, generate, place back." />
+  <meta property="og:image" content="https://dgl-10.github.io/PhotoshopPlugin/assets/02.png" />
+  <link rel="icon" type="image/png" href="./assets/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+  <link rel="shortcut icon" href="./assets/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png" />
+  <link rel="manifest" href="./site.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body class="variant-free">
+  <!-- Large static art background (fixed, does not scroll) -->
+  <div class="bg-art" aria-hidden="true"></div>
+
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#top" aria-label="FromPS / ToPS home">
+        <img class="brand-icon" src="./assets/plugin-icon.png" alt="" />
+        <span class="brand-name">FromPS <span class="brand-slash">/</span> ToPS</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="manual/index.html">Manual</a>
+        <a href="#download">Download</a>
+        <a href="#faq">FAQ</a>
+        <a href="#support">Support</a>
+      </nav>
+      <a class="btn btn-sm btn-primary header-cta" href="#download">Get free download</a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu">
+        <span></span><span></span>
+      </button>
+    </div>
+    <div id="mobile-nav" class="mobile-nav" hidden>
+      <a href="#how">How it works</a>
+      <a href="manual/index.html">Manual</a>
+      <a href="#download">Download</a>
+      <a href="#faq">FAQ</a>
+      <a href="#support">Support</a>
+      <a class="btn btn-primary" href="#download">Get free download</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- HERO -->
+    <section class="hero" id="top">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="pill" data-version-template="Free · v{version}">Free · v1.0.5</span>
+            <span class="pill pill-muted">Windows &amp; macOS</span>
+          </div>
+          <h1>
+            Photoshop selections, out to any AI <br />
+            <em>&amp; back where they belong.</em>
+          </h1>
+          <p class="lede">
+            FromPS / ToPS is a workflow bridge. Capture a selection with its exact mask,
+            send it to ChatGPT, Midjourney, Gemini, or your own API — then place the
+            result back, aligned, masked, and non-destructive.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg"
+              href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-Setup-1.0.5.exe"
+              data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-Setup-{version}.exe">
+              <span class="btn-icon" aria-hidden="true">⊞</span>
+              Download for Windows
+            </a>
+            <a class="btn btn-secondary btn-lg" href="#download-mac">
+              <span class="btn-icon" aria-hidden="true">⌘</span>
+              Download for macOS
+            </a>
+          </div>
+          <p class="hero-note">
+            Photoshop 2024+ · Free to use · No feature paywall ·
+            <a href="https://github.com/dgl-10/PhotoshopPlugin" target="_blank" rel="noopener">View on GitHub</a>
+          </p>
+        </div>
+        <div class="hero-visual">
+          <div class="hero-frame">
+            <!-- <img src="./assets/02.png"
+              alt="FromPS / ToPS workflow: capture from Photoshop, generate with AI, place result back" width="1200"
+              height="675" fetchpriority="high" /> -->
+            <iframe width="1200" height="675" src="https://www.youtube-nocookie.com/embed/BNU2Hd1dki4"
+              title="FromPS / ToPS — Photoshop bridge for AI inpainting" frameborder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+          </div>
+          <div class="hero-glow" aria-hidden="true"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROBLEM -->
+    <section class="section problem" id="problem" aria-labelledby="problem-title">
+      <div class="wrap narrow">
+        <p class="section-kicker">The pain</p>
+        <h2 id="problem-title">Preparing a Photoshop selection for AI — and fitting the result back into place — is pure
+          friction.</h2>
+        <ol class="pain-list">
+          <li class="pain-item pain-item-acute">
+            <span class="pain-face pain-sprite-icon pain-sprite-icon-01" aria-hidden="true"></span>
+            <span>Choose an aspect ratio your AI service supports → manually adjust the selection bounds to match
+              it</span>
+          </li>
+          <li class="pain-item">
+            <span class="pain-face pain-sprite-icon pain-sprite-icon-02" aria-hidden="true"></span>
+            <span>Copy Merged → paste into a new document → save</span>
+          </li>
+          <li class="pain-item">
+            <span class="pain-face pain-sprite-icon pain-sprite-icon-03" aria-hidden="true"></span>
+            <span>Prepare and save a separate mask, if the workflow requires one</span>
+          </li>
+          <li class="pain-item">
+            <span class="pain-face pain-sprite-icon pain-sprite-icon-04" aria-hidden="true"></span>
+            <span>Upload the prepared crop and mask to your AI tool → generate</span>
+          </li>
+          <li class="pain-item pain-item-acute">
+            <span class="pain-face pain-sprite-icon pain-sprite-icon-05" aria-hidden="true"></span>
+            <span>Download the result → place it into the original document → resize → align → clean up the
+              edges…</span>
+          </li>
+          <li class="pain-item pain-item-repeat">
+            <span class="pain-face pain-sprite-icon pain-sprite-icon-06" aria-hidden="true"></span>
+            <span>Repeat the entire round trip for every new area</span>
+          </li>
+        </ol>
+        <div class="problem-punch">
+          <span class="relief-face pain-sprite-icon pain-sprite-icon-07" aria-hidden="true"></span>
+          <div class="problem-punch-copy">
+            <span class="problem-punch-kicker">The relief</span>
+            <strong>FromPS / ToPS collapses that loop.</strong>
+            <span class="problem-punch-tagline">One click out. One click back.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="section how" id="how" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="section-kicker">How it works</p>
+          <h2 id="how-title">Three steps. Your tools. Your models.</h2>
+          <p class="section-sub">
+            Not another AI model — just a bridge for the tools you already use.
+          </p>
+        </div>
+
+        <div class="steps">
+          <article class="step">
+            <div class="step-num">01</div>
+            <h3>Capture</h3>
+            <p>
+              Select any area in Photoshop with any tool. Click <strong>Capture</strong>.
+              The plugin pulls the image content, a pixel-perfect mask, and smart
+              aspect-ratio fitting for AI tools.
+            </p>
+          </article>
+          <article class="step">
+            <div class="step-num">02</div>
+            <h3>Generate anywhere</h3>
+            <p>
+              Drag image + mask into ChatGPT, Midjourney, Gemini, or any editor —
+              or use the built-in <strong>WebHelper</strong> with your own API keys
+              (Fal, Replicate, BFL, xAI, and more).
+            </p>
+          </article>
+          <article class="step">
+            <div class="step-num">03</div>
+            <h3>Place back</h3>
+            <p>
+              Paste or load the result, hit <strong>Place Back</strong>. It lands at
+              the original coordinates as a Smart Object with a layer mask —
+              seamless, undoable, non-destructive.
+            </p>
+          </article>
+        </div>
+
+        <figure class="showcase">
+          <img src="./assets/hero.png" alt="Diagram of the FromPS / ToPS capture → generate → place-back workflow"
+            width="1200" height="675" loading="lazy" />
+        </figure>
+
+        <div class="pair">
+          <figure>
+            <img src="./assets/08_1.png" alt="Result placed back as a Smart Object with layer mask" width="550"
+              height="400" loading="lazy" />
+            <figcaption>Placed as Smart Object + mask</figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/09.png" alt="Smart Object contents at original capture size" width="550" height="400"
+              loading="lazy" />
+            <figcaption>Original size preserved inside the Smart Object</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="section features" aria-labelledby="features-title">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="section-kicker">Why it exists</p>
+          <h2 id="features-title">Built for people who already have AI tools.</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature">
+            <h3>Pixel-perfect masks</h3>
+            <p>Any Photoshop selection tool becomes an exact inpaint mask — no redrawing in the browser.</p>
+          </article>
+          <article class="feature">
+            <h3>Aligned place-back</h3>
+            <p>Results return to the original coordinates with Smart Object + layer mask and soft edge blend.</p>
+          </article>
+          <article class="feature">
+            <h3>No vendor lock-in</h3>
+            <p>Browser drag-and-drop or your own APIs. Choose the model that fits the project.</p>
+          </article>
+          <article class="feature">
+            <h3>WebHelper workspace</h3>
+            <p>Local API command center: multi-task jobs, mask overlay, regenerate, chain results, keep keys on your
+              machine.</p>
+          </article>
+          <article class="feature">
+            <h3>Free core workflow</h3>
+            <p>The app is free to use. No features are locked behind payment. Optional supporter key only silences
+              reminders.</p>
+          </article>
+          <article class="feature">
+            <h3>Runs locally</h3>
+            <p>PhotoshopHelper lives on your machine for clipboard, drag-and-drop, and localhost API workflows.</p>
+          </article>
+        </div>
+
+        <div class="pair webhelper-pair">
+          <figure>
+            <img src="./assets/11.png" alt="WebHelper source tab with mask overlay and generation settings" width="550"
+              height="700" loading="lazy" />
+            <figcaption>WebHelper — source, mask, settings</figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/13.png" alt="WebHelper generation results grid" width="550" height="700"
+              loading="lazy" />
+            <figcaption>Compare generations side by side</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- DOWNLOAD -->
+    <section class="section download" id="download" aria-labelledby="download-title">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="section-kicker">Download</p>
+          <h2 id="download-title">Install in a few minutes.</h2>
+          <p class="section-sub">
+            Latest release: <strong data-version-template="v{version}">v1.0.5</strong> ·
+            <a href="https://github.com/dgl-10/PhotoshopPlugin/releases/latest" target="_blank" rel="noopener">All
+              releases on GitHub</a>
+          </p>
+        </div>
+
+        <div class="dl-grid">
+          <article class="dl-card">
+            <div class="dl-os">Windows</div>
+            <h3>Windows 10 / 11 · x64</h3>
+            <p>Standard installer. Automatic updates included.</p>
+            <a class="btn btn-primary btn-block"
+              href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-Setup-1.0.5.exe"
+              data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-Setup-{version}.exe"
+              data-version-template="Download .exe · {version}">
+              Download .exe · 1.0.5
+            </a>
+            <details class="install-help">
+              <summary>Windows SmartScreen note</summary>
+              <p>
+                Because this is a source-available project without a paid code-signing certificate,
+                Windows may show <em>“Windows protected your PC”</em>. That is expected.
+              </p>
+              <ol>
+                <li>Click <strong>More info</strong>.</li>
+                <li>Click <strong>Run anyway</strong>.</li>
+              </ol>
+            </details>
+          </article>
+
+          <article class="dl-card" id="download-mac">
+            <div class="dl-os">macOS</div>
+            <h3>Experimental unsigned build</h3>
+            <p>Provided as-is. Prefer the Apple Silicon DMG on M1/M2/M3/M4 Macs.</p>
+            <div class="btn-stack">
+              <a class="btn btn-secondary btn-block"
+                href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-1.0.5-arm64.dmg"
+                data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-{version}-arm64.dmg">
+                Apple Silicon · .dmg
+              </a>
+              <a class="btn btn-ghost btn-block"
+                href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-1.0.5.dmg"
+                data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-{version}.dmg">
+                Intel Mac · .dmg
+              </a>
+            </div>
+            <details class="install-help">
+              <summary>macOS Gatekeeper note</summary>
+              <p>
+                The macOS build is currently unsigned. Gatekeeper may say the app is damaged
+                or from an unidentified developer.
+              </p>
+              <ol>
+                <li>Download the <strong>.dmg</strong> (not the .zip — zip is for auto-update internals).</li>
+                <li>Open the DMG and drag <strong>PhotoshopHelper</strong> to Applications.</li>
+                <li><strong>Right-click → Open</strong> the app the first time, then confirm Open.</li>
+                <li>If it still fails, Terminal:
+                  <code>xattr -cr /Applications/PhotoshopHelper.app</code>
+                </li>
+              </ol>
+            </details>
+          </article>
+        </div>
+
+        <div class="quickstart">
+          <h3>After download</h3>
+          <ol>
+            <li>Install / open <strong>PhotoshopHelper</strong> (it runs in the system tray).</li>
+            <li>Install the plugin into <strong>Adobe Photoshop 2024+</strong>.</li>
+            <li>Open the panel: <span class="mono">Plugins → FromPS / ToPS</span>.</li>
+            <li>Select something. Capture. Drag out. Place back.</li>
+          </ol>
+          <p class="quickstart-note">
+            Browser drag-and-drop needs no API keys. WebHelper only needs a key for the provider you choose.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- AUDIENCE -->
+    <section class="section audience" aria-labelledby="audience-title">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="section-kicker">Who it’s for</p>
+          <h2 id="audience-title">Retouchers, illustrators, concept artists, freelancers.</h2>
+        </div>
+        <ul class="audience-list">
+          <li><strong>Digital artists</strong> — iterate inpaint variations without leaving your file</li>
+          <li><strong>Photo retouchers</strong> — remove or replace objects with the model you trust</li>
+          <li><strong>Concept artists</strong> — explore environment and character options fast</li>
+          <li><strong>AI-curious freelancers</strong> — compare models side by side without another wrapper fee</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section faq" id="faq" aria-labelledby="faq-title">
+      <div class="wrap narrow">
+        <div class="section-head">
+          <p class="section-kicker">FAQ</p>
+          <h2 id="faq-title">Straight answers.</h2>
+        </div>
+
+        <div class="faq-list">
+          <details class="faq-item" open>
+            <summary>Does it generate images by itself?</summary>
+            <p>
+              No. It is a bridge. It sends your Photoshop selections to the AI tool of your choice
+              (browser-based or API) and brings the results back.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Do I need API keys?</summary>
+            <p>
+              Only if you want WebHelper’s API features. The browser drag-and-drop workflow
+              needs no API keys.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Does it send my images somewhere in the middle?</summary>
+            <p>
+              Browser drag-and-drop goes to whatever site you drop into. WebHelper sends from
+              your machine to the API provider you configured. There are no middleman servers
+              operated by FromPS / ToPS.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Is it free?</summary>
+            <p>
+              Yes. The app is free to use and the core workflow is not locked behind a payment.
+              Heavy use may show a dismissible support reminder. A supporter key simply snoozes
+              those reminders for a long time.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Is this open source?</summary>
+            <p>
+              It is <strong>source-available</strong> for transparency and personal/non-commercial use
+              under <strong>CC BY-NC-SA 4.0</strong>. That is not an OSI open-source license.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Can I use generated images for client work?</summary>
+            <p>
+              FromPS / ToPS does not claim rights over your outputs. Rights depend on your input
+              material and the terms of the AI tool or API you used. The NonCommercial license
+              restricts commercial redistribution of the <em>software itself</em>, not your image files.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>What do I need installed?</summary>
+            <p>
+              Adobe Photoshop 2024 (v24.0.0+) and either Windows 10/11 x64 or the experimental
+              macOS build. You also need internet access for the AI services you choose.
+            </p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUPPORT / GUMROAD -->
+    <section class="section support" id="support" aria-labelledby="support-title">
+      <div class="wrap support-card">
+        <div>
+          <p class="section-kicker">Support the project</p>
+          <h2 id="support-title">Free forever. Tips optional.</h2>
+          <p>
+            If FromPS / ToPS saves you time, you can grab a supporter key on Gumroad. No features are locked — the key
+            only
+            quiets support reminders.
+          </p>
+        </div>
+        <div class="support-actions">
+          <a class="btn btn-primary btn-lg" href="https://dgl10.gumroad.com/l/photoshop-plugin" target="_blank"
+            rel="noopener">
+            Supporter page on Gumroad
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/dgl-10/PhotoshopPlugin/issues" target="_blank"
+            rel="noopener">
+            Report a bug / idea
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <div class="footer-brand">
+        <img class="footer-brand-icon" src="./assets/plugin-icon.png" alt="" />
+        <span>FromPS <span class="brand-slash">/</span> ToPS</span>
+      </div>
+      <p class="footer-copy">
+        Source-available under
+        <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>.
+        Not affiliated with Adobe.
+      </p>
+      <div class="footer-links">
+        <a href="manual/index.html">Manual</a>
+        <a href="https://github.com/dgl-10/PhotoshopPlugin" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/dgl-10/PhotoshopPlugin/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://dgl10.gumroad.com/l/photoshop-plugin" target="_blank" rel="noopener">Gumroad</a>
+        <a href="https://github.com/dgl-10/PhotoshopPlugin/blob/main/PRIVACY.md" target="_blank"
+          rel="noopener">Privacy</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+
+</html>

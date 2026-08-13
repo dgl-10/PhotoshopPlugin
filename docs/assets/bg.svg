@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2400" viewBox="0 0 1600 2400" fill="none">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1600" y2="2400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFF6E8"/>
+      <stop offset="35%" stop-color="#FFE0F0"/>
+      <stop offset="65%" stop-color="#D8F0FF"/>
+      <stop offset="100%" stop-color="#E8FFF4"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1280 180) scale(520)">
+      <stop stop-color="#FFB347" stop-opacity="0.85"/>
+      <stop offset="0.45" stop-color="#FF6B9D" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FF6B9D" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bloom" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(220 720) scale(640)">
+      <stop stop-color="#7C5CFF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#7C5CFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="mint" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1400 1100) scale(580)">
+      <stop stop-color="#2EE6A6" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#2EE6A6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="coral" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(180 1800) scale(700)">
+      <stop stop-color="#FF7A59" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FF7A59" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="skyBlue" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(900 2100) scale(620)">
+      <stop stop-color="#4DA3FF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#4DA3FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="2400" fill="url(#sky)"/>
+  <rect width="1600" height="2400" fill="url(#sun)"/>
+  <rect width="1600" height="2400" fill="url(#bloom)"/>
+  <rect width="1600" height="2400" fill="url(#mint)"/>
+  <rect width="1600" height="2400" fill="url(#coral)"/>
+  <rect width="1600" height="2400" fill="url(#skyBlue)"/>
+
+  <!-- free-form ribbons / brush-like arcs -->
+  <path d="M-40 420 C 280 280, 520 520, 860 400 S 1420 180, 1680 320"
+        stroke="#FF5C8A" stroke-opacity="0.22" stroke-width="90" stroke-linecap="round" fill="none"/>
+  <path d="M-20 980 C 360 860, 620 1180, 980 980 S 1480 820, 1700 1040"
+        stroke="#5B8CFF" stroke-opacity="0.18" stroke-width="110" stroke-linecap="round" fill="none"/>
+  <path d="M-60 1500 C 300 1360, 640 1680, 1020 1480 S 1500 1280, 1720 1560"
+        stroke="#20D9A0" stroke-opacity="0.16" stroke-width="100" stroke-linecap="round" fill="none"/>
+  <path d="M100 2100 C 420 1920, 760 2280, 1100 2080 S 1520 1880, 1680 2140"
+        stroke="#FF9F43" stroke-opacity="0.2" stroke-width="80" stroke-linecap="round" fill="none"/>
+
+  <!-- floating orbs -->
+  <circle cx="240" cy="260" r="70" fill="#FFD36B" fill-opacity="0.55"/>
+  <circle cx="1380" cy="560" r="120" fill="#A78BFA" fill-opacity="0.28"/>
+  <circle cx="420" cy="1280" r="95" fill="#34D399" fill-opacity="0.28"/>
+  <circle cx="1180" cy="1680" r="140" fill="#FB7185" fill-opacity="0.22"/>
+  <circle cx="780" cy="880" r="48" fill="#38BDF8" fill-opacity="0.4"/>
+  <circle cx="980" cy="320" r="34" fill="#F472B6" fill-opacity="0.45"/>
+  <circle cx="160" cy="1900" r="56" fill="#FBBF24" fill-opacity="0.4"/>
+
+  <!-- loose geometric freedom marks -->
+  <rect x="1260" y="220" width="90" height="90" rx="22" transform="rotate(18 1305 265)"
+        fill="#FFF" fill-opacity="0.35" stroke="#FF6B9D" stroke-opacity="0.35" stroke-width="3"/>
+  <path d="M180 640 L240 560 L300 640 Z" fill="#7C5CFF" fill-opacity="0.22"/>
+  <path d="M1450 1420 L1520 1320 L1590 1420 Z" fill="#FF9F43" fill-opacity="0.28"/>
+</svg>
