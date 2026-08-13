@@ -47,7 +47,7 @@ You've found an incredible AI that generates exactly what you need — maybe it'
 
 ## 🎬 Video Demo (40 Seconds)
 
-[![FromPS / ToPS — Photoshop AI Workflow Demo in 40 Seconds](https://img.youtube.com/vi/BNU2Hd1dki4/maxresdefault.jpg)](https://www.youtube.com/watch?v=BNU2Hd1dki4)
+https://github.com/user-attachments/assets/fe64b954-2257-489d-bef6-f94ab314ef13
 
 ---
 
