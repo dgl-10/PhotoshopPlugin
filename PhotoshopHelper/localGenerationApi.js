@@ -39,9 +39,9 @@ function isPlainObject(value) {
 /**
  * Validate and normalize one image path supplied by a local API consumer.
  *
- * Absolute paths make task reuse deterministic for callers launched with different
- * working directories. No file is copied: the task retains this normalized path and
- * the generation core reads it directly whenever a generation is requested.
+ * Absolute paths make requests deterministic for callers launched with different
+ * working directories. No file is copied: the generation core reads each normalized
+ * path directly for this one generation.
  *
  * @param {unknown} value - Potential absolute path from the request body.
  * @param {string} fieldName - JSON field name used in validation messages.
@@ -82,30 +82,10 @@ function normalizeInputFilePath(value, fieldName, required) {
 }
 
 /**
- * Validate the body used to create a reusable local task.
- *
- * The source and optional mask belong to the task because every later generation
- * may reuse them with a different provider, prompt, parameter set, or mask mode.
+ * Validate one self-contained local generation request.
  *
  * @param {unknown} body - Parsed Express JSON request body.
- * @returns {{sourceImagePath: string, maskImagePath: string|null}} Normalized task inputs.
- */
-function normalizeTaskRequest(body) {
-    if (!isPlainObject(body)) {
-        throw createHttpError('The request body must be a JSON object.');
-    }
-
-    return {
-        sourceImagePath: normalizeInputFilePath(body.sourceImagePath, 'sourceImagePath', true),
-        maskImagePath: normalizeInputFilePath(body.maskImagePath, 'maskImagePath', false)
-    };
-}
-
-/**
- * Validate a generation request that will run against an existing local task.
- *
- * @param {unknown} body - Parsed Express JSON request body.
- * @returns {object} Normalized provider and per-generation arguments.
+ * @returns {object} Normalized image paths, provider, and generation arguments.
  */
 function normalizeGenerationRequest(body) {
     if (!isPlainObject(body)) {
@@ -127,10 +107,17 @@ function normalizeGenerationRequest(body) {
         throw createHttpError('"num_images" must be an integer between 1 and 100.');
     }
 
-    const aspectRatio = body.aspect_ratio;
-    if (aspectRatio !== undefined && aspectRatio !== null && typeof aspectRatio !== 'string') {
+    const rawAspectRatio = body.aspect_ratio;
+    if (rawAspectRatio !== undefined && rawAspectRatio !== null && typeof rawAspectRatio !== 'string') {
         throw createHttpError('"aspect_ratio" must be a string when provided.');
     }
+
+    // Trim transport-only whitespace once at the API boundary. An empty string is
+    // equivalent to an omitted ratio for image-to-image, but is rejected below for
+    // text-to-image where an explicit output shape is mandatory.
+    const aspectRatio = typeof rawAspectRatio === 'string'
+        ? rawAspectRatio.trim() || undefined
+        : undefined;
 
     if (body.use_mask !== undefined && typeof body.use_mask !== 'boolean') {
         throw createHttpError('"use_mask" must be a boolean when provided.');
@@ -149,13 +136,48 @@ function normalizeGenerationRequest(body) {
         normalizeInputFilePath(referencePath, `referenceImagePaths[${index}]`, true)
     ));
 
+    // Source and mask belong to this generation rather than to a persistent parent
+    // task. They remain optional so the request can use a promoted first reference
+    // or represent text-to-image input.
+    const sourceImagePath = normalizeInputFilePath(
+        body.sourceImagePath,
+        'sourceImagePath',
+        false
+    );
+    const maskImagePath = normalizeInputFilePath(
+        body.maskImagePath,
+        'maskImagePath',
+        false
+    );
+    const useMask = body.use_mask ?? Boolean(maskImagePath);
+
+    // Asking to use a mask without supplying one is a malformed local API request.
+    // A supplied mask without source is valid because generate() can promote the
+    // first reference and perform the exact dimension check asynchronously.
+    if (useMask && !maskImagePath) {
+        throw createHttpError('"maskImagePath" is required when "use_mask" is true.');
+    }
+
+    // With no effective image input there are no dimensions to inherit. Reject the
+    // request synchronously instead of creating a generation that can only fail in
+    // the asynchronous core. A reference counts as image-to-image because generate()
+    // promotes its first entry to source; an ignored mask deliberately does not.
+    const isTextToImage = !sourceImagePath
+        && !useMask
+        && normalizedReferencePaths.length === 0;
+    if (isTextToImage && !aspectRatio) {
+        throw createHttpError('"aspect_ratio" is required for text-to-image generation.');
+    }
+
     return {
         providerId: providerId.trim(),
+        sourceImagePath,
+        maskImagePath,
         params: { ...params },
         numImages,
-        aspectRatio: aspectRatio ?? undefined,
+        aspectRatio,
         referenceImagePaths: normalizedReferencePaths,
-        useMask: body.use_mask,
+        useMask,
         forceSeparateRequests: body.force_separate_requests ?? false
     };
 }
@@ -236,18 +258,17 @@ function resultToAbsolutePath(result, tempDir) {
 /**
  * Build the relative URL for one generation status resource.
  *
- * @param {string} taskId - Parent task identifier.
- * @param {string} generationId - Child generation identifier.
+ * @param {string} generationId - Generation identifier.
  * @returns {string} URL accepted by the generation GET endpoint.
  */
-function getGenerationStatusUrl(taskId, generationId) {
-    return `${LOCAL_API_PREFIX}/tasks/${encodeURIComponent(taskId)}/generations/${encodeURIComponent(generationId)}`;
+function getGenerationStatusUrl(generationId) {
+    return `${LOCAL_API_PREFIX}/generations/${encodeURIComponent(generationId)}`;
 }
 
 /**
  * Build the binary-free representation of one generation attempt.
  *
- * @param {object} generation - Internal generation state stored under its task.
+ * @param {object} generation - Internal generation state.
  * @param {string} tempDir - Directory containing generated output files.
  * @returns {object} Public generation representation.
  */
@@ -258,7 +279,6 @@ function serializeGeneration(generation, tempDir) {
 
     return {
         generationId: generation.generationId,
-        taskId: generation.taskId,
         status: generation.status,
         providerId: generation.providerId,
         createdAt: generation.createdAt,
@@ -266,53 +286,31 @@ function serializeGeneration(generation, tempDir) {
         completedAt: generation.completedAt || null,
         outputPaths,
         error: generation.error || null,
-        statusUrl: getGenerationStatusUrl(generation.taskId, generation.generationId)
+        statusUrl: getGenerationStatusUrl(generation.generationId)
     };
 }
 
 /**
- * Build the reusable task representation, including summaries of all generations.
+ * Execute one self-contained generation.
  *
- * @param {object} task - Internal task stored in the shared task registry.
- * @param {string} tempDir - Directory containing generated output files.
- * @returns {object} Public task representation.
- */
-function serializeTask(task, tempDir) {
-    const generations = Object.values(task.generations || {})
-        .map(generation => serializeGeneration(generation, tempDir));
-
-    return {
-        taskId: task.taskId,
-        status: task.status,
-        sourceImagePath: task.sourceImage,
-        maskImagePath: task.maskImage,
-        createdAt: task.createdAt,
-        updatedAt: task.updatedAt,
-        generationCount: generations.length,
-        generations
-    };
-}
-
-/**
- * Execute one generation without changing the reusable parent task's readiness.
- *
- * Multiple generation objects may run sequentially or concurrently against the same
- * task. Each one owns its parameters, status, results, timestamps, and error while
- * the source and mask paths remain stored once on the parent task.
- *
- * @param {object} task - Reusable parent task from the shared registry.
- * @param {object} generation - Mutable child generation state.
+ * @param {object} generation - Mutable generation state.
  * @param {object} dependencies - Existing generator and filesystem dependencies.
  * @returns {Promise<void>} Resolves after this generation reaches a terminal state.
  */
-async function executeGeneration(task, generation, dependencies) {
+async function executeGeneration(generation, dependencies) {
     generation.status = 'running';
     generation.startedAt = new Date().toISOString();
-    task.updatedAt = generation.startedAt;
 
     try {
+        // The core accepts an unregistered input object. Supplying generationId keeps
+        // its diagnostic logs traceable without inventing an internal task ID.
+        const generationInput = {
+            generationId: generation.generationId,
+            sourceImage: generation.sourceImagePath,
+            maskImage: generation.maskImagePath
+        };
         const results = await dependencies.generate(
-            task.taskId,
+            generationInput,
             generation.providerId,
             generation.numImages,
             generation.aspectRatio,
@@ -320,12 +318,10 @@ async function executeGeneration(task, generation, dependencies) {
             generation.referenceImagePaths,
             generation.useMask,
             generation.forceSeparateRequests,
-            dependencies.tempDir,
-            dependencies.tasks
+            dependencies.tempDir
         );
 
         generation.results.push(...results);
-        task.results.push(...results);
 
         const outputPaths = results
             .map(result => resultToAbsolutePath(result, dependencies.tempDir))
@@ -345,28 +341,14 @@ async function executeGeneration(task, generation, dependencies) {
         console.error(`[LocalGenerationAPI] Generation ${generation.generationId} failed:`, error);
     } finally {
         generation.completedAt = new Date().toISOString();
-        task.updatedAt = generation.completedAt;
     }
 }
 
 /**
- * Find a local API task without exposing regular WebHelper tasks through this API.
- *
- * @param {Record<string, object>} tasks - Shared task registry.
- * @param {string} taskId - Requested task identifier.
- * @returns {object|null} Matching local task, or null when it is absent/ineligible.
- */
-function findLocalTask(tasks, taskId) {
-    const task = tasks[taskId];
-    return task && task.localApiTask === true ? task : null;
-}
-
-/**
- * Create the reusable task and child-generation local API.
+ * Create the direct local generation API.
  *
  * @param {object} options - Runtime dependencies supplied by main.js.
  * @param {Function} options.generate - Existing provider-driven generation function.
- * @param {Record<string, object>} options.tasks - Shared in-memory task registry.
  * @param {string} options.tempDir - Existing WebHelper generation output directory.
  * @param {string} [options.token=''] - Optional shared token for local callers.
  * @param {Function} [options.onGenerationAccepted] - Optional usage/accounting callback.
@@ -376,99 +358,38 @@ function createLocalGenerationRouter(options) {
     if (!options || typeof options.generate !== 'function') {
         throw new TypeError('createLocalGenerationRouter requires a generate function.');
     }
-    if (!options.tasks || typeof options.tasks !== 'object') {
-        throw new TypeError('createLocalGenerationRouter requires a shared tasks object.');
-    }
     if (!options.tempDir || typeof options.tempDir !== 'string') {
         throw new TypeError('createLocalGenerationRouter requires a tempDir path.');
     }
 
     const dependencies = {
         generate: options.generate,
-        tasks: options.tasks,
         tempDir: path.resolve(options.tempDir)
     };
+    // Generation state is deliberately private to this router. Local API requests
+    // never enter WebHelper's task registry and cannot affect Photoshop/UI tasks.
+    const generations = new Map();
     const router = express.Router();
 
     router.use(createOptionalTokenMiddleware(options.token || ''));
 
-    // Create the reusable source/mask task without copying either input file.
-    router.post('/tasks', (req, res) => {
+    // Accept one complete provider invocation without a preliminary task resource.
+    router.post('/generations', (req, res) => {
         try {
-            const request = normalizeTaskRequest(req.body);
-            const taskId = `local_task_${Date.now()}_${crypto.randomUUID()}`;
-            const createdAt = new Date().toISOString();
-            const taskUrl = `${LOCAL_API_PREFIX}/tasks/${encodeURIComponent(taskId)}`;
-
-            const task = {
-                taskId,
-                sourceImage: request.sourceImagePath,
-                maskImage: request.maskImagePath,
-                status: 'ready',
-                results: [],
-                threadId: 'LocalAPI',
-                createdAt,
-                updatedAt: createdAt,
-                generations: {},
-                localApiTask: true
-            };
-
-            options.tasks[taskId] = task;
-
-            return res.location(taskUrl).status(201).json({
-                taskId,
-                status: task.status,
-                taskUrl
-            });
-        } catch (error) {
-            const statusCode = error.statusCode || 500;
-            if (statusCode >= 500) {
-                console.error('[LocalGenerationAPI] Failed to create task:', error);
-            }
-            return res.status(statusCode).json({ error: error.message || 'Unable to create task.' });
-        }
-    });
-
-    // Return the task plus independent summaries for every generation run on it.
-    router.get('/tasks/:taskId', (req, res) => {
-        const task = findLocalTask(options.tasks, req.params.taskId);
-        if (!task) {
-            return res.status(404).json({ error: 'Local task not found.' });
-        }
-
-        return res.json(serializeTask(task, dependencies.tempDir));
-    });
-
-    // Accept one provider invocation against the reusable parent task.
-    router.post('/tasks/:taskId/generations', (req, res) => {
-        try {
-            const task = findLocalTask(options.tasks, req.params.taskId);
-            if (!task) {
-                throw createHttpError('Local task not found.', 404);
-            }
-
             const request = normalizeGenerationRequest(req.body);
-            const useMask = request.useMask ?? Boolean(task.maskImage);
-
-            // Revalidate retained paths when generation begins because a caller may
-            // delete or move a file after creating the reusable task.
-            normalizeInputFilePath(task.sourceImage, 'sourceImagePath', true);
-            if (useMask) {
-                normalizeInputFilePath(task.maskImage, 'maskImagePath', true);
-            }
-
             const generationId = `generation_${Date.now()}_${crypto.randomUUID()}`;
             const createdAt = new Date().toISOString();
             const generation = {
                 generationId,
-                taskId: task.taskId,
                 status: 'queued',
                 providerId: request.providerId,
+                sourceImagePath: request.sourceImagePath,
+                maskImagePath: request.maskImagePath,
                 params: request.params,
                 numImages: request.numImages,
                 aspectRatio: request.aspectRatio,
                 referenceImagePaths: request.referenceImagePaths,
-                useMask,
+                useMask: request.useMask,
                 forceSeparateRequests: request.forceSeparateRequests,
                 results: [],
                 createdAt,
@@ -477,8 +398,7 @@ function createLocalGenerationRouter(options) {
                 error: null
             };
 
-            task.generations[generationId] = generation;
-            task.updatedAt = createdAt;
+            generations.set(generationId, generation);
 
             if (typeof options.onGenerationAccepted === 'function') {
                 // Accounting is intentionally detached from both the response and
@@ -488,9 +408,8 @@ function createLocalGenerationRouter(options) {
                 });
             }
 
-            const statusUrl = getGenerationStatusUrl(task.taskId, generationId);
+            const statusUrl = getGenerationStatusUrl(generationId);
             res.location(statusUrl).status(202).json({
-                taskId: task.taskId,
                 generationId,
                 status: generation.status,
                 statusUrl
@@ -499,7 +418,7 @@ function createLocalGenerationRouter(options) {
             // Run only after the accepted response is committed so provider latency
             // never turns this endpoint into a synchronous generation request.
             setImmediate(() => {
-                void executeGeneration(task, generation, dependencies);
+                void executeGeneration(generation, dependencies);
             });
         } catch (error) {
             const statusCode = error.statusCode || 500;
@@ -511,11 +430,8 @@ function createLocalGenerationRouter(options) {
     });
 
     // Return the status and output paths for one specific generation attempt.
-    router.get('/tasks/:taskId/generations/:generationId', (req, res) => {
-        const task = findLocalTask(options.tasks, req.params.taskId);
-        const generation = task && task.generations
-            ? task.generations[req.params.generationId]
-            : null;
+    router.get('/generations/:generationId', (req, res) => {
+        const generation = generations.get(req.params.generationId);
 
         if (!generation) {
             return res.status(404).json({ error: 'Generation not found.' });
@@ -529,10 +445,5 @@ function createLocalGenerationRouter(options) {
 
 module.exports = {
     LOCAL_API_PREFIX,
-    createLocalGenerationRouter,
-    normalizeGenerationRequest,
-    normalizeTaskRequest,
-    resultToAbsolutePath,
-    serializeGeneration,
-    serializeTask
+    createLocalGenerationRouter
 };

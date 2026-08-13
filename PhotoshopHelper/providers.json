@@ -165,9 +165,9 @@
     },
     "providers": [
         {
-            "id": "grok_imagine_i2i",
-            "name": "Grok Imagine - via XAI API Key (from $0.022/$0.08 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
-            "remarks": "Aspect ratio adjustments are only supported when at least one additional reference image is provided. <br/>Note that all generations that do not pass moderation are charged at full cost.",
+            "id": "grok_imagine",
+            "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
+            "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
             "max_reference_images": 4,
             "supports_negative_prompt": false,
@@ -202,13 +202,16 @@
                 }
             },
             "filename_suffix": {
+                "default": "grok_imagine",
                 "depends_on": "model_xai",
                 "values": {
-                    "grok-imagine-image-quality": "grok_imagine_quality_i2i"
+                    "grok-imagine-image": "grok_imagine",
+                    "grok-imagine-image-quality": "grok_imagine_quality"
                 }
             },
             "request_config": {
-                "endpoint_url": "https://api.x.ai/v1/images/edits",
+                "{{?!source_image}}endpoint_url": "https://api.x.ai/v1/images/generations",
+                "{{?source_image}}endpoint_url": "https://api.x.ai/v1/images/edits",
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
@@ -224,7 +227,7 @@
                     "n": "{{num_images}}",
                     "resolution": "{{resolution}}",
                     "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
-                    "images": [
+                    "{{?source_image}}images": [
                         {
                             "url": "{{source_image}}",
                             "type": "image_url"
@@ -309,10 +312,10 @@
             ]
         },
         {
-            "id": "seedream_v4_5_i2i_replicate",
+            "id": "seedream_v4_5_replicate",
             "name": "Seedream v4.5 via Replicate API Key ($0.04/per image)",
             "nice_name": "Seedream v4.5 (REPLICATE Key)",
-            "filename_suffix": "seedream_v4_5_i2i",
+            "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
             "max_reference_images": 13,
             "supports_negative_prompt": false,
@@ -360,7 +363,7 @@
                         "{{?sequential_image_generation}}sequential_image_generation": "auto",
                         "{{?sequential_image_generation}}max_images": "{{sequential_image_generation}}",
                         //"output_format": "png",
-                        "image_input": [
+                        "{{?source_image}}image_input": [
                             "{{source_image}}",
                             "{{resolved_image_array}}"
                         ]
@@ -440,10 +443,10 @@
             ]
         },
         {
-            "id": "seedream_v4_5_i2i_fal",
+            "id": "seedream_v4_5_fal",
             "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
             "nice_name": "Seedream v4.5 (FAL Key)",
-            "filename_suffix": "seedream_v4_5_i2i",
+            "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
             "max_reference_images": 9,
             "supports_negative_prompt": false,
@@ -472,7 +475,8 @@
                 }
             ],
             "request_config": {
-                "endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v4.5/edit",
+                "{{?!source_image}}endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v4.5/text-to-image",
+                "{{?source_image}}endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v4.5/edit",
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
@@ -487,7 +491,7 @@
                     "num_images": "{{num_images}}",
                     "{{?!max_images}}max_images": 1,
                     "{{?max_images}}max_images": "{{max_images}}",
-                    "image_urls": [
+                    "{{?source_image}}image_urls": [
                         "{{source_image}}",
                         "{{resolved_image_array}}"
                     ]
@@ -566,10 +570,10 @@
             ]
         },
         {
-            "id": "seedream_v5_0_lite_i2i_fal",
+            "id": "seedream_v5_0_lite_fal",
             "name": "Seedream v5.0 lite via Fal API Key ($0.35/per image)",
             "nice_name": "Seedream v5.0 Lite (FAL Key)",
-            "filename_suffix": "seedream_v5_i2i",
+            "filename_suffix": "seedream_v5_lite",
             "image_format": "data_uri",
             "max_reference_images": 9,
             "supports_negative_prompt": false,
@@ -600,7 +604,8 @@
                 }
             ],
             "request_config": {
-                "endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v5/lite/edit",
+                "{{?!source_image}}endpoint_url": "https://queue.fal.run/bytedance/seedream/v5/lite/text-to-image",
+                "{{?source_image}}endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v5/lite/edit",
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
@@ -615,7 +620,7 @@
                     "num_images": "{{num_images}}",
                     "{{?!max_images}}max_images": 1,
                     "{{?max_images}}max_images": "{{max_images}}",
-                    "image_urls": [
+                    "{{?source_image}}image_urls": [
                         "{{source_image}}",
                         "{{resolved_image_array}}"
                     ]
@@ -694,10 +699,10 @@
             ]
         },
         {
-            "id": "seedream_v5_0_pro_i2i_replicate",
+            "id": "seedream_v5_0_pro_replicate",
             "name": "Seedream v5.0 Pro via Replicate API Key (from $0.045/per image)",
             "nice_name": "Seedream 5.0 Pro (REPLICATE Key)",
-            "filename_suffix": "seedream_5_pro_i2i",
+            "filename_suffix": "seedream_v5_pro",
             "image_format": "data_uri",
             "max_reference_images": 9,
             "supports_negative_prompt": false,
@@ -732,7 +737,7 @@
                         "{{?!aspect_ratio}}aspect_ratio": "match_input_image",
                         "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
                         "output_format": "png",
-                        "image_input": [
+                        "{{?source_image}}image_input": [
                             "{{source_image}}",
                             "{{resolved_image_array}}"
                         ]
@@ -780,10 +785,10 @@
             ]
         },
         {
-            "id": "seedream_v5_0_pro_i2i_fal",
+            "id": "seedream_v5_0_pro_fal",
             "name": "Seedream v5.0 Pro via Fal API Key (from $0.0675/per image)",
             "nice_name": "Seedream v5.0 Pro (FAL Key)",
-            "filename_suffix": "seedream_v5_pro_i2i",
+            "filename_suffix": "seedream_v5_pro",
             "image_format": "data_uri",
             "remarks": "Main input image is included into the base price. For additional images from 2nd to 9th will be charged $0.0045 each.",
             "max_reference_images": 9,
@@ -821,7 +826,8 @@
                 }
             ],
             "request_config": {
-                "endpoint_url": "https://queue.fal.run/bytedance/seedream/v5/pro/edit",
+                "{{?!source_image}}endpoint_url": "https://queue.fal.run/bytedance/seedream/v5/pro/text-to-image",
+                "{{?source_image}}endpoint_url": "https://queue.fal.run/bytedance/seedream/v5/pro/edit",
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
@@ -834,7 +840,7 @@
                     "{{?!aspect_ratio}}image_size": "auto_{{image_size}}",
                     "{{?aspect_ratio}}image_size": "{{calculated_output_size}}",
                     "num_images": "{{num_images}}",
-                    "image_urls": [
+                    "{{?source_image}}image_urls": [
                         "{{source_image}}",
                         "{{resolved_image_array}}"
                     ]
@@ -881,7 +887,7 @@
             ]
         },
         {
-            "id": "alibaba_i2i_fal",
+            "id": "alibaba_fal",
             "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
             "nice_name": {
                 "depends_on": "model_alibaba",
@@ -911,12 +917,12 @@
             "filename_suffix": {
                 "depends_on": "model_alibaba",
                 "values": {
-                    "fal-ai/qwen-image-2/edit": "qwen_v2_i2i",
-                    "fal-ai/qwen-image-2/pro/edit": "qwen_v2_pro_i2i",
-                    "wan/v2.6/image-to-image": "wan_v2_6_i2i",
-                    "fal-ai/wan/v2.7/edit": "wan_v2_7_i2i",
-                    "fal-ai/wan/v2.7/pro/edit": "wan_v2_7_pro_i2i",
-                    "fal-ai/wan-25-preview/image-to-image": "wan_v2_5_i2i"
+                    "fal-ai/qwen-image-2/edit": "qwen_v2",
+                    "fal-ai/qwen-image-2/pro/edit": "qwen_v2_pro",
+                    "wan/v2.6/image-to-image": "wan_v2_6",
+                    "fal-ai/wan/v2.7/edit": "wan_v2_7",
+                    "fal-ai/wan/v2.7/pro/edit": "wan_v2_7_pro",
+                    "fal-ai/wan-25-preview/image-to-image": "wan_v2_5"
                 }
             },
             "max_reference_images": {
@@ -1008,7 +1014,20 @@
                 }
             ],
             "request_config": {
-                "endpoint_url": "https://queue.fal.run/{{model_alibaba}}",
+                // Each route is an ordinary conditional template key. Explicit
+                // model checks reject unknown dropdown values before any FAL call.
+                "{{?!source_image && model_alibaba == 'fal-ai/qwen-image-2/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/qwen-image-2/text-to-image",
+                "{{?source_image && model_alibaba == 'fal-ai/qwen-image-2/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/qwen-image-2/edit",
+                "{{?!source_image && model_alibaba == 'fal-ai/qwen-image-2/pro/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/qwen-image-2/pro/text-to-image",
+                "{{?source_image && model_alibaba == 'fal-ai/qwen-image-2/pro/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/qwen-image-2/pro/edit",
+                "{{?!source_image && model_alibaba == 'wan/v2.6/image-to-image'}}endpoint_url": "https://queue.fal.run/wan/v2.6/text-to-image",
+                "{{?source_image && model_alibaba == 'wan/v2.6/image-to-image'}}endpoint_url": "https://queue.fal.run/wan/v2.6/image-to-image",
+                "{{?!source_image && model_alibaba == 'fal-ai/wan/v2.7/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/wan/v2.7/text-to-image",
+                "{{?source_image && model_alibaba == 'fal-ai/wan/v2.7/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/wan/v2.7/edit",
+                "{{?!source_image && model_alibaba == 'fal-ai/wan/v2.7/pro/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/wan/v2.7/pro/text-to-image",
+                "{{?source_image && model_alibaba == 'fal-ai/wan/v2.7/pro/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/wan/v2.7/pro/edit",
+                "{{?!source_image && model_alibaba == 'fal-ai/wan-25-preview/image-to-image'}}endpoint_url": "https://queue.fal.run/fal-ai/wan-25-preview/text-to-image",
+                "{{?source_image && model_alibaba == 'fal-ai/wan-25-preview/image-to-image'}}endpoint_url": "https://queue.fal.run/fal-ai/wan-25-preview/image-to-image",
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
@@ -1023,7 +1042,7 @@
                     "image_size": "{{calculated_output_size}}",
                     "num_images": "{{num_images}}",
                     "output_format": "png",
-                    "image_urls": [
+                    "{{?source_image}}image_urls": [
                         "{{source_image}}",
                         "{{resolved_image_array}}"
                     ]
@@ -1098,10 +1117,10 @@
             ]
         },
         {
-            "id": "gpt_image_1.5_i2i_openai",
+            "id": "gpt_image_1.5_openai",
             "name": "GPT-Image-1.5 via OpenAI API Key",
             "nice_name": "GPT-Image-1.5 (OpenAI Key)",
-            "filename_suffix": "gpt_image_1.5_i2i",
+            "filename_suffix": "gpt_image_1.5",
             "image_format": "data_uri",
             "max_reference_images": 15,
             "supports_negative_prompt": false,
@@ -1150,7 +1169,8 @@
                 }
             ],
             "request_config": {
-                "endpoint_url": "https://api.openai.com/v1/images/edits",
+                "{{?!source_image}}endpoint_url": "https://api.openai.com/v1/images/generations",
+                "{{?source_image}}endpoint_url": "https://api.openai.com/v1/images/edits",
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
@@ -1162,7 +1182,7 @@
                 "body_template": {
                     "model": "gpt-image-1.5",
                     "prompt": "{{prompt}}",
-                    "images": [
+                    "{{?source_image}}images": [
                         {
                             "image_url": "{{source_image}}"
                         },
@@ -1235,10 +1255,10 @@
             ]
         },
         {
-            "id": "gpt_image_2_i2i_openai",
+            "id": "gpt_image_2_openai",
             "name": "GPT-Image-2 via OpenAI API Key (from ~$0.01)",
             "nice_name": "GPT-Image-2 (OpenAI Key)",
-            "filename_suffix": "gpt_image_2_i2i",
+            "filename_suffix": "gpt_image_2",
             "image_format": "data_uri",
             "max_reference_images": 15,
             "supports_negative_prompt": false,
@@ -1281,7 +1301,8 @@
                 }
             ],
             "request_config": {
-                "endpoint_url": "https://api.openai.com/v1/images/edits",
+                "{{?!source_image}}endpoint_url": "https://api.openai.com/v1/images/generations",
+                "{{?source_image}}endpoint_url": "https://api.openai.com/v1/images/edits",
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
@@ -1293,7 +1314,7 @@
                 "body_template": {
                     "model": "gpt-image-2",
                     "prompt": "{{prompt}}",
-                    "images": [
+                    "{{?source_image}}images": [
                         {
                             "image_url": "{{source_image}}"
                         },
@@ -1499,7 +1520,7 @@
             ]
         },
         {
-            "id": "bfl_flux2_i2i",
+            "id": "bfl_flux2",
             "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
             "nice_name": {
                 "default": "FLUX.2 {{model_flux2}} (BFL Key)",
@@ -1512,11 +1533,11 @@
                 }
             },
             "filename_suffix": {
-                "default": "flux2_{{model_flux2}}_i2i",
+                "default": "flux2_{{model_flux2}}",
                 "depends_on": "model_flux2",
                 "values": {
-                    "klein-9b": "flux2_klein_9b_i2i",
-                    "klein-4b": "flux2_klein_4b_i2"
+                    "klein-9b": "flux2_klein_9b",
+                    "klein-4b": "flux2_klein_4b"
                 }
             },
             "remarks": "<b>Pricing:</b> based on megapixels (1 MP = 1024x1024). Each image (input and output) is rounded up to the next MP. Each reference photo counts as at least 1 MP. Max 4 MP.<br><table style='width:100%; font-size: 0.8em; border-top: 1px solid #555; margin-top: 4px;'><tr><td>Model</td><td>1st MP</td><td>Next</td><td>Refs</td></tr><tr><td><b>Pro</b></td><td>$0.03</td><td>$0.015</td><td>$0.015</td></tr><tr><td><b>Max</b></td><td>$0.07</td><td>$0.03</td><td>$0.03</td></tr><tr><td><b>9B (K)</b></td><td>$0.015</td><td>$0.002</td><td>$0.002</td></tr><tr><td><b>4B (K)</b></td><td>$0.014</td><td>$0.001</td><td>$0.001</td></tr></table><br>Note: all generations that do not pass moderation are charged at full cost.",
@@ -1572,7 +1593,7 @@
                     "transparent_bg": "{{transparent_bg}}",
                     "{{?calculated_output_size_width}}width": "{{calculated_output_size_width}}",
                     "{{?calculated_output_size_height}}height": "{{calculated_output_size_height}}",
-                    "input_image": "{{source_image}}",
+                    "{{?source_image}}input_image": "{{source_image}}",
                     "{{?reference_1}}input_image_2": "{{reference_1}}",
                     "{{?reference_2}}input_image_3": "{{reference_2}}",
                     "{{?reference_3}}input_image_4": "{{reference_3}}",
@@ -1691,7 +1712,7 @@
             ]
         },
         {
-            "id": "bfl_kontext_i2i",
+            "id": "bfl_kontext",
             "name": "FLUX Kontext via BFL API Key ($0.04/$0.08 (FLUX Kontext Max) per image)",
             "nice_name": {
                 "default": "FLUX Kontext (BFL Key)",
@@ -1701,7 +1722,7 @@
                     "max": "FLUX Kontext Max (BFL Key)"
                 }
             },
-            "filename_suffix": "flux_kontext_{{model_flux_kontext}}_i2i",
+            "filename_suffix": "flux_kontext_{{model_flux_kontext}}",
             "image_format": "base64_raw",
             "max_reference_images": 3,
             "supports_negative_prompt": false,
@@ -1721,7 +1742,7 @@
                 "body_template": {
                     "prompt": "{{prompt}}",
                     "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
-                    "input_image": "{{source_image}}",
+                    "{{?source_image}}input_image": "{{source_image}}",
                     "{{?reference_1}}input_image_2": "{{reference_1}}",
                     "{{?reference_2}}input_image_3": "{{reference_2}}",
                     "{{?reference_3}}input_image_4": "{{reference_3}}",

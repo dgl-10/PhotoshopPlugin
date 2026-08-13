@@ -371,7 +371,6 @@ function startHttpServer() {
     // optional boundary for machines where untrusted local software is a concern.
     expressApp.use(LOCAL_API_PREFIX, createLocalGenerationRouter({
         generate,
-        tasks: global.tasks,
         tempDir: WEBHELPER_TEMP_DIR,
         token: process.env.LOCAL_GENERATION_API_TOKEN || '',
         onGenerationAccepted: () => trackUsage(2)

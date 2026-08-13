@@ -141,7 +141,8 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     ├── drag-window.html                  # Overlay window for the Drag & Drop files-to-browser feature
     ├── drag-window.js                    # File capture and drag logic
     ├── apiGenerator.js                   # Generation core: context assembly and request templating
-    ├── localGenerationApi.js             # Reusable-task local REST API adapter
+    ├── templateEngine.js                 # Shared placeholder resolver and conditional-key expression parser
+    ├── localGenerationApi.js             # Direct asynchronous local REST API adapter
     ├── apiGeneratorResultsGetter.js      # Results module: polling and response parsing
     ├── apiGeneratorPreprocessors.js      # Preprocessors: resizing, MP optimization, and filtering
     ├── imageUtils.js                     # Image processing utilities (MIME, Base64, NativeImage)
@@ -194,45 +195,33 @@ npm start
 
 ### Local Generation API workflow
 
-The local API keeps source/mask data on a reusable task and provider-specific settings
-on independent child generation resources:
+The Local API accepts one self-contained asynchronous generation request. It does not
+create task resources or add entries to the Photoshop/WebHelper task registry:
 
 ```text
-POST /api/local/v1/tasks
-    -> 201 { taskId, taskUrl, status: "ready" }
-
-POST /api/local/v1/tasks/:taskId/generations
+POST /api/local/v1/generations
     -> 202 { generationId, statusUrl, status: "queued" }
 
-GET /api/local/v1/tasks/:taskId/generations/:generationId
+GET /api/local/v1/generations/:generationId
     -> poll until status is "completed" or "failed"
 ```
 
-`POST /api/local/v1/tasks` accepts an absolute `sourceImagePath` and optional absolute
-`maskImagePath`. It validates that each supplied path is a readable regular file, but
-does not copy it into the task directory. Use the same `taskId` for multiple model,
-prompt, reference-image, or `use_mask` variations.
+`POST /api/local/v1/generations` accepts `providerId`, optional absolute
+`sourceImagePath`/`maskImagePath`, `referenceImagePaths`, `params`, `num_images`,
+`aspect_ratio`, `use_mask`, and `force_separate_requests`. `aspect_ratio` is required
+when the effective request is text-to-image and optional for image-to-image. Supplied
+paths must identify readable regular files; they are read directly and are not copied.
+The caller remains responsible for parameters compatible with the current
+`providers.json`.
 
-The `taskId` is passed as part of the generation URL, not in the JSON body. Store the
-returned `taskUrl` and append `/generations`, for example:
-
-```text
-taskUrl:       /api/local/v1/tasks/local_task_123
-generationUrl: /api/local/v1/tasks/local_task_123/generations
-```
-
-Post the first and every later variation to that same `generationUrl`. Each POST returns
-a new `generationId` and `statusUrl`, while the reusable `taskId` stays the same.
-
-`POST /api/local/v1/tasks/:taskId/generations` accepts `providerId`, `params`, optional
-`referenceImagePaths`, `num_images`, `aspect_ratio`, `use_mask`, and
-`force_separate_requests`. The caller is responsible for supplying provider parameters
-that match the current `providers.json`.
+If source is omitted, the generation core promotes the first reference to source. If
+there are no effective image inputs, the generic request is text-to-image and the Local
+API rejects it unless it includes a non-empty `aspect_ratio`. An active mask without
+source requires a first reference with exactly matching pixel dimensions.
 
 Poll `statusUrl` every 1–2 seconds. A completed response contains `outputPaths` with
 absolute paths under `%TEMP%\ps_webhelper_tasks`; a failed response contains `error`.
-One failed generation does not invalidate its parent task, so it can be retried with a
-different provider or parameters.
+Each generation is independent, so one failure cannot affect another request.
 
 For the full request and response schema, authentication option, and PowerShell
 examples, see `PhotoshopHelper/Local_Generation_API.md`.
@@ -245,13 +234,24 @@ npm test
 ```
 
 The automated tests start an isolated Express server with a mocked generator. They
-validate task reuse, polling states, absolute-path validation, optional token protection,
-and error isolation; they do not contact external providers and do not create permanent
-files in `%TEMP%\ps_webhelper_tasks`.
+validate direct generation inputs, polling states, absolute-path validation, optional
+token protection, and error isolation; they do not contact external providers and do
+not create permanent files in `%TEMP%\ps_webhelper_tasks`.
 
-To verify a provider integration manually, start Helper first, create a task, submit one
-generation, and poll its `statusUrl`. This makes a real provider request and may incur
-provider charges. Use a low-cost provider/model and one output image for smoke tests.
+To verify a provider integration manually, start Helper, submit one generation, and poll
+its `statusUrl`. This makes a real provider request and may incur provider charges. Use
+a low-cost provider/model and one output image for smoke tests.
+
+### Template Engine
+
+`PhotoshopHelper/templateEngine.js` is the shared resolver for provider request
+templates, preprocessor arguments, filenames, and display names. In addition to the
+legacy `{{placeholder}}`, `{{?variable}}key`, and `{{?!variable}}key` forms, it parses
+the documented conditional expressions (`!`, `==`, `!=`, `&&`, `||`, and parentheses)
+without evaluating arbitrary JavaScript. Parser details and configuration examples
+are documented in `PhotoshopHelper/Providers_Configuration_Guide.md` under
+**Conditional Expressions**. The focused regression suite is
+`PhotoshopHelper/_tests_/templateEngine.test.js`.
 
 ### Preparing to release a new version
 

@@ -1,82 +1,70 @@
 # Local Generation API
 
-Photoshop Helper can act as a small localhost image-generation service for another
-local application. The API uses the same reusable-task workflow as WebHelper:
+Photoshop Helper exposes a small asynchronous image-generation API for other local
+applications. A request supplies all inputs in one operation; there is no preliminary
+task resource and no upload step.
 
-1. Create a task once with a source image and optional mask.
-2. Start any number of independent generations on that task.
-3. Poll each generation until it returns absolute output file paths.
+The service listens on:
 
-This lets a caller reuse the same source and mask with different providers, prompts,
-parameters, reference images, and `use_mask` values without copying the input files or
-creating duplicate tasks.
+```text
+http://127.0.0.1:18345
+```
 
-The service listens on `http://127.0.0.1:18345`. It is bound to the loopback interface
-and is not designed for public deployment.
+It is bound to the loopback interface and is not designed for public deployment.
+
+## API overview
+
+The complete API consists of two endpoints:
+
+```http
+POST /api/local/v1/generations
+GET  /api/local/v1/generations/:generationId
+```
+
+`POST` validates local input paths, creates an asynchronous generation, and immediately
+returns HTTP `202`. The client then polls the returned `statusUrl` until the generation
+is `completed` or `failed`.
 
 ## Core behavior
 
-- Requests and responses contain file paths, not image bytes or Base64 data.
-- The source and mask paths belong to the reusable task.
-- Provider settings and reference paths belong to each individual generation.
-- Input images may live anywhere on the local filesystem that Photoshop Helper can read.
-- All input paths must be absolute paths to existing regular files.
-- Task creation does not copy the source or mask into the WebHelper temp directory.
-- Generated files use the existing `%TEMP%\ps_webhelper_tasks` output directory.
-- Generation creation is asynchronous and returns HTTP `202` immediately.
-- Tasks and generation state are in memory and are not restored after an app restart.
+- Requests contain absolute local file paths, not image bytes or Base64 data.
+- Input files are read directly and are not copied into an intermediate task directory.
+- Every supplied path must identify an existing readable regular file.
+- Source, mask, references, provider parameters, and output settings belong to one
+  self-contained generation request.
+- Generated files are written to the existing `%TEMP%\ps_webhelper_tasks` directory.
+- Successful status responses contain absolute output paths.
+- Generation state is held in memory and is not restored after Photoshop Helper restarts.
+- Local API generations do not enter or modify the Photoshop/WebHelper task registry.
 
-## Provider configuration
+## Provider discovery and configuration
 
-The local API does not accept a `providers.json` path and does not receive provider
-request templates from the client. Photoshop Helper owns that configuration and uses the
-same active `providers.json` as the browser WebHelper.
-
-At generation time, Photoshop Helper loads the current configuration, finds the entry
-whose `id` equals the request's `providerId`, then applies that provider's
-`request_config`, `response_config`, preprocessors, and environment-backed API keys.
+The Local API uses the same active `providers.json` as WebHelper. The client sends a
+provider ID and public parameters; request templates, response handlers, preprocessors,
+and API keys remain owned by Photoshop Helper.
 
 | Runtime mode | Active provider configuration |
 |---|---|
 | Development (`npm start`) | `PhotoshopHelper/providers.json` |
 | Packaged application | `providers.json` in Photoshop Helper's user-data directory |
 
-The external client sends only a provider ID and parameters, for example:
-
-```json
-{
-  "providerId": "bfl_flux2_i2i",
-  "params": {
-    "prompt": "Create a variation",
-    "model_flux2": "klein-4b"
-  }
-}
-```
-
-### Discovering available providers
-
-Before submitting a generation, an external client can use the existing WebHelper
-discovery endpoint:
+Available providers and their client-safe metadata can be read from the existing
+WebHelper discovery endpoint:
 
 ```http
 GET http://127.0.0.1:18345/api/webhelper/providers
 ```
 
-It returns provider IDs and client-safe metadata such as parameters, model options,
-mask capabilities, and supported reference-image settings. Provider request templates
-and API keys are not returned. Providers that require an environment key missing from
-the running Helper are omitted from this list.
-
-Use a returned provider's `id` as `providerId` in
-`POST /api/local/v1/tasks/:taskId/generations`. For the full meaning of provider fields
-and parameters, see `Providers_Configuration_Guide.md`.
+Providers whose required environment key is unavailable are omitted. Use a returned
+provider's `id` as `providerId`. See `Providers_Configuration_Guide.md` for the meaning
+of provider parameters and capabilities.
 
 ## Optional authentication
 
-Authentication is disabled by default. To enable a minimal shared-token check, set
+Authentication is disabled by default. To enable a shared-token check, set
 `LOCAL_GENERATION_API_TOKEN` in the Photoshop Helper `.env` file and restart the app.
 
-Clients can use either header:
+Clients may use either header:
 
 ```http
 Authorization: Bearer your-token
@@ -88,99 +76,61 @@ or:
 X-API-Key: your-token
 ```
 
-When configured, the token is required by all endpoints under `/api/local/v1`.
+When configured, the token is required by both Local API endpoints.
 
-## 1. Create a reusable task
+## 1. Start a generation
 
 ```http
-POST /api/local/v1/tasks
+POST /api/local/v1/generations
 Content-Type: application/json
 ```
 
-### Request body
+### Request fields
 
 | Field | Type | Required | Description |
 |---|---:|:---:|---|
-| `sourceImagePath` | string | yes | Absolute path to the main/source image. |
-| `maskImagePath` | string | no | Absolute path to the reusable mask image. |
+| `providerId` | string | yes | Provider `id` from the active configuration. |
+| `sourceImagePath` | string | no | Absolute path to the source image. |
+| `maskImagePath` | string | no | Absolute path to the mask image. |
+| `referenceImagePaths` | string[] | no | Ordered absolute reference paths. Defaults to `[]`. |
+| `params` | object | no | Provider parameters, including `prompt` when applicable. Defaults to `{}`. |
+| `num_images` | integer | no | Requested output count from 1 to 100. Defaults to `1`. |
+| `aspect_ratio` | string | conditional | Provider-compatible ratio such as `"1:1"`. Required for text-to-image; optional for image-to-image. |
+| `use_mask` | boolean | no | Whether to use `maskImagePath`. Defaults to true when a mask path is supplied. |
+| `force_separate_requests` | boolean | no | Force one provider request per output. Defaults to `false`. |
+
+If `use_mask` is explicitly `true`, `maskImagePath` is required. Supplying a mask with
+`use_mask: false` is allowed; that mask is ignored for this generation.
+
+`aspect_ratio` must be a non-empty string for text-to-image. The API returns HTTP `400`
+before creating a generation when an image-less request omits it. Image-to-image may
+omit the field because provider preprocessing can derive dimensions from its source.
+
+### Source and reference normalization
+
+Image roles are normalized before provider preprocessors run:
+
+| Source | Active mask | References | Result |
+|:---:|:---:|:---:|---|
+| yes | either | any | The supplied source is used; all references remain references. |
+| no | no | none | Text-to-image input; `aspect_ratio` is required. |
+| no | no | one or more | First reference becomes source; remaining entries stay references. |
+| no | yes | none | Generation fails because the mask has no source. |
+| no | yes | one or more | First reference becomes source and must exactly match mask dimensions. |
+
+The first reference is always the promotion candidate. The server does not search later
+references for another image with matching dimensions.
+
+This normalization is provider-independent. A particular provider may still reject a
+text-to-image or image-to-image mode that its endpoint does not support.
+
+### Image-to-image example
 
 ```json
 {
+  "providerId": "gpt_image_2_openai",
   "sourceImagePath": "C:\\Projects\\MyApp\\inputs\\source.png",
-  "maskImagePath": "C:\\Projects\\MyApp\\inputs\\mask.png"
-}
-```
-
-### Response
-
-```http
-HTTP/1.1 201 Created
-Location: /api/local/v1/tasks/local_task_...
-```
-
-```json
-{
-  "taskId": "local_task_1786540000000_00000000-0000-0000-0000-000000000000",
-  "status": "ready",
-  "taskUrl": "/api/local/v1/tasks/local_task_1786540000000_00000000-0000-0000-0000-000000000000"
-}
-```
-
-Relative paths, missing files, directories, and unreadable files return HTTP `400`.
-
-## 2. Start a generation on the task
-
-```http
-POST /api/local/v1/tasks/:taskId/generations
-Content-Type: application/json
-```
-
-### Where `taskId` is passed
-
-`taskId` is **not** repeated in the JSON body. It is the path segment in the request
-URL. Save either `taskId` or, preferably, the returned `taskUrl` from task creation.
-
-For example, task creation may return:
-
-```json
-{
-  "taskId": "local_task_123",
-  "status": "ready",
-  "taskUrl": "/api/local/v1/tasks/local_task_123"
-}
-```
-
-The first generation is then created with this exact URL:
-
-```http
-POST http://127.0.0.1:18345/api/local/v1/tasks/local_task_123/generations
-```
-
-The second, third, and all later generations for the same source and mask use **the
-same URL**. Only their JSON bodies differ. Do not create another task unless the source
-or reusable mask needs to change.
-
-### Request body
-
-| Field | Type | Required | Description |
-|---|---:|:---:|---|
-| `providerId` | string | yes | Provider `id` from the active `providers.json`. |
-| `params` | object | no | Provider parameters, including `prompt` when required. Defaults to `{}`. |
-| `num_images` | integer | no | Requested image count from 1 to 100. Defaults to `1`. |
-| `aspect_ratio` | string | no | Provider-compatible aspect ratio such as `"1:1"`. |
-| `referenceImagePaths` | string[] | no | Absolute paths to references for this generation. Defaults to `[]`. |
-| `use_mask` | boolean | no | Use the task mask for this generation. Defaults to `true` when the task has a mask. |
-| `force_separate_requests` | boolean | no | Force one provider request per output image. Defaults to `false`. |
-
-The caller is expected to know the active provider definition and send parameters
-valid for that provider. Provider-specific request construction remains controlled by
-`providers.json`.
-
-### Generation using the task mask
-
-```json
-{
-  "providerId": "gpt_image_2_i2i_openai",
+  "maskImagePath": "C:\\Projects\\MyApp\\inputs\\mask.png",
   "referenceImagePaths": [
     "C:\\Projects\\MyApp\\inputs\\style-reference.jpg"
   ],
@@ -196,69 +146,86 @@ valid for that provider. Provider-specific request construction remains controll
 }
 ```
 
-### Another generation on the same task without the mask
+### First reference used as source
 
 ```json
 {
-  "providerId": "seedream_v5_0_lite_i2i_fal",
-  "use_mask": false,
-  "num_images": 1,
-  "aspect_ratio": "1:1",
+  "providerId": "bfl_flux2",
+  "referenceImagePaths": [
+    "C:\\Projects\\MyApp\\inputs\\source.png",
+    "C:\\Projects\\MyApp\\inputs\\style-reference.jpg"
+  ],
   "params": {
     "prompt": "Create a bright editorial variation",
-    "image_size": "2K",
-    "max_images": 0
+    "model_flux2": "klein-4b"
   }
 }
 ```
 
-The two requests above are sent separately to the same task URL:
+Here `source.png` becomes the source and only `style-reference.jpg` remains a reference.
 
-```text
-POST /api/local/v1/tasks/local_task_123/generations  <- first generation, use_mask: true
-POST /api/local/v1/tasks/local_task_123/generations  <- second generation, use_mask: false
+### Text-to-image example
+
+```json
+{
+  "providerId": "provider-supporting-text-to-image",
+  "aspect_ratio": "1:1",
+  "params": {
+    "prompt": "A quiet observatory above a sea of clouds"
+  }
+}
 ```
 
 ### Accepted response
 
 ```http
 HTTP/1.1 202 Accepted
-Location: /api/local/v1/tasks/local_task_.../generations/generation_...
+Location: /api/local/v1/generations/generation_...
 ```
 
 ```json
 {
-  "taskId": "local_task_1786540000000_00000000-0000-0000-0000-000000000000",
-  "generationId": "generation_1786540001000_00000000-0000-0000-0000-000000000000",
+  "generationId": "generation_1786540000000_00000000-0000-0000-0000-000000000000",
   "status": "queued",
-  "statusUrl": "/api/local/v1/tasks/local_task_1786540000000_00000000-0000-0000-0000-000000000000/generations/generation_1786540001000_00000000-0000-0000-0000-000000000000"
+  "statusUrl": "/api/local/v1/generations/generation_1786540000000_00000000-0000-0000-0000-000000000000"
 }
 ```
 
-A provider error does not change the accepted response because generation runs in the
-background. The error appears on that generation resource, while the parent task stays
-ready for other provider calls.
+Malformed JSON fields, text-to-image requests without `aspect_ratio`, relative paths,
+missing files, directories, and unreadable files return HTTP `400` before a generation
+is accepted.
 
-## 3. Read one generation
+Provider failures and semantic image failures discovered by the generation core occur
+after acceptance. They are reported through the generation status resource.
+
+## 2. Read generation status
 
 ```http
-GET /api/local/v1/tasks/:taskId/generations/:generationId
+GET /api/local/v1/generations/:generationId
 ```
+
+Generation states are:
+
+- `queued`
+- `running`
+- `completed`
+- `failed`
+
+Poll until the state becomes `completed` or `failed`.
 
 ### Running response
 
 ```json
 {
-  "generationId": "generation_1786540001000_00000000-0000-0000-0000-000000000000",
-  "taskId": "local_task_1786540000000_00000000-0000-0000-0000-000000000000",
+  "generationId": "generation_1786540000000_00000000-0000-0000-0000-000000000000",
   "status": "running",
-  "providerId": "gpt_image_2_i2i_openai",
-  "createdAt": "2026-08-12T10:00:00.000Z",
-  "startedAt": "2026-08-12T10:00:00.010Z",
+  "providerId": "gpt_image_2_openai",
+  "createdAt": "2026-08-13T10:00:00.000Z",
+  "startedAt": "2026-08-13T10:00:00.010Z",
   "completedAt": null,
   "outputPaths": [],
   "error": null,
-  "statusUrl": "/api/local/v1/tasks/local_task_.../generations/generation_..."
+  "statusUrl": "/api/local/v1/generations/generation_1786540000000_00000000-0000-0000-0000-000000000000"
 }
 ```
 
@@ -266,83 +233,44 @@ GET /api/local/v1/tasks/:taskId/generations/:generationId
 
 ```json
 {
-  "generationId": "generation_1786540001000_00000000-0000-0000-0000-000000000000",
-  "taskId": "local_task_1786540000000_00000000-0000-0000-0000-000000000000",
+  "generationId": "generation_1786540000000_00000000-0000-0000-0000-000000000000",
   "status": "completed",
-  "providerId": "gpt_image_2_i2i_openai",
-  "createdAt": "2026-08-12T10:00:00.000Z",
-  "startedAt": "2026-08-12T10:00:00.010Z",
-  "completedAt": "2026-08-12T10:00:31.250Z",
+  "providerId": "gpt_image_2_openai",
+  "createdAt": "2026-08-13T10:00:00.000Z",
+  "startedAt": "2026-08-13T10:00:00.010Z",
+  "completedAt": "2026-08-13T10:00:31.250Z",
   "outputPaths": [
-    "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\generated_image_2026-08-12_1.wh.gpt_image_2_i2i.png"
+    "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\generated_image_2026-08-13_1.wh.gpt_image_2_i2i.png"
   ],
   "error": null,
-  "statusUrl": "/api/local/v1/tasks/local_task_.../generations/generation_..."
+  "statusUrl": "/api/local/v1/generations/generation_1786540000000_00000000-0000-0000-0000-000000000000"
 }
 ```
 
-Generation states are `queued`, `running`, `completed`, and `failed`. Poll until the
-state is `completed` or `failed`.
-
-## 4. Read the reusable task
-
-```http
-GET /api/local/v1/tasks/:taskId
-```
-
-The task remains `ready` before, during, and after its child generations. Its response
-contains the retained source/mask paths and a summary of every generation:
+### Failed response
 
 ```json
 {
-  "taskId": "local_task_1786540000000_00000000-0000-0000-0000-000000000000",
-  "status": "ready",
-  "sourceImagePath": "C:\\Projects\\MyApp\\inputs\\source.png",
-  "maskImagePath": "C:\\Projects\\MyApp\\inputs\\mask.png",
-  "createdAt": "2026-08-12T10:00:00.000Z",
-  "updatedAt": "2026-08-12T10:00:31.250Z",
-  "generationCount": 2,
-  "generations": [
-    {
-      "generationId": "generation_...",
-      "taskId": "local_task_...",
-      "status": "completed",
-      "providerId": "gpt_image_2_i2i_openai",
-      "createdAt": "2026-08-12T10:00:00.100Z",
-      "startedAt": "2026-08-12T10:00:00.110Z",
-      "completedAt": "2026-08-12T10:00:31.250Z",
-      "outputPaths": [
-        "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\generated_image.png"
-      ],
-      "error": null,
-      "statusUrl": "/api/local/v1/tasks/local_task_.../generations/generation_..."
-    }
-  ]
+  "generationId": "generation_1786540000000_00000000-0000-0000-0000-000000000000",
+  "status": "failed",
+  "providerId": "gpt_image_2_openai",
+  "createdAt": "2026-08-13T10:00:00.000Z",
+  "startedAt": "2026-08-13T10:00:00.010Z",
+  "completedAt": "2026-08-13T10:00:00.250Z",
+  "outputPaths": [],
+  "error": "Provider unavailable",
+  "statusUrl": "/api/local/v1/generations/generation_1786540000000_00000000-0000-0000-0000-000000000000"
 }
 ```
 
-## Complete PowerShell example: two generations on one task
+An unknown `generationId` returns HTTP `404`.
+
+## Complete PowerShell example
 
 ```powershell
-$taskRequest = @{
+$generationRequest = @{
+    providerId = 'gpt_image_2_openai'
     sourceImagePath = 'C:\Projects\MyApp\inputs\source.png'
-    maskImagePath = 'C:\Projects\MyApp\inputs\mask.png'
-} | ConvertTo-Json
-
-$task = Invoke-RestMethod `
-    -Method Post `
-    -Uri 'http://127.0.0.1:18345/api/local/v1/tasks' `
-    -ContentType 'application/json' `
-    -Body $taskRequest
-
-# $task.taskUrl is the persisted task identifier in URL form, for example:
-# /api/local/v1/tasks/local_task_1786540000000_...
-# Keep it and reuse it for every future generation of this source/mask pair.
-$generationUrl = "http://127.0.0.1:18345" + $task.taskUrl + '/generations'
-
-$firstGenerationRequest = @{
-    providerId = 'gpt_image_2_i2i_openai'
-    use_mask = $true
     num_images = 1
     params = @{
         prompt = 'Turn this into a pencil illustration'
@@ -352,59 +280,24 @@ $firstGenerationRequest = @{
     }
 } | ConvertTo-Json -Depth 10
 
-$firstGeneration = Invoke-RestMethod `
+$generation = Invoke-RestMethod `
     -Method Post `
-    -Uri $generationUrl `
+    -Uri 'http://127.0.0.1:18345/api/local/v1/generations' `
     -ContentType 'application/json' `
-    -Body $firstGenerationRequest
+    -Body $generationRequest
 
 do {
     Start-Sleep -Milliseconds 500
-    $firstResult = Invoke-RestMethod -Uri ("http://127.0.0.1:18345" + $firstGeneration.statusUrl)
-} while ($firstResult.status -in @('queued', 'running'))
+    $result = Invoke-RestMethod `
+        -Uri ('http://127.0.0.1:18345' + $generation.statusUrl)
+} while ($result.status -in @('queued', 'running'))
 
-if ($firstResult.status -eq 'failed') {
-    throw $firstResult.error
+if ($result.status -eq 'failed') {
+    throw $result.error
 }
 
-$firstResult.outputPaths
-```
-
-To create a second variation on the same task, do not call `POST /tasks` again. Reuse
-the saved `$generationUrl`:
-
-```powershell
-$secondGenerationRequest = @{
-    providerId = 'bfl_flux2_i2i'
-    use_mask = $false
-    num_images = 1
-    params = @{
-        prompt = 'Create a bright editorial variation'
-        model_flux2 = 'klein-4b'
-        output_resolution_mp = '1-'
-        input_optimization = 'all_1mp'
-        transparent_bg = $false
-    }
-} | ConvertTo-Json -Depth 10
-
-$secondGeneration = Invoke-RestMethod `
-    -Method Post `
-    -Uri $generationUrl `
-    -ContentType 'application/json' `
-    -Body $secondGenerationRequest
-
-# $secondGeneration has another generationId/statusUrl, but the same taskId.
-do {
-    Start-Sleep -Milliseconds 500
-    $secondResult = Invoke-RestMethod -Uri ("http://127.0.0.1:18345" + $secondGeneration.statusUrl)
-} while ($secondResult.status -in @('queued', 'running'))
-
-if ($secondResult.status -eq 'failed') {
-    throw $secondResult.error
-}
-
-$secondResult.outputPaths
+$result.outputPaths
 ```
 
 When authentication is enabled, add
-`-Headers @{ Authorization = 'Bearer your-token' }` to every request.
+`-Headers @{ Authorization = 'Bearer your-token' }` to both requests.

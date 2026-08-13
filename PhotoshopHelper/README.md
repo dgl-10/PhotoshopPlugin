@@ -81,10 +81,8 @@ The application will minimize to the system tray. The server will be available a
 
 ### Local Generation Service
 
-- `POST /api/local/v1/tasks` — Create a reusable task containing absolute source and mask paths.
-- `POST /api/local/v1/tasks/:taskId/generations` — Start an asynchronous provider generation on that task.
-- `GET /api/local/v1/tasks/:taskId` — Return the task and summaries of all its generation runs.
-- `GET /api/local/v1/tasks/:taskId/generations/:generationId` — Return one generation's state and absolute output paths.
+- `POST /api/local/v1/generations` — Start one self-contained asynchronous generation from optional source/mask paths, reference paths, and provider parameters.
+- `GET /api/local/v1/generations/:generationId` — Return one generation's state and absolute output paths.
 - See [Local_Generation_API.md](Local_Generation_API.md) for the complete request schema, polling flow, authentication option, and examples.
 
 ---
@@ -117,6 +115,7 @@ PhotoshopHelper/
 ├── drag-window.html                  # Overlay window for Drag & Drop to browser
 ├── drag-window.js                    # File capture and drag-and-drop logic
 ├── apiGenerator.js                   # Generation core: context assembly and request templating
+├── templateEngine.js                 # Shared placeholder resolver and conditional-key expression parser
 ├── localGenerationApi.js             # Asynchronous local service-to-service API adapter
 ├── apiGeneratorResultsGetter.js      # Results module: polling and response parsing
 ├── apiGeneratorPreprocessors.js      # Preprocessors: resizing, MP optimization, and filtering
@@ -135,6 +134,10 @@ PhotoshopHelper/
 - **Temp Management:** Session files are stored in `%TEMP%\ps_webhelper_tasks`. Files older than 30 days are cleaned up automatically.
 - **Nebula Secrets:** When `NEBULA_CS` is set, the application automatically calls `nebulabroker emit` to inject keys from your personal GSM (Google Secret Manager) into `process.env`.
 - **High-Res Copy:** When copying from WebHelper, NativeImage is used to guarantee the original resolution is preserved without browser-side compression.
+- **Template Engine:** `templateEngine.js` resolves provider placeholders and parses
+  safe conditional object keys such as `{{?source_image && model == 'model/edit'}}endpoint_url`.
+  It contains no arbitrary JavaScript evaluation; the complete expression grammar is
+  documented in `Providers_Configuration_Guide.md`.
 
 ---
 

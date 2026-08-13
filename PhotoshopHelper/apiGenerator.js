@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const JSON5 = require('json5');
 const { waitForApiResult, downloadAndSaveImages, makeRequest } = require('./apiGeneratorResultsGetter');
 const { getConfigPaths } = require('./setup/config-paths');
+const { resolveTemplate } = require('./templateEngine');
 
 // Helper to reliably read providers config
 function getProvidersConfig() {
@@ -28,6 +29,12 @@ function getProvidersConfig() {
 function resolveImageFilePath(imagePath, tempDir) {
     if (!imagePath) return null;
 
+    // Task-owned images deliberately use path-like identifiers. Reference images
+    // have a separate formatter that also accepts browser-generated Data URIs.
+    if (typeof imagePath !== 'string') {
+        throw new TypeError('Task image paths must be strings.');
+    }
+
     const webHelperPrefix = '/api/webhelper/file/';
     if (imagePath.startsWith(webHelperPrefix)) {
         return path.join(tempDir, imagePath.slice(webHelperPrefix.length));
@@ -44,7 +51,10 @@ function resolveImageFilePath(imagePath, tempDir) {
 
 // Convert local file to requested format
 function formatImage(filePath, format) {
-    if (!filePath || !fs.existsSync(filePath)) return null;
+    if (!filePath) return null;
+    if (!fs.existsSync(filePath)) {
+        throw new Error(`Image file not found: ${filePath}`);
+    }
 
     const buffer = fs.readFileSync(filePath);
     const base64 = buffer.toString('base64');
@@ -69,80 +79,262 @@ function formatImage(filePath, format) {
     return base64;
 }
 
-// Deep resolve placeholders in JSON templates
-function resolvePlaceholders(template, context) {
-    if (typeof template === 'string' && template.match(/^{{\??[^}]+}}$/)) {
-        // If the entire string is exactly one placeholder (optional conditional ?), return the raw object/array if it exists.
-        const match = template.match(/^{{\??([^}]+)}}$/);
-        const key = match[1];
-
-        if (key.startsWith('env:')) {
-            const envVar = key.replace('env:', '');
-            return process.env[envVar] || '';
-        }
-        if (context[key] !== undefined && typeof context[key] !== 'string') {
-            return context[key]; // Return the raw object/array to allow deep insertion instead of stringification
-        }
-        // Fallthrough if it's just a string variable so it gets replaced normally below
+/**
+ * Convert one reference input into the image representation expected by a provider.
+ *
+ * WebHelper references arrive as Data URIs, while Local Generation API references
+ * arrive as absolute paths. Keeping this distinction out of task-owned source and
+ * mask handling preserves the existing internal task contract.
+ *
+ * @param {unknown} referenceInput - Data URI or path-like reference identifier.
+ * @param {number} index - Zero-based position used in validation messages.
+ * @param {string} format - Provider image format.
+ * @param {(imagePath: string) => string|null} resolveFilePath - Task path resolver.
+ * @returns {string} Formatted image content.
+ */
+function formatReferenceImage(referenceInput, index, format, resolveFilePath) {
+    if (typeof referenceInput !== 'string' || referenceInput.length === 0) {
+        throw new TypeError(`Reference image ${index + 1} must be a non-empty string.`);
     }
 
-    if (typeof template === 'string') {
-        // Handle conditional keys: "{{?condition}}key_name"
-        // This is handled at the object level below, but we check if the string itself resolves to empty
-        return template.replace(/{{([^}]+)}}/g, (match, key) => {
-            if (key.startsWith('env:')) {
-                const envVar = key.replace('env:', '');
-                return process.env[envVar] || '';
-            }
-            return context[key] !== undefined ? context[key] : match;
-        });
-    } else if (Array.isArray(template)) {
-        // Resolve each element, then flatten any nested arrays (e.g. {{resolved_image_array}} inside an array template)
-        const resolved = template.map(item => resolvePlaceholders(item, context));
-        return resolved.reduce((acc, item) => {
-            if (Array.isArray(item)) acc.push(...item);
-            else if (item !== null && item !== undefined && item !== '') acc.push(item);
-            return acc;
-        }, []);
-    } else if (typeof template === 'object' && template !== null) {
-        const result = {};
-        for (const [key, value] of Object.entries(template)) {
-            let actualKey = key;
-            let conditionMet = true;
-
-            // Check for conditional key syntax "{{?mask_image}}mask" or negative "{{?!aspect_ratio}}aspect_ratio"
-            const match = key.match(/^{{\?(!?)([^}]+)}}(.*)$/);
-            if (match) {
-                const isNegation = match[1] === '!';
-                const conditionVar = match[2];
-                actualKey = match[3];
-
-                const isPresent = !!context[conditionVar];
-                if (isNegation) {
-                    if (isPresent) conditionMet = false;
-                } else {
-                    if (!isPresent) conditionMet = false;
-                }
-            }
-
-            if (conditionMet) {
-                result[actualKey] = resolvePlaceholders(value, context);
-            }
+    if (referenceInput.startsWith('data:image/')) {
+        const commaIndex = referenceInput.indexOf(',');
+        if (commaIndex < 0 || commaIndex === referenceInput.length - 1) {
+            throw new Error(`Reference image ${index + 1} contains an invalid Data URI.`);
         }
-        return result;
+
+        const metadata = referenceInput.slice(0, commaIndex);
+        const base64 = referenceInput.slice(commaIndex + 1);
+        const mimeMatch = metadata.match(/^data:(image\/[^;]+);base64$/i);
+        if (!mimeMatch) {
+            throw new Error(`Reference image ${index + 1} must be a base64 image Data URI.`);
+        }
+
+        const mime = mimeMatch[1];
+        if (format === 'base64_raw') return base64;
+        if (format === 'data_uri' || format === 'url') {
+            return `data:${mime};base64,${base64}`;
+        }
+        return base64;
     }
-    return template;
+
+    return formatImage(resolveFilePath(referenceInput), format);
 }
 
+/**
+ * Resolve the first generate() argument without requiring a persistent task entry.
+ *
+ * A string retains the historic registry lookup. A task object is used directly,
+ * while zero/null/undefined represents an intentionally empty virtual task for a
+ * text-to-image request. Zero is accepted because existing callers may use it as a
+ * sentinel instead of null. The generated label is diagnostic only and never
+ * stores the virtual task in the shared registry.
+ *
+ * @param {string|object|number|null|undefined} taskOrId - Registered ID, virtual task, or empty sentinel.
+ * @param {Record<string, object>|null|undefined} globalTasks - Shared task registry.
+ * @returns {{task: object, taskLabel: string}} Resolved task and safe log label.
+ */
+function resolveGenerationTask(taskOrId, globalTasks) {
+    if (taskOrId === 0 || taskOrId === null || taskOrId === undefined) {
+        return {
+            task: {},
+            taskLabel: `virtual_task_${crypto.randomUUID()}`
+        };
+    }
 
+    if (typeof taskOrId === 'object' && !Array.isArray(taskOrId)) {
+        // Registered/WebHelper-shaped objects may carry taskId, while direct Local
+        // API invocations carry generationId. Either value is diagnostic only.
+        const embeddedLabel = [taskOrId.taskId, taskOrId.generationId]
+            .find(value => typeof value === 'string' && value.trim() !== '');
 
+        return {
+            task: taskOrId,
+            taskLabel: embeddedLabel?.trim() || `virtual_task_${crypto.randomUUID()}`
+        };
+    }
+
+    if (typeof taskOrId !== 'string') {
+        throw new TypeError('The task argument must be a task ID, task object, zero, null, or undefined.');
+    }
+
+    if (!globalTasks || typeof globalTasks !== 'object') {
+        throw new Error(`Task ${taskOrId} cannot be resolved because the task registry is unavailable.`);
+    }
+
+    const hasTask = Object.prototype.hasOwnProperty.call(globalTasks, taskOrId);
+    const task = hasTask ? globalTasks[taskOrId] : null;
+    if (!task || typeof task !== 'object' || Array.isArray(task)) {
+        throw new Error(`Task ${taskOrId} not found.`);
+    }
+
+    return { task, taskLabel: taskOrId };
+}
+
+/**
+ * Decode dimensions from an already formatted image string.
+ *
+ * The image utility is loaded lazily because apiGenerator.js is also imported by
+ * plain Node.js tests, whereas nativeImage is available only in the Electron runtime.
+ *
+ * @param {string} image - Raw base64 or Data URI image.
+ * @param {string} label - Human-readable input label for an actionable error.
+ * @returns {{width: number, height: number}} Exact pixel dimensions.
+ */
+function readFormattedImageDimensions(image, label) {
+    const { parseImageInput } = require('./imageUtils');
+    const parsedImage = parseImageInput(image);
+    if (!parsedImage) {
+        throw new Error(`${label} could not be decoded as an image.`);
+    }
+
+    return parsedImage.size;
+}
+
+/**
+ * Normalize semantic image roles before provider-specific preprocessing begins.
+ *
+ * When a task has no source, its first reference becomes the source and is removed
+ * from the remaining reference list. An active mask makes that promoted reference
+ * mandatory and requires an exact pixel-for-pixel dimension match.
+ *
+ * @param {string|null} sourceImage - Formatted task source image.
+ * @param {string|null} maskImage - Formatted active mask image.
+ * @param {string[]} referenceImages - Formatted reference images in caller order.
+ * @param {(image: string, label: string) => {width: number, height: number}} [readDimensions]
+ *     Dimension reader, injectable for tests.
+ * @returns {{sourceImage: string|null, maskImage: string|null, referenceImages: string[]}}
+ */
+function normalizeGenerationImages(
+    sourceImage,
+    maskImage,
+    referenceImages,
+    readDimensions = readFormattedImageDimensions
+) {
+    const normalizedReferences = [...referenceImages];
+    let normalizedSource = sourceImage;
+
+    if (!normalizedSource && normalizedReferences.length > 0) {
+        const promotedReference = normalizedReferences.shift();
+
+        if (maskImage) {
+            const sourceSize = readDimensions(promotedReference, 'The first reference image');
+            const maskSize = readDimensions(maskImage, 'The mask image');
+            const dimensionsMatch = sourceSize.width === maskSize.width
+                && sourceSize.height === maskSize.height;
+
+            if (!dimensionsMatch) {
+                throw new Error(
+                    'The first reference image must exactly match the mask image dimensions '
+                    + `(${sourceSize.width}x${sourceSize.height} versus ${maskSize.width}x${maskSize.height}).`
+                );
+            }
+        }
+
+        normalizedSource = promotedReference;
+    }
+
+    if (!normalizedSource && maskImage) {
+        throw new Error('A mask image requires a source image or at least one reference image.');
+    }
+
+    return {
+        sourceImage: normalizedSource,
+        maskImage,
+        referenceImages: normalizedReferences
+    };
+}
+
+/**
+ * Enforce the output shape required when no image input survives normalization.
+ *
+ * A request is text-to-image only after source promotion has run: any supplied
+ * reference would already have become the source. Image-to-image requests may
+ * continue omitting the ratio because their output shape can be derived from the
+ * source by provider preprocessing.
+ *
+ * @param {unknown} aspectRatio - Caller-supplied output aspect ratio.
+ * @param {string|null} sourceImage - Normalized formatted source image.
+ * @param {string|null} maskImage - Normalized formatted active mask image.
+ * @param {string[]} referenceImages - Normalized remaining references.
+ * @throws {Error} When a text-to-image request has no non-empty string ratio.
+ */
+function requireTextToImageAspectRatio(
+    aspectRatio,
+    sourceImage,
+    maskImage,
+    referenceImages
+) {
+    const isTextToImage = !sourceImage && !maskImage && referenceImages.length === 0;
+    const hasAspectRatio = typeof aspectRatio === 'string' && aspectRatio.trim() !== '';
+
+    if (isTextToImage && !hasAspectRatio) {
+        throw new Error('"aspect_ratio" is required for text-to-image generation.');
+    }
+}
+
+/**
+ * Build the canonical list of provider-side additional images.
+ *
+ * All provider template representations must derive from this same array. This
+ * ensures referential masks work consistently for flat arrays, wrapped object
+ * arrays, and individually numbered reference fields.
+ *
+ * @param {string[]} referenceImages - Remaining references after source promotion.
+ * @param {string|null} maskImage - Formatted active mask.
+ * @param {string|undefined} maskType - Provider mask transmission strategy.
+ * @returns {string[]} Ordered provider-side additional images.
+ */
+function buildRequestReferenceImages(referenceImages, maskImage, maskType) {
+    const requestImages = [...referenceImages];
+
+    if (maskImage && maskType === 'first_referential') {
+        requestImages.unshift(maskImage);
+    } else if (maskImage && maskType === 'last_referential') {
+        requestImages.push(maskImage);
+    }
+
+    return requestImages;
+}
+
+/**
+ * Compute the output filename suffix for a provider request.
+ * Automatically appends "_t2i" for text-to-image or "_i2i" for image-to-image.
+ *
+ * @param {object} provider - Provider configuration object.
+ * @param {object} context - Template resolution context.
+ * @param {boolean} isTextToImage - True if this generation has no source/mask/reference images.
+ * @returns {string} The full computed filename suffix including the mode tag.
+ */
+function computeFileSuffix(provider, context = {}, isTextToImage = false) {
+    const providerId = provider?.id || '';
+    let baseSuffix = providerId;
+
+    if (provider?.filename_suffix) {
+        if (typeof provider.filename_suffix === 'string') {
+            baseSuffix = resolveTemplate(provider.filename_suffix, context);
+        } else if (typeof provider.filename_suffix === 'object' && provider.filename_suffix !== null) {
+            const dependField = provider.filename_suffix.depends_on;
+            const val = dependField ? context[dependField] : undefined;
+            let suffixTemplate;
+            if (val && provider.filename_suffix.values && provider.filename_suffix.values[val]) {
+                suffixTemplate = provider.filename_suffix.values[val];
+            } else {
+                suffixTemplate = provider.filename_suffix.default || providerId;
+            }
+            baseSuffix = resolveTemplate(suffixTemplate, context);
+        }
+    }
+
+    const modeSuffix = isTextToImage ? 't2i' : 'i2i';
+    return baseSuffix ? `${baseSuffix}_${modeSuffix}` : modeSuffix;
+}
 
 /**
  * Main function to start generating task
  */
-async function generate(taskId, providerId, num_images, aspect_ratio, userParams, referenceImages, use_mask, force_separate_requests, tempDir, globalTasks) {
-    if (!globalTasks[taskId]) throw new Error(`Task ${taskId} not found.`);
-    const task = globalTasks[taskId];
+async function generate(taskOrId, providerId, num_images, aspect_ratio, userParams, referenceImages, use_mask, force_separate_requests, tempDir, globalTasks) {
+    const { task, taskLabel } = resolveGenerationTask(taskOrId, globalTasks);
 
     // 1. Load config
     const configData = getProvidersConfig();
@@ -202,24 +394,37 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
     let sourceImageFormatted = formatImage(sourcePath, provider.image_format);
     let maskImageFormatted = maskPath ? formatImage(maskPath, provider.image_format) : null;
 
-    // Process reference images even if mask handling is false or simple
-    let refImagesFormatted = (referenceImages || [])
-        .map(refInput => {
-            if (typeof refInput === 'string' && refInput.startsWith('data:image/')) {
-                const parts = refInput.split(',');
-                if (parts.length !== 2) return null;
-                const base64 = parts[1];
-                let mime = 'image/png';
-                const match = parts[0].match(/data:(image\/[^;]+)/);
-                if (match) mime = match[1];
+    // Preserve caller order because the first reference has special source semantics
+    // when the task itself has no source image.
+    const rawReferenceImages = referenceImages ?? [];
+    if (!Array.isArray(rawReferenceImages)) {
+        throw new TypeError('referenceImages must be an array when provided.');
+    }
 
-                if (provider.image_format === 'base64_raw') return base64;
-                if (provider.image_format === 'data_uri' || provider.image_format === 'url') return `data:${mime};base64,${base64}`;
-                return base64;
-            }
-            return formatImage(resolveFilePath(refInput), provider.image_format);
-        })
-        .filter(Boolean);
+    let refImagesFormatted = rawReferenceImages.map((refInput, index) => (
+        formatReferenceImage(refInput, index, provider.image_format, resolveFilePath)
+    ));
+
+    // Establish source/mask/reference roles before preprocessors inspect or resize
+    // them. This guarantees a promoted source follows the source optimization path
+    // and keeps any active mask synchronized with it.
+    const normalizedImages = normalizeGenerationImages(
+        sourceImageFormatted,
+        maskImageFormatted,
+        refImagesFormatted
+    );
+    sourceImageFormatted = normalizedImages.sourceImage;
+    maskImageFormatted = normalizedImages.maskImage;
+    refImagesFormatted = normalizedImages.referenceImages;
+
+    // Text-to-image has no source dimensions from which a provider can infer the
+    // output shape. Reject the request before preprocessors or remote calls run.
+    requireTextToImageAspectRatio(
+        aspect_ratio,
+        sourceImageFormatted,
+        maskImageFormatted,
+        refImagesFormatted
+    );
 
     if (provider.preprocessor) {
         const { runPreprocessor } = require('./apiGeneratorPreprocessors');
@@ -233,7 +438,7 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
                 user_params: context
             };
 
-            const processed = await runPreprocessor(preprocessorConfig, provider, preprocessorPayload, resolvePlaceholders);
+            const processed = await runPreprocessor(preprocessorConfig, provider, preprocessorPayload, resolveTemplate);
             if (processed) {
                 sourceImageFormatted = processed.source_image;
                 maskImageFormatted = processed.mask_image;
@@ -245,63 +450,42 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
     context.source_image = sourceImageFormatted;
     context.mask_image = maskImageFormatted;
 
-    // Build resolved_image_array: [mask?] + [refs?] or [refs?] + [mask?] depending on type.
+    // Build one canonical additional-image list for every provider template style.
     const maskType = provider.mask_handling?.type;
+    const requestReferenceImages = buildRequestReferenceImages(
+        refImagesFormatted,
+        maskImageFormatted,
+        maskType
+    );
 
-    // Provide flat reference properties (reference_1, reference_2, etc.)
-    refImagesFormatted.forEach((refBase64, index) => {
+    // Provide flat reference properties (reference_1, reference_2, etc.). Referential
+    // masks intentionally occupy their configured position in these fields.
+    requestReferenceImages.forEach((refBase64, index) => {
         context[`reference_${index + 1}`] = refBase64;
     });
 
-    // Provide resolved_references if reference_item_template exists
+    // Provide wrapped references when a provider expects objects instead of strings.
     if (reqConfig.reference_item_template) {
-        context.resolved_references = refImagesFormatted.map(refBase64 => {
+        context.resolved_references = requestReferenceImages.map(refBase64 => {
             const tempContext = { ...context, item: refBase64 };
-            return resolvePlaceholders(reqConfig.reference_item_template, tempContext);
+            return resolveTemplate(reqConfig.reference_item_template, tempContext);
         });
     }
 
-    if (maskType === 'first_referential' || maskType === 'last_referential') {
-        //используй реферальную картинку как инпаинт маску.
-        if (maskType === 'first_referential' && context.mask_image) {
-            // mask before references: [mask, ref1, ref2, ...]
-            context.resolved_image_array = [context.mask_image, ...refImagesFormatted];
-        } else if (maskType === 'last_referential' && context.mask_image) {
-            // mask after references: [ref1, ref2, ..., mask]
-            context.resolved_image_array = [...refImagesFormatted, context.mask_image];
-        } else {
-            // no mask or simple: [ref1, ref2, ...]
-            context.resolved_image_array = refImagesFormatted;
-        }
-    } else {
-        // Fallback: populate with refs (even if empty) to ensure variable is defined for the parser
-        context.resolved_image_array = refImagesFormatted;
-    }
+    // Flat array templates consume the exact same ordered images as wrapped and
+    // individually numbered templates.
+    context.resolved_image_array = requestReferenceImages;
 
     // 4. Compute Dynamic File Suffix
-    let fileSuffix = providerId;
-    if (provider.filename_suffix) {
-        if (typeof provider.filename_suffix === 'string') {
-            fileSuffix = resolvePlaceholders(provider.filename_suffix, context);
-        } else if (typeof provider.filename_suffix === 'object' && provider.filename_suffix !== null) {
-            const dependField = provider.filename_suffix.depends_on;
-            const val = context[dependField];
-            let suffixTemplate;
-            if (val && provider.filename_suffix.values && provider.filename_suffix.values[val]) {
-                suffixTemplate = provider.filename_suffix.values[val];
-            } else {
-                suffixTemplate = provider.filename_suffix.default || providerId;
-            }
-            fileSuffix = resolvePlaceholders(suffixTemplate, context);
-        }
-    }
+    const isTextToImage = !sourceImageFormatted && !maskImageFormatted && refImagesFormatted.length === 0;
+    const fileSuffix = computeFileSuffix(provider, context, isTextToImage);
 
     // 4b. Compute Display Name (nice_name) — resolved the same way as filename_suffix,
     // but sent to the client so the result header can show a human-readable model name.
     let niceProviderName = null;
     if (provider.nice_name) {
         if (typeof provider.nice_name === 'string') {
-            niceProviderName = resolvePlaceholders(provider.nice_name, context);
+            niceProviderName = resolveTemplate(provider.nice_name, context);
         } else if (typeof provider.nice_name === 'object' && provider.nice_name !== null) {
             const dependField = provider.nice_name.depends_on;
             const val = context[dependField];
@@ -311,7 +495,7 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
             } else {
                 nameTemplate = provider.nice_name.default || null;
             }
-            niceProviderName = nameTemplate ? resolvePlaceholders(nameTemplate, context) : null;
+            niceProviderName = nameTemplate ? resolveTemplate(nameTemplate, context) : null;
         }
     }
 
@@ -333,14 +517,24 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
             requestContext.num_images = 1;
         }
 
-        const currentUrl = resolvePlaceholders(reqConfig.endpoint_url, requestContext);
-        const currentHeaders = resolvePlaceholders(reqConfig.headers, requestContext);
-        const currentBody = resolvePlaceholders(reqConfig.body_template, requestContext);
+        // Resolve the complete request configuration at execution time. Conditional
+        // keys are therefore available not only inside body_template, but also at
+        // the request_config level. Providers whose text-to-image and image-to-image
+        // operations use different endpoints can declare two conditional
+        // endpoint_url keys driven by the normalized source_image value.
+        const currentRequestConfig = resolveTemplate(reqConfig, requestContext);
+        const currentUrl = currentRequestConfig.endpoint_url;
+        const currentHeaders = currentRequestConfig.headers;
+        const currentBody = currentRequestConfig.body_template;
+
+        if (typeof currentUrl !== 'string' || currentUrl.trim() === '') {
+            throw new Error(`Provider "${provider.name}" did not resolve a valid endpoint URL.`);
+        }
 
         const urlObj = new URL(currentUrl);
-        const options = { method: reqConfig.method, headers: currentHeaders };
+        const options = { method: currentRequestConfig.method, headers: currentHeaders };
 
-        console.log(`[RequestBuilder] Executing request ${i + 1}/${requestCount} for taskId ${taskId}`);
+        console.log(`[RequestBuilder] Executing request ${i + 1}/${requestCount} for taskId ${taskLabel}`);
         try {
             const apiResult = await makeRequest(urlObj, options, currentBody);
 
@@ -351,7 +545,7 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
 
             // Start downloading in the background
             const downloadPromise = downloadAndSaveImages(
-                imageStrings, imagesConfig, downloadHeaders, tempDir, `${taskId}_${i}`, fileSuffix, finalData
+                imageStrings, imagesConfig, downloadHeaders, tempDir, `${taskLabel}_${i}`, fileSuffix, finalData
             ).then(results => {
                 for (const result of results) {
                     if (result.status === 'done' && result.image) {
@@ -434,5 +628,15 @@ async function generate(taskId, providerId, num_images, aspect_ratio, userParams
 
 module.exports = {
     generate,
-    resolveImageFilePath
+
+    // TEST-ONLY EXPORTS: Production code imports only generate(). These helpers are
+    // exposed solely so the focused unit tests can validate generation invariants
+    // without making remote provider requests. If those tests are removed, remove
+    // this entire test-only export block as well and keep the helpers module-private.
+    resolveImageFilePath,
+    resolveGenerationTask,
+    normalizeGenerationImages,
+    requireTextToImageAspectRatio,
+    buildRequestReferenceImages,
+    computeFileSuffix
 };
