@@ -49,6 +49,7 @@ You've found an incredible AI that generates exactly what you need — maybe it'
 
 <img src="_screenshots/01/result_03/hero.png" alt="plugin's basic workflow" width="1200">
 
+**Video demo of the plugin workflow (40 seconds):**
 [![FromPS / ToPS — Photoshop AI Workflow Demo in 40 Seconds](https://img.youtube.com/vi/BNU2Hd1dki4/maxresdefault.jpg)](https://www.youtube.com/watch?v=BNU2Hd1dki4)
 
 ### Step 1: Select & Capture
