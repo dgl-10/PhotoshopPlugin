@@ -214,6 +214,10 @@ paths must identify readable regular files; they are read directly and are not c
 The caller remains responsible for parameters compatible with the current
 `providers.json`.
 
+Every provider explicitly declares a non-empty `generation_modes` array. The current
+runtime implements only `t2i` and `i2i`; video, SVG, and other modality names are
+possible future extensions only and are rejected by the present generator.
+
 If source is omitted, the generation core promotes the first reference to source. If
 there are no effective image inputs, the generic request is text-to-image and the Local
 API rejects it unless it includes a non-empty `aspect_ratio`. An active mask without

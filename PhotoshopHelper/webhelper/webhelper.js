@@ -10,6 +10,12 @@ const ALL_ASPECT_RATIOS = [
     "4:5", "3:4", "2:3", "9:16", "1:2", "9:21"
 ];
 
+// These are the only two generation modes implemented by the current image-result
+// pipeline. Additional modalities may be added in the future, but merely listing a
+// new string in provider configuration must never make the present UI treat it as
+// executable.
+const IMPLEMENTED_GENERATION_MODES = Object.freeze(['t2i', 'i2i']);
+
 // Global environment info (defaults to local desktop)
 window.envInfo = {
     isLocal: true,
@@ -626,6 +632,45 @@ class WhSourceTab extends HTMLElement {
         return !prompt || !prompt.trim();
     }
 
+    /**
+     * Derive the same effective mode that the server will see after normalization.
+     *
+     * A reference becomes the source when the task has no explicit source, so either
+     * input form selects image-to-image. A mask alone is deliberately excluded: it is
+     * invalid without a source or promotable reference and must not turn into I2I.
+     *
+     * @returns {'t2i'|'i2i'} Current generation mode.
+     */
+    get effectiveGenerationMode() {
+        const hasExplicitSource = Boolean(this.taskData?.sourceImage);
+        const hasPromotableReference = (this.taskControl?.state?.references?.length ?? 0) > 0;
+        return hasExplicitSource || hasPromotableReference ? 'i2i' : 't2i';
+    }
+
+    /**
+     * Check client-visible provider capability metadata without guessing defaults.
+     * Missing or malformed declarations fail closed; the server performs the same
+     * authoritative check again before preprocessing or an external request.
+     *
+     * @param {object|null|undefined} provider - Client-safe provider definition.
+     * @returns {boolean} True only when the current mode is explicitly supported.
+     */
+    providerSupportsEffectiveGenerationMode(provider) {
+        if (!provider || !Array.isArray(provider.generation_modes)) return false;
+        if (provider.generation_modes.length === 0) return false;
+        if (new Set(provider.generation_modes).size !== provider.generation_modes.length) return false;
+        if (provider.generation_modes.some(mode => !IMPLEMENTED_GENERATION_MODES.includes(mode))) {
+            return false;
+        }
+        if (!IMPLEMENTED_GENERATION_MODES.includes(this.effectiveGenerationMode)) return false;
+        return provider.generation_modes.includes(this.effectiveGenerationMode);
+    }
+
+    get isGenerationModeUnsupported() {
+        const provider = this.currentProvider;
+        return Boolean(provider) && !this.providerSupportsEffectiveGenerationMode(provider);
+    }
+
     get isRefLimitExceeded() {
         const state = this.taskControl?.state;
         if (!state || !state.selectedProviderId) return false;
@@ -874,7 +919,13 @@ class WhSourceTab extends HTMLElement {
                         <label class="form-label">Model / Provider</label>
                         <select class="form-select wh-source-tab-provider" id="provider-select">
                             <option value="">Select a provider...</option>
-                            ${this.providers.map(p => `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                            ${this.providers.map(p => {
+                                const supportsMode = this.providerSupportsEffectiveGenerationMode(p);
+                                const unavailableSuffix = supportsMode
+                                    ? ''
+                                    : ` [unavailable for ${this.effectiveGenerationMode.toUpperCase()}]`;
+                                return `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''} ${supportsMode ? '' : 'disabled'}>${p.name}${unavailableSuffix}</option>`;
+                            }).join('')}
                         </select>
                     </div>
                     <div id="dynamic-params-container" class="wh-source-tab-settings border rounded bg-gray p-2 mb-2" style="max-height: 300px; overflow-y: auto; display: none;"></div>
@@ -896,6 +947,9 @@ class WhSourceTab extends HTMLElement {
                         <div id="persistent-mask-error" class="wh-source-toast-notification toast toast-error p-1 mb-2 text-tiny" style="display: ${this.isMaskMissing ? 'block' : 'none'}; ">
                             <i class="icon icon-cross mr-1"></i>Provider requires a mask.
                         </div>
+                        <div id="persistent-generation-mode-error" class="wh-source-toast-notification toast toast-error p-1 mb-2 text-tiny" style="display: ${this.isGenerationModeUnsupported ? 'block' : 'none'}; ">
+                            <i class="icon icon-cross mr-1"></i>Provider does not support ${this.effectiveGenerationMode.toUpperCase()} generation.
+                        </div>
                     </div>
                     ${provider?.remarks ? `<div class="wh-provider-remarks p-2 mb-2 rounded bg-gray text-tiny">${provider.remarks}</div>` : ''}
                     <div class="columns" style="align-items: flex-end;">
@@ -915,7 +969,7 @@ class WhSourceTab extends HTMLElement {
                             </div>
                         </div>
                         <div class="column col-4">
-                            <button class="btn btn-primary btn-lg btn-block wh-source-tab-generate" id="btn-generate" ${(!state.selectedProviderId || this.isMaskMissing) ? 'disabled' : ''}>
+                            <button class="btn btn-primary btn-lg btn-block wh-source-tab-generate" id="btn-generate" ${(!state.selectedProviderId || this.isMaskMissing || this.isGenerationModeUnsupported) ? 'disabled' : ''}>
                                 <i class="icon icon-check"></i> Generate
                             </button>
                         </div>
@@ -1463,6 +1517,17 @@ class WhSourceTab extends HTMLElement {
         if (!state.selectedProviderId) return; // Button should be disabled anyway
 
         const provider = this.currentProvider;
+
+        // Keep this guard even though the button is disabled. The selected mode can
+        // change when references are added or removed, and programmatic callers must
+        // not bypass the visible provider capability restriction.
+        if (this.isGenerationModeUnsupported) {
+            this.showNotification(
+                `Provider does not support ${this.effectiveGenerationMode.toUpperCase()} generation.`,
+                'error'
+            );
+            return;
+        }
 
         // WARNING: Empty Prompt (Allow generation)
         if (this.isPromptEmpty) {
