@@ -10,11 +10,6 @@ const ALL_ASPECT_RATIOS = [
     "4:5", "3:4", "2:3", "9:16", "1:2", "9:21"
 ];
 
-// These are the only two generation modes implemented by the current image-result
-// pipeline. Additional modalities may be added in the future, but merely listing a
-// new string in provider configuration must never make the present UI treat it as
-// executable.
-const IMPLEMENTED_GENERATION_MODES = Object.freeze(['t2i', 'i2i']);
 
 // These are the only two generation modes implemented by the current image-result
 // pipeline. Additional modalities may be added in the future, but merely listing a
