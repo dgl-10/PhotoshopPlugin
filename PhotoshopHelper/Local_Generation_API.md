@@ -59,6 +59,21 @@ Providers whose required environment key is unavailable are omitted. Use a retur
 provider's `id` as `providerId`. See `Providers_Configuration_Guide.md` for the meaning
 of provider parameters and capabilities.
 
+Each returned provider includes an explicit `generation_modes` array. Clients should
+derive the effective mode using the normalization rules below and select only a provider
+that lists it:
+
+```json
+{
+  "id": "example_provider",
+  "generation_modes": ["t2i", "i2i"]
+}
+```
+
+Only `t2i` and `i2i` are implemented. Video, SVG, and other output modalities are
+possible future directions, not accepted Local API modes; adding an arbitrary mode name
+to provider configuration does not enable it.
+
 ## Optional authentication
 
 Authentication is disabled by default. To enable a shared-token check, set
@@ -195,8 +210,10 @@ Malformed JSON fields, text-to-image requests without `aspect_ratio`, relative p
 missing files, directories, and unreadable files return HTTP `400` before a generation
 is accepted.
 
-Provider failures and semantic image failures discovered by the generation core occur
-after acceptance. They are reported through the generation status resource.
+Provider failures, unsupported provider/mode combinations, and semantic image failures
+discovered by the generation core occur after acceptance. The core rejects an
+unsupported mode before preprocessing or any external provider request, and the failure
+is reported through the generation status resource.
 
 ## 2. Read generation status
 

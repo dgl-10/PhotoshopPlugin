@@ -685,10 +685,6 @@ function startHttpServer() {
         try {
             const { image, mask, threadId = 'FromPS' } = req.body;
 
-            if (!image) {
-                return res.status(400).json({ error: 'Missing source image data' });
-            }
-
             // Generate taskId
             const taskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 
@@ -712,14 +708,18 @@ function startHttpServer() {
                 return mimeTypeToExt(detectMimeTypeFromBase64(dataUrl));
             };
 
-            const imageBuffer = getBase64Buffer(image);
-            const imageExt = getExt(image);
-            const imagePath = path.join(WEBHELPER_TEMP_DIR, `${taskId}_image.${imageExt}`);
-            fs.writeFileSync(imagePath, imageBuffer);
+            let imagePath = null;
+            let imageExt = 'png';
+            if (image) {
+                const imageBuffer = getBase64Buffer(image);
+                imageExt = getExt(image);
+                imagePath = path.join(WEBHELPER_TEMP_DIR, `${taskId}_image.${imageExt}`);
+                fs.writeFileSync(imagePath, imageBuffer);
+            }
 
             let maskPath = null;
             let maskExt = 'png';
-            if (mask) {
+            if (mask && image) {
                 const maskBuffer = getBase64Buffer(mask);
                 maskExt = getExt(mask);
                 maskPath = path.join(WEBHELPER_TEMP_DIR, `${taskId}_mask.${maskExt}`);
@@ -728,13 +728,12 @@ function startHttpServer() {
 
             // Add to global state
             global.tasks[taskId] = {
-                sourceImage: `/api/webhelper/file/${taskId}_image.${imageExt}`,
+                sourceImage: imagePath ? `/api/webhelper/file/${taskId}_image.${imageExt}` : null,
                 maskImage: maskPath ? `/api/webhelper/file/${taskId}_mask.${maskExt}` : null,
                 status: 'new',
                 results: [],
                 threadId: threadId
             };
-
 
             // Add to queue
             global.queue.push(taskId);

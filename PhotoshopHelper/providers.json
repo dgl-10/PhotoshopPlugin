@@ -166,6 +166,10 @@
     "providers": [
         {
             "id": "grok_imagine",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
             "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
@@ -313,6 +317,10 @@
         },
         {
             "id": "seedream_v4_5_replicate",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v4.5 via Replicate API Key ($0.04/per image)",
             "nice_name": "Seedream v4.5 (REPLICATE Key)",
             "filename_suffix": "seedream_v4_5",
@@ -444,6 +452,10 @@
         },
         {
             "id": "seedream_v4_5_fal",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
             "nice_name": "Seedream v4.5 (FAL Key)",
             "filename_suffix": "seedream_v4_5",
@@ -571,6 +583,10 @@
         },
         {
             "id": "seedream_v5_0_lite_fal",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v5.0 lite via Fal API Key ($0.35/per image)",
             "nice_name": "Seedream v5.0 Lite (FAL Key)",
             "filename_suffix": "seedream_v5_lite",
@@ -700,6 +716,10 @@
         },
         {
             "id": "seedream_v5_0_pro_replicate",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v5.0 Pro via Replicate API Key (from $0.045/per image)",
             "nice_name": "Seedream 5.0 Pro (REPLICATE Key)",
             "filename_suffix": "seedream_v5_pro",
@@ -786,6 +806,10 @@
         },
         {
             "id": "seedream_v5_0_pro_fal",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v5.0 Pro via Fal API Key (from $0.0675/per image)",
             "nice_name": "Seedream v5.0 Pro (FAL Key)",
             "filename_suffix": "seedream_v5_pro",
@@ -888,6 +912,10 @@
         },
         {
             "id": "alibaba_fal",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
             "nice_name": {
                 "depends_on": "model_alibaba",
@@ -1117,7 +1145,75 @@
             ]
         },
         {
+            "id": "qwen_image_edit_2511_replicate",
+            "generation_modes": [
+                "i2i"
+            ],
+            "name": "Qwen Image Edit 2511 via Replicate API Key ($0.03/image)",
+            "nice_name": "Qwen Image Edit (Replicate Key)",
+            "filename_suffix": "qwen_image_edit",
+            "image_format": "data_uri",
+            "max_reference_images": 2,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image"
+            },
+            "allowed_aspect_ratios": [
+                "16:9",
+                "4:3",
+                "1:1",
+                "3:4",
+                "9:16"
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                // Gated endpoint: resolves only for I2I (or promoted reference-only requests)
+                "{{?source_image}}endpoint_url": "https://api.replicate.com/v1/models/qwen/qwen-image-edit-2511/predictions",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:REPLICATE_API_KEY}}"
+                },
+                "body_template": {
+                    "input": {
+                        "prompt": "{{prompt}}",
+                        "disable_safety_checker": true,
+                        "go_fast": true,
+                        "output_format": "png",
+                        "{{?!aspect_ratio}}aspect_ratio": "match_input_image",
+                        "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                        "{{?source_image}}image": [
+                            "{{source_image}}",
+                            "{{resolved_image_array}}"
+                        ]
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "replicate",
+                "params": {
+                    "model_path": "qwen/qwen-image-edit-2511"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Edit Instruction",
+                    "default": ""
+                }
+            ]
+        },
+        {
             "id": "gpt_image_1.5_openai",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "GPT-Image-1.5 via OpenAI API Key",
             "nice_name": "GPT-Image-1.5 (OpenAI Key)",
             "filename_suffix": "gpt_image_1.5",
@@ -1195,7 +1291,7 @@
                     "quality": "{{quality}}",
                     "moderation": "low",
                     "output_format": "png",
-                    "input_fidelity": "high",
+                    "{{?source_image}}input_fidelity": "high",
                     "{{?transparent_bg}}background": "transparent",
                     "{{?!aspect_ratio}}size": "auto",
                     "{{?aspect_ratio}}size": "{{calculated_output_size_width}}x{{calculated_output_size_height}}"
@@ -1256,6 +1352,10 @@
         },
         {
             "id": "gpt_image_2_openai",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "GPT-Image-2 via OpenAI API Key (from ~$0.01)",
             "nice_name": "GPT-Image-2 (OpenAI Key)",
             "filename_suffix": "gpt_image_2",
@@ -1458,6 +1558,9 @@
         },
         {
             "id": "bfl_flux_fill_inpaint",
+            "generation_modes": [
+                "i2i"
+            ],
             "name": "FLUX.1 Fill inpaint via BFL API Key ($0.05/image)",
             "nice_name": "FLUX.1 Fill (BFL Key)",
             "image_format": "base64_raw",
@@ -1521,6 +1624,10 @@
         },
         {
             "id": "bfl_flux2",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
             "nice_name": {
                 "default": "FLUX.2 {{model_flux2}} (BFL Key)",
@@ -1713,6 +1820,10 @@
         },
         {
             "id": "bfl_kontext",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "FLUX Kontext via BFL API Key ($0.04/$0.08 (FLUX Kontext Max) per image)",
             "nice_name": {
                 "default": "FLUX Kontext (BFL Key)",

@@ -10,6 +10,12 @@ const ALL_ASPECT_RATIOS = [
     "4:5", "3:4", "2:3", "9:16", "1:2", "9:21"
 ];
 
+// These are the only two generation modes implemented by the current image-result
+// pipeline. Additional modalities may be added in the future, but merely listing a
+// new string in provider configuration must never make the present UI treat it as
+// executable.
+const IMPLEMENTED_GENERATION_MODES = Object.freeze(['t2i', 'i2i']);
+
 // Global environment info (defaults to local desktop)
 window.envInfo = {
     isLocal: true,
@@ -51,6 +57,8 @@ function fixAspectRatio(aspectRatio, allowedList) {
     return aspectRatio;
 }
 
+
+
 function getPreviewUrl(url) {
     if (!url) return url;
     return url.replace('/api/webhelper/file/', '/api/webhelper/filePreview/');
@@ -83,6 +91,7 @@ class WebHelperApp {
         this.init();
         this.setupSelector();
         this.setupExternalImageInput();
+        this.setupTextTaskInput();
     }
 
     async init() {
@@ -165,6 +174,38 @@ class WebHelperApp {
         // Global paste
         this._pasteHandler = this.handleGlobalPaste.bind(this);
         document.addEventListener('paste', this._pasteHandler);
+    }
+
+    setupTextTaskInput() {
+        const btnNav = document.getElementById('btn-create-text-task');
+        const btnEmpty = document.getElementById('btn-empty-create-text-task');
+
+        if (btnNav) btnNav.addEventListener('click', () => this.createTextTask());
+        if (btnEmpty) btnEmpty.addEventListener('click', () => this.createTextTask());
+    }
+
+    async createTextTask() {
+        try {
+            const response = await fetch('/api/webhelper/task', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    threadId: window.envInfo.threadId
+                })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to create text-to-image task');
+            }
+
+            // Immediately poll to show the new task
+            this.pollForTasks();
+
+        } catch (err) {
+            console.error('Failed to create text-to-image task:', err);
+            this.showGlobalError('Error creating task: ' + err.message);
+        }
     }
 
     handleGlobalPaste(e) {
@@ -339,7 +380,8 @@ class WebHelperApp {
         option.value = taskId;
         const shortId = taskId.replace('task_', '').substring(0, 12);
         const time = new Date().toLocaleTimeString();
-        option.textContent = `● [Task ${shortId}] @ ${time}`;
+        const modeLabel = taskData?.sourceImage ? '' : '[T2I] ';
+        option.textContent = `● ${modeLabel}[Task ${shortId}] @ ${time}`;
         option.style.color = color; // Apply color to the option text
 
         this.taskSelector.insertBefore(option, this.taskSelector.firstChild);
@@ -626,6 +668,51 @@ class WhSourceTab extends HTMLElement {
         return !prompt || !prompt.trim();
     }
 
+    /**
+     * Derive the same effective mode that the server will see after normalization.
+     *
+     * A reference becomes the source when the task has no explicit source, so either
+     * input form selects image-to-image. A mask alone is deliberately excluded: it is
+     * invalid without a source or promotable reference and must not turn into I2I.
+     *
+     * @returns {'t2i'|'i2i'} Current generation mode.
+     */
+    get effectiveGenerationMode() {
+        const hasExplicitSource = Boolean(this.taskData?.sourceImage);
+        const hasPromotableReference = (this.taskControl?.state?.references?.length ?? 0) > 0;
+        return hasExplicitSource || hasPromotableReference ? 'i2i' : 't2i';
+    }
+
+    /**
+     * Check client-visible provider capability metadata without guessing defaults.
+     * Missing or malformed declarations fail closed; the server performs the same
+     * authoritative check again before preprocessing or an external request.
+     *
+     * @param {object|null|undefined} provider - Client-safe provider definition.
+     * @returns {boolean} True only when the current mode is explicitly supported.
+     */
+    providerSupportsEffectiveGenerationMode(provider) {
+        if (!provider || !Array.isArray(provider.generation_modes)) return false;
+        if (provider.generation_modes.length === 0) return false;
+        if (new Set(provider.generation_modes).size !== provider.generation_modes.length) return false;
+        if (provider.generation_modes.some(mode => !IMPLEMENTED_GENERATION_MODES.includes(mode))) {
+            return false;
+        }
+        if (!IMPLEMENTED_GENERATION_MODES.includes(this.effectiveGenerationMode)) return false;
+        return provider.generation_modes.includes(this.effectiveGenerationMode);
+    }
+
+    get isGenerationModeUnsupported() {
+        const provider = this.currentProvider;
+        return Boolean(provider) && !this.providerSupportsEffectiveGenerationMode(provider);
+    }
+
+    get isAspectRatioMissing() {
+        const state = this.taskControl?.state;
+        if (!state || !state.selectedProviderId) return false;
+        return this.effectiveGenerationMode === 't2i' && (!state.formState?.aspect_ratio || state.formState.aspect_ratio.trim() === '');
+    }
+
     get isRefLimitExceeded() {
         const state = this.taskControl?.state;
         if (!state || !state.selectedProviderId) return false;
@@ -754,12 +841,24 @@ class WhSourceTab extends HTMLElement {
         // so switching back to a provider that supports the original value restores it.
         const rawAspectRatio = this.taskControl.app?.aliasState?.['aspect_ratio'] ?? '';
         const allowedRatios = this.allowedAspectRatios;
+        const isT2I = this.effectiveGenerationMode === 't2i';
         let effectiveAspectRatio;
-        // Empty allowedRatios = provider does not support ratio changes, force Match Input
-        if (allowedRatios.length === 0 || rawAspectRatio === '') {
-            effectiveAspectRatio = '';
+
+        if (isT2I) {
+            if (rawAspectRatio && allowedRatios.includes(rawAspectRatio)) {
+                effectiveAspectRatio = rawAspectRatio;
+            } else if (rawAspectRatio && rawAspectRatio !== '') {
+                effectiveAspectRatio = fixAspectRatio(rawAspectRatio, allowedRatios);
+            } else {
+                effectiveAspectRatio = allowedRatios.includes('1:1') ? '1:1' : (allowedRatios[0] || '');
+            }
         } else {
-            effectiveAspectRatio = fixAspectRatio(rawAspectRatio, allowedRatios);
+            // Empty allowedRatios = provider does not support ratio changes, force Match Input
+            if (allowedRatios.length === 0 || rawAspectRatio === '') {
+                effectiveAspectRatio = '';
+            } else {
+                effectiveAspectRatio = fixAspectRatio(rawAspectRatio, allowedRatios);
+            }
         }
         state.formState.aspect_ratio = effectiveAspectRatio;
 
@@ -767,10 +866,12 @@ class WhSourceTab extends HTMLElement {
             state.formState.force_separate_requests = this.taskControl.app?.aliasState?.['force_separate_requests'] || false;
         }
 
+        const hasSource = Boolean(this.taskData?.sourceImage);
+
         this.innerHTML = `
             <div class="columns">
                 <div class="column col-6 col-sm-12">
-                    <div class="wh-view-controls d-flex ai-center mb-2" style="justify-content: space-between; align-items: center; min-height: 36px;">
+                    <div class="wh-view-controls d-flex ai-center mb-2" style="justify-content: space-between; align-items: center; min-height: 36px; ${hasSource ? '' : 'display: none;'}">
                         ${(() => {
                 let maskSupported = true;
                 let maskRequired = false;
@@ -782,7 +883,7 @@ class WhSourceTab extends HTMLElement {
                     maskSupported = false;
                 }
 
-                const showCb = provider && this.taskData.maskImage;
+                const showCb = provider && this.taskData?.maskImage;
 
                 let cbDisabled = '';
                 let cbChecked = '';
@@ -822,38 +923,48 @@ class WhSourceTab extends HTMLElement {
 
                 // If mask is not used, hide the toggle buttons entirely or just the redundant ones.
                 // User wants to remove Image and Mask buttons when checkbox is not checked.
-                const hideToggles = !effectivelyUseMask || !this.taskData.maskImage;
+                const hideToggles = !effectivelyUseMask || !this.taskData?.maskImage;
 
                 return `
                                 <div class="btn-group" style="visibility: ${hideToggles ? 'hidden' : 'visible'}">
                                     <button class="btn btn-sm ${this._viewMode === 'source' ? 'active' : ''}" data-view="source">Image</button>
-                                    <button class="btn btn-sm ${this._viewMode === 'mask' ? 'active' : ''}" data-view="mask" ${!this.taskData.maskImage ? 'disabled' : ''}>Mask</button>
-                                    <button class="btn btn-sm ${this._viewMode === 'overlay' ? 'active' : ''}" data-view="overlay" ${!this.taskData.maskImage ? 'disabled' : ''}>Overlay</button>
+                                    <button class="btn btn-sm ${this._viewMode === 'mask' ? 'active' : ''}" data-view="mask" ${!this.taskData?.maskImage ? 'disabled' : ''}>Mask</button>
+                                    <button class="btn btn-sm ${this._viewMode === 'overlay' ? 'active' : ''}" data-view="overlay" ${!this.taskData?.maskImage ? 'disabled' : ''}>Overlay</button>
                                 </div>
                             `;
             })()}
                     </div>
                     <div class="wh-source-tab-preview rounded shadow-sm mb-4">
-                        <div class="wh-image-container">
-                            ${(() => {
-                let maskSupported = true;
-                let maskRequired = false;
-                if (provider && provider.mask_handling) {
-                    maskSupported = provider.mask_handling.supported !== false;
-                    maskRequired = provider.mask_handling.required === true;
-                } else if (provider && !provider.mask_handling) {
-                    maskSupported = false;
-                }
+                        ${hasSource ? `
+                            <div class="wh-image-container">
+                                ${(() => {
+                    let maskSupported = true;
+                    let maskRequired = false;
+                    if (provider && provider.mask_handling) {
+                        maskSupported = provider.mask_handling.supported !== false;
+                        maskRequired = provider.mask_handling.required === true;
+                    } else if (provider && !provider.mask_handling) {
+                        maskSupported = false;
+                    }
 
-                const effectivelyUseMask = maskSupported && (maskRequired || state.useMask);
-                const hideOverlay = (this._viewMode === 'source') || !effectivelyUseMask;
+                    const effectivelyUseMask = maskSupported && (maskRequired || state.useMask);
+                    const hideOverlay = (this._viewMode === 'source') || !effectivelyUseMask;
 
-                return `
-                                    <img src="${getPreviewUrl(this.taskData.sourceImage)}" class="wh-source-img" style="visibility: ${this._viewMode === 'mask' ? 'hidden' : 'visible'}; display: block; max-width: 100%;">
-                                    ${this.taskData.maskImage ? `<img src="${this.taskData.maskImage}" class="wh-source-tab-overlay ${this._viewMode === 'overlay' ? 'overlay-mode' : 'mask-only'}" style="display: ${hideOverlay ? 'none' : 'block'};">` : ''}
-                                `;
-            })()}
-                        </div>
+                    return `
+                                        <img src="${getPreviewUrl(this.taskData.sourceImage)}" class="wh-source-img" style="visibility: ${this._viewMode === 'mask' ? 'hidden' : 'visible'}; display: block; max-width: 100%;">
+                                        ${this.taskData.maskImage ? `<img src="${this.taskData.maskImage}" class="wh-source-tab-overlay ${this._viewMode === 'overlay' ? 'overlay-mode' : 'mask-only'}" style="display: ${hideOverlay ? 'none' : 'block'};">` : ''}
+                                    `;
+                })()}
+                            </div>
+                        ` : `
+                            <div class="empty p-4 text-center" style="width: 100%; min-height: 220px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                                <div class="empty-icon mb-2">
+                                    <i class="icon icon-3x icon-edit"></i>
+                                </div>
+                                <p class="empty-title h6 mb-1">Text-to-Image Mode</p>
+                                <p class="empty-subtitle text-tiny text-gray mb-0">Prompt and settings drive generation. No source image required.</p>
+                            </div>
+                        `}
                     </div>
                     <div class="wh-source-tab-references" id="drop-zone">
                         <div class="text-bold text-tiny mb-1 ${(state.selectedProviderId && ((maxRefs > 0 && state.references.length > maxRefs) || (maxRefs === 0 && state.references.length > 0))) ? 'text-error' : ''}">
@@ -874,7 +985,13 @@ class WhSourceTab extends HTMLElement {
                         <label class="form-label">Model / Provider</label>
                         <select class="form-select wh-source-tab-provider" id="provider-select">
                             <option value="">Select a provider...</option>
-                            ${this.providers.map(p => `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                            ${this.providers.map(p => {
+                                const supportsMode = this.providerSupportsEffectiveGenerationMode(p);
+                                const unavailableSuffix = supportsMode
+                                    ? ''
+                                    : ` [unavailable for ${this.effectiveGenerationMode.toUpperCase()}]`;
+                                return `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''} ${supportsMode ? '' : 'disabled'}>${p.name}${unavailableSuffix}</option>`;
+                            }).join('')}
                         </select>
                     </div>
                     <div id="dynamic-params-container" class="wh-source-tab-settings border rounded bg-gray p-2 mb-2" style="max-height: 300px; overflow-y: auto; display: none;"></div>
@@ -896,6 +1013,12 @@ class WhSourceTab extends HTMLElement {
                         <div id="persistent-mask-error" class="wh-source-toast-notification toast toast-error p-1 mb-2 text-tiny" style="display: ${this.isMaskMissing ? 'block' : 'none'}; ">
                             <i class="icon icon-cross mr-1"></i>Provider requires a mask.
                         </div>
+                        <div id="persistent-generation-mode-error" class="wh-source-toast-notification toast toast-error p-1 mb-2 text-tiny" style="display: ${this.isGenerationModeUnsupported ? 'block' : 'none'}; ">
+                            <i class="icon icon-cross mr-1"></i>Provider does not support ${this.effectiveGenerationMode.toUpperCase()} generation.
+                        </div>
+                        <div id="persistent-ar-error" class="wh-source-toast-notification toast toast-error p-1 mb-2 text-tiny" style="display: ${this.isAspectRatioMissing ? 'block' : 'none'}; ">
+                            <i class="icon icon-cross mr-1"></i>Aspect ratio is required for Text-to-Image generation.
+                        </div>
                     </div>
                     ${provider?.remarks ? `<div class="wh-provider-remarks p-2 mb-2 rounded bg-gray text-tiny">${provider.remarks}</div>` : ''}
                     <div class="columns" style="align-items: flex-end;">
@@ -909,13 +1032,13 @@ class WhSourceTab extends HTMLElement {
                             <div class="form-group m-0">
                                 <label class="form-label">Aspect Ratio</label>
                                 <select class="form-select input-lg" id="aspect-ratio-select" ${allowedRatios.length === 0 ? 'disabled' : ''}>
-                                    <option value="" ${effectiveAspectRatio === '' ? 'selected' : ''}>Match Input</option>
+                                    ${isT2I ? '' : `<option value="" ${effectiveAspectRatio === '' ? 'selected' : ''}>Match Input</option>`}
                                     ${allowedRatios.map(r => `<option value="${r}" ${effectiveAspectRatio === r ? 'selected' : ''}>${r}</option>`).join('')}
                                 </select>
                             </div>
                         </div>
                         <div class="column col-4">
-                            <button class="btn btn-primary btn-lg btn-block wh-source-tab-generate" id="btn-generate" ${(!state.selectedProviderId || this.isMaskMissing) ? 'disabled' : ''}>
+                            <button class="btn btn-primary btn-lg btn-block wh-source-tab-generate" id="btn-generate" ${(!state.selectedProviderId || this.isMaskMissing || this.isGenerationModeUnsupported || this.isAspectRatioMissing) ? 'disabled' : ''}>
                                 <i class="icon icon-check"></i> Generate
                             </button>
                         </div>
@@ -1446,9 +1569,7 @@ class WhSourceTab extends HTMLElement {
         container.style.display = html ? 'block' : 'none';
     }
 
-    showNotification(msg, type = 'primary') {
-        return; // no needs currently
-
+showNotification(msg, type = 'primary') {
         const container = this.querySelector('#tab-notification-container');
         if (!container) return;
         const toast = document.createElement('div');
@@ -1463,6 +1584,25 @@ class WhSourceTab extends HTMLElement {
         if (!state.selectedProviderId) return; // Button should be disabled anyway
 
         const provider = this.currentProvider;
+
+        // Keep this guard even though the button is disabled. The selected mode can
+        // change when references are added or removed, and programmatic callers must
+        // not bypass the visible provider capability restriction.
+        if (this.isGenerationModeUnsupported) {
+            this.showNotification(
+                `Provider does not support ${this.effectiveGenerationMode.toUpperCase()} generation.`,
+                'error'
+            );
+            return;
+        }
+
+        if (this.isAspectRatioMissing) {
+            this.showNotification(
+                'Aspect ratio is required for Text-to-Image generation.',
+                'error'
+            );
+            return;
+        }
 
         // WARNING: Empty Prompt (Allow generation)
         if (this.isPromptEmpty) {
@@ -1484,7 +1624,7 @@ class WhSourceTab extends HTMLElement {
             } else if (maskRequired) {
                 effectivelyUseMask = true;
             } else {
-                if (!this.taskData.maskImage) {
+                if (!this.taskData?.maskImage) {
                     effectivelyUseMask = false;
                 } else {
                     const maskCb = this.querySelector('#use-mask-checkbox');
@@ -1725,6 +1865,7 @@ class WhResultTab extends HTMLElement {
     }
     async handleNewTaskFromResult() {
         const btn = this.querySelector('#btn-new-task');
+        const originalText = btn.innerHTML;
         btn.disabled = true;
         try {
             // Extract filename from the image URL (e.g. /api/webhelper/file/task_..._res_0.png)

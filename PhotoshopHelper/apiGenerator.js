@@ -7,6 +7,12 @@ const { waitForApiResult, downloadAndSaveImages, makeRequest } = require('./apiG
 const { getConfigPaths } = require('./setup/config-paths');
 const { resolveTemplate } = require('./templateEngine');
 
+// The current generator always saves image results and has request semantics only
+// for text-to-image and image-to-image. Other modality names are intentionally not
+// accepted until their input contracts, response handling, persistence, and UI are
+// implemented end to end.
+const IMPLEMENTED_GENERATION_MODES = new Set(['t2i', 'i2i']);
+
 // Helper to reliably read providers config
 function getProvidersConfig() {
     const { providersPath } = getConfigPaths();
@@ -77,6 +83,48 @@ function formatImage(filePath, format) {
         return `data:${mime};base64,${base64}`;
     }
     return base64;
+}
+
+/**
+ * Validate a provider's declared modes and reject an unsupported invocation.
+ *
+ * `generation_modes` is configuration policy, not request routing. Conditional
+ * endpoint keys still choose between supported routes, while this check prevents
+ * an unsupported mode from reaching any endpoint at all. The array is mandatory
+ * and deliberately limited to the two modes implemented by the current image
+ * generation pipeline.
+ *
+ * @param {object} provider - Resolved provider configuration.
+ * @param {'t2i'|'i2i'} generationMode - Effective mode after image normalization.
+ * @throws {Error} When the provider declaration is invalid or excludes the mode.
+ */
+function assertProviderSupportsGenerationMode(provider, generationMode) {
+    const configuredModes = provider?.generation_modes;
+    const providerLabel = provider?.id || provider?.name || 'unknown';
+
+    if (!Array.isArray(configuredModes) || configuredModes.length === 0) {
+        throw new Error(
+            `Provider "${providerLabel}" must declare a non-empty generation_modes array.`
+        );
+    }
+
+    const uniqueModes = new Set(configuredModes);
+    const hasInvalidMode = configuredModes.some(mode => (
+        typeof mode !== 'string' || !IMPLEMENTED_GENERATION_MODES.has(mode)
+    ));
+
+    if (hasInvalidMode || uniqueModes.size !== configuredModes.length) {
+        throw new Error(
+            `Provider "${providerLabel}" has invalid generation_modes; `
+            + 'only unique "t2i" and "i2i" values are currently implemented.'
+        );
+    }
+
+    if (!uniqueModes.has(generationMode)) {
+        throw new Error(
+            `Provider "${providerLabel}" does not support ${generationMode} generation.`
+        );
+    }
 }
 
 /**
@@ -342,21 +390,7 @@ async function generate(taskOrId, providerId, num_images, aspect_ratio, userPara
     if (!provider) throw new Error(`Provider ${providerId} not found in config.`);
     const reqConfig = provider.request_config;
 
-    // 2. Validate configuration
-    if (use_mask) {
-        if (!provider.mask_handling || !provider.mask_handling.supported) {
-            throw new Error(`Provider "${provider.name}" does not support masks.`);
-        }
-        if (!task.maskImage) {
-            throw new Error(`Mask image is required but missing from task.`);
-        }
-    } else {
-        if (provider.mask_handling && provider.mask_handling.required) {
-            throw new Error(`Provider "${provider.name}" requires a mask.`);
-        }
-    }
-
-    // 3. Prepare Context Context
+    // 2. Prepare Context
     const context = { ...userParams };
     if (num_images !== undefined) {
         context.num_images = num_images;
@@ -416,6 +450,29 @@ async function generate(taskOrId, providerId, num_images, aspect_ratio, userPara
     sourceImageFormatted = normalizedImages.sourceImage;
     maskImageFormatted = normalizedImages.maskImage;
     refImagesFormatted = normalizedImages.referenceImages;
+
+    // The effective mode is derived only after the first reference has had the
+    // opportunity to become the source. Validate the provider capability before
+    // preprocessors perform work and, most importantly, before any paid request.
+    const isTextToImage = !sourceImageFormatted
+        && !maskImageFormatted
+        && refImagesFormatted.length === 0;
+    const generationMode = isTextToImage ? 't2i' : 'i2i';
+    assertProviderSupportsGenerationMode(provider, generationMode);
+
+    // Mask capability is checked after mode normalization so an I2I-only inpainting
+    // provider reports a T2I capability error for an image-less request instead of
+    // the less useful secondary error about its required mask.
+    if (use_mask) {
+        if (!provider.mask_handling || !provider.mask_handling.supported) {
+            throw new Error(`Provider "${provider.name}" does not support masks.`);
+        }
+        if (!task.maskImage) {
+            throw new Error('Mask image is required but missing from task.');
+        }
+    } else if (provider.mask_handling?.required) {
+        throw new Error(`Provider "${provider.name}" requires a mask.`);
+    }
 
     // Text-to-image has no source dimensions from which a provider can infer the
     // output shape. Reject the request before preprocessors or remote calls run.
@@ -477,7 +534,6 @@ async function generate(taskOrId, providerId, num_images, aspect_ratio, userPara
     context.resolved_image_array = requestReferenceImages;
 
     // 4. Compute Dynamic File Suffix
-    const isTextToImage = !sourceImageFormatted && !maskImageFormatted && refImagesFormatted.length === 0;
     const fileSuffix = computeFileSuffix(provider, context, isTextToImage);
 
     // 4b. Compute Display Name (nice_name) — resolved the same way as filename_suffix,

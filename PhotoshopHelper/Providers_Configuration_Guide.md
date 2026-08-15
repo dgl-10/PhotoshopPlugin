@@ -18,6 +18,7 @@
    - 3.7 [Filename Suffix (`filename_suffix`)](#37-filename-suffix-filename_suffix)
    - 3.8 [Remarks (`remarks`)](#38-remarks-remarks)
    - 3.9 [Nice Name (`nice_name`)](#39-nice-name-nice_name)
+   - 3.10 [Generation Modes (`generation_modes`)](#310-generation-modes-generation_modes)
 4. [Request Configuration (`request_config`)](#4-request-configuration-request_config)
    - 4.1 [Basic Structure](#41-basic-structure)
    - 4.2 [Single Image Per Request](#42-single-image-per-request)
@@ -132,6 +133,7 @@ Each object in the `providers` array has the following structure. Fields marked 
 |-------|------|----------|-------------|
 | `id` | `string` | ★ | Unique identifier for this provider (e.g., `"grok_imagine"`). Used internally for routing. |
 | `name` | `string` | ★ | Human-readable name shown in the provider dropdown (e.g., `"Grok Imagine - via XAI API Key ($0.02/image)"`). |
+| `generation_modes` | `array` | ★ | Explicit non-empty list of supported generation modes. Currently limited to `"t2i"` and `"i2i"`. See §3.10. |
 | `image_format` | `string` | ★ | Format for encoding images sent TO the API. See §3.2. |
 | `mask_handling` | `object` | ★ | How this provider handles inpainting masks. See §3.3. |
 | `max_reference_images` | `number` or `object` | ★ | Maximum additional reference images. See §3.4. |
@@ -151,7 +153,8 @@ Each object in the `providers` array has the following structure. Fields marked 
 ```jsonc
 {
     "id": "seedream_v4_5_fal",
-    "name": "Seedream v4.5 via Fal API Key ($0.04/per image)"
+    "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
+    "generation_modes": ["t2i", "i2i"]
 }
 ```
 
@@ -387,6 +390,51 @@ The configuration schema is identical to `filename_suffix` (string with optional
 | `values` | `object` | Map from parameter value → display string. Values do **not** support placeholders (they are literal strings). |
 
 > **Note:** If `nice_name` is absent, the result header falls back to showing the raw `providerId`.
+
+### 3.10 Generation Modes (`generation_modes`)
+
+Every provider must explicitly declare which input-to-output operations it supports:
+
+```jsonc
+"generation_modes": ["t2i", "i2i"]
+```
+
+The current runtime accepts exactly two values:
+
+| Value | Meaning | Effective input after normalization |
+|-------|---------|-------------------------------------|
+| `"t2i"` | Text-to-image | No source, active mask, or references remain. `aspect_ratio` is required. |
+| `"i2i"` | Image-to-image | An explicit source exists, or the first reference was promoted to source. |
+
+The array must be non-empty, contain no duplicates, and contain only implemented
+values. Missing or malformed declarations fail closed before preprocessing or an
+external provider request.
+
+Only the fixed array form is supported. All models currently grouped inside a single
+provider share the same modes; do not invent a `depends_on` object. If a future
+multi-model provider needs different capabilities per model, the schema and both
+server/client resolution paths must be extended deliberately first.
+
+An image-editing-only provider declares only I2I:
+
+```jsonc
+"generation_modes": ["i2i"]
+```
+
+`generation_modes` declares capability; conditional keys in `request_config` perform
+routing. A single-mode provider may therefore use a static endpoint. A provider that
+supports both modes uses conditional endpoints only when the external API has different
+T2I and I2I routes.
+
+> [!IMPORTANT]
+> Modes such as text-to-video, image-to-video, or image-to-SVG are possible future
+> directions only. They are not implemented values, must not appear in current provider
+> configurations, and would require dedicated request contracts, response/result
+> handling, persistence, UI, and Local API support. Adding a string to this array does
+> not enable a new modality.
+
+This field is intentionally sent to the browser and returned by provider discovery so
+the WebHelper UI and Local API clients can avoid unsupported requests.
 
 ---
 
@@ -1364,6 +1412,8 @@ When the user clicks "Generate", this is the complete server-side sequence:
 3. Validate mask requirements
 4. Build context from user params + system variables
 5. Convert images to provider's image_format
+5a. Normalize source/reference roles (the first reference may become source)
+5b. Derive t2i/i2i, validate provider.generation_modes, and require aspect_ratio for t2i
 6. ──── PREPROCESSOR PIPELINE ────
    │  For each preprocessor in provider.preprocessor[]:
    │    a. Resolve {{placeholders}} in args
@@ -1403,7 +1453,7 @@ When the user clicks "Generate", this is the complete server-side sequence:
 |--------|---------------|
 | **API Keys** | Stored in `.env` file or injected via NebulaSecrets. Referenced via `{{env:VAR_NAME}}` in templates. Never exposed to the browser. |
 | **Request Config** | `request_config`, `response_config`, `image_format`, `filename_suffix`, and `preprocessor` are all stripped from provider data before sending to the browser (`GET /api/webhelper/providers`). |
-| **Browser Isolation** | The browser only sees: `id`, `name`, `parameters`, `mask_handling`, `max_reference_images`, `supports_negative_prompt`, `english_only`, `allowed_aspect_ratios`, `remarks`. |
+| **Browser Isolation** | The browser only sees client-safe metadata including `id`, `name`, `generation_modes`, `parameters`, `mask_handling`, `max_reference_images`, `supports_negative_prompt`, `english_only`, `allowed_aspect_ratios`, and `remarks`. |
 | **Dynamic Visibility**| Providers requiring API keys (via `{{env:VAR_NAME}}`) that are absent or empty in the server's `process.env` are entirely filtered out and never sent to the client. |
 | **Path Traversal** | File serving endpoints validate paths against the temp directory to prevent directory traversal attacks. |
 
@@ -1418,6 +1468,7 @@ A synchronous provider using xAI's Grok API. Supports reference images as object
 ```jsonc
 {
             "id": "grok_imagine",
+            "generation_modes": ["t2i", "i2i"],
             "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
             "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
@@ -1572,6 +1623,7 @@ An asynchronous provider using FAL's queue API. Features a preprocessor for dyna
 ```jsonc
 {
             "id": "seedream_v4_5_fal",
+            "generation_modes": ["t2i", "i2i"],
             "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
             "nice_name": "Seedream v4.5 (FAL Key)",
             "filename_suffix": "seedream_v4_5",
@@ -1706,6 +1758,7 @@ A provider that strictly requires a mask for inpainting. Uses BFL's polling API.
 ```jsonc
 {
             "id": "bfl_flux_fill_inpaint",
+            "generation_modes": ["i2i"],
             "name": "FLUX.1 Fill inpaint via BFL API Key ($0.05/image)",
             "nice_name": "FLUX.1 Fill (BFL Key)",
             "image_format": "base64_raw",
@@ -1776,6 +1829,7 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
 ```jsonc
 {
             "id": "bfl_flux2",
+            "generation_modes": ["t2i", "i2i"],
             "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
             "nice_name": {
                 "default": "FLUX.2 {{model_flux2}} (BFL Key)",
@@ -1975,6 +2029,7 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
 ```jsonc
 {
             "id": "alibaba_fal",
+            "generation_modes": ["t2i", "i2i"],
             "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
             "nice_name": {
                 "depends_on": "model_alibaba",
@@ -2212,6 +2267,7 @@ A straightforward BFL provider with a dynamic endpoint URL and the `english_only
 ```jsonc
 {
             "id": "bfl_kontext",
+            "generation_modes": ["t2i", "i2i"],
             "name": "FLUX Kontext via BFL API Key ($0.04/$0.08 (FLUX Kontext Max) per image)",
             "nice_name": {
                 "default": "FLUX Kontext (BFL Key)",
@@ -2290,6 +2346,7 @@ Demonstrates several unique patterns:
 ```jsonc
 {
             "id": "gpt_image_2_openai",
+            "generation_modes": ["t2i", "i2i"],
             "name": "GPT-Image-2 via OpenAI API Key (from ~$0.01)",
             "nice_name": "GPT-Image-2 (OpenAI Key)",
             "filename_suffix": "gpt_image_2",

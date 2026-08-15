@@ -19,6 +19,10 @@
             <section class="navbar-section">
                 <span class="navbar-brand mr-2 text-primary">WebHelper</span>
                 <button class="btn btn-sm btn-primary tooltip tooltip-bottom ml-2"
+                    data-tooltip="Create Text-to-Image Task" id="btn-create-text-task">
+                    <i class="icon icon-edit"></i> New Task (Text)
+                </button>
+                <button class="btn btn-sm btn-primary tooltip tooltip-bottom ml-2"
                     data-tooltip="Upload or Drag & Drop Image" id="btn-create-external-task">
                     <i class="icon icon-plus"></i> New Task (Image)
                 </button>
@@ -53,8 +57,11 @@
                     </div>
                     <p class="empty-title h5">No tasks yet</p>
                     <p class="empty-subtitle">Waiting for images from Photoshop, or drag and drop an image here.</p>
-                    <div class="empty-action">
-                        <button class="btn btn-primary" id="btn-empty-create-external-task">
+                    <div class="empty-action" style="display: flex; gap: 0.5rem; justify-content: center;">
+                        <button class="btn btn-primary" id="btn-empty-create-text-task">
+                            <i class="icon icon-edit"></i> New Text-to-Image Task
+                        </button>
+                        <button class="btn" id="btn-empty-create-external-task">
                             <i class="icon icon-plus"></i> Select Image
                         </button>
                     </div>
