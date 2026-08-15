@@ -16,6 +16,12 @@ const ALL_ASPECT_RATIOS = [
 // executable.
 const IMPLEMENTED_GENERATION_MODES = Object.freeze(['t2i', 'i2i']);
 
+// These are the only two generation modes implemented by the current image-result
+// pipeline. Additional modalities may be added in the future, but merely listing a
+// new string in provider configuration must never make the present UI treat it as
+// executable.
+const IMPLEMENTED_GENERATION_MODES = Object.freeze(['t2i', 'i2i']);
+
 // Global environment info (defaults to local desktop)
 window.envInfo = {
     isLocal: true,
@@ -986,12 +992,19 @@ class WhSourceTab extends HTMLElement {
                         <select class="form-select wh-source-tab-provider" id="provider-select">
                             <option value="">Select a provider...</option>
                             ${this.providers.map(p => {
-                                const supportsMode = this.providerSupportsEffectiveGenerationMode(p);
-                                const unavailableSuffix = supportsMode
-                                    ? ''
-                                    : ` [unavailable for ${this.effectiveGenerationMode.toUpperCase()}]`;
-                                return `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''} ${supportsMode ? '' : 'disabled'}>${p.name}${unavailableSuffix}</option>`;
-                            }).join('')}
+                    const supportsMode = this.providerSupportsEffectiveGenerationMode(p);
+                    const unavailableSuffix = supportsMode
+                        ? ''
+                        : ` [unavailable for ${this.effectiveGenerationMode.toUpperCase()}]`;
+                    return `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''} ${supportsMode ? '' : 'disabled'}>${p.name}${unavailableSuffix}</option>`;
+                }).join('')}
+                            ${this.providers.map(p => {
+                    const supportsMode = this.providerSupportsEffectiveGenerationMode(p);
+                    const unavailableSuffix = supportsMode
+                        ? ''
+                        : ` [unavailable for ${this.effectiveGenerationMode.toUpperCase()}]`;
+                    return `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''} ${supportsMode ? '' : 'disabled'}>${p.name}${unavailableSuffix}</option>`;
+                }).join('')}
                         </select>
                     </div>
                     <div id="dynamic-params-container" class="wh-source-tab-settings border rounded bg-gray p-2 mb-2" style="max-height: 300px; overflow-y: auto; display: none;"></div>
@@ -1569,7 +1582,7 @@ class WhSourceTab extends HTMLElement {
         container.style.display = html ? 'block' : 'none';
     }
 
-showNotification(msg, type = 'primary') {
+    showNotification(msg, type = 'primary') {
         const container = this.querySelector('#tab-notification-container');
         if (!container) return;
         const toast = document.createElement('div');
