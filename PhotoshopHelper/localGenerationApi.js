@@ -183,6 +183,33 @@ function normalizeGenerationRequest(body) {
 }
 
 /**
+ * Create the in-memory generation record consumed by executeGeneration.
+ *
+ * @param {object} request - Normalized request from normalizeGenerationRequest.
+ * @returns {object} Mutable generation state.
+ */
+function createGenerationRecord(request) {
+    return {
+        generationId: `generation_${Date.now()}_${crypto.randomUUID()}`,
+        status: 'queued',
+        providerId: request.providerId,
+        sourceImagePath: request.sourceImagePath,
+        maskImagePath: request.maskImagePath,
+        params: request.params,
+        numImages: request.numImages,
+        aspectRatio: request.aspectRatio,
+        referenceImagePaths: request.referenceImagePaths,
+        useMask: request.useMask,
+        forceSeparateRequests: request.forceSeparateRequests,
+        results: [],
+        createdAt: new Date().toISOString(),
+        startedAt: null,
+        completedAt: null,
+        error: null
+    };
+}
+
+/**
  * Compare a supplied token without leaking partial-match timing information.
  *
  * @param {string} suppliedToken - Token extracted from an HTTP header.
@@ -377,26 +404,8 @@ function createLocalGenerationRouter(options) {
     router.post('/generations', (req, res) => {
         try {
             const request = normalizeGenerationRequest(req.body);
-            const generationId = `generation_${Date.now()}_${crypto.randomUUID()}`;
-            const createdAt = new Date().toISOString();
-            const generation = {
-                generationId,
-                status: 'queued',
-                providerId: request.providerId,
-                sourceImagePath: request.sourceImagePath,
-                maskImagePath: request.maskImagePath,
-                params: request.params,
-                numImages: request.numImages,
-                aspectRatio: request.aspectRatio,
-                referenceImagePaths: request.referenceImagePaths,
-                useMask: request.useMask,
-                forceSeparateRequests: request.forceSeparateRequests,
-                results: [],
-                createdAt,
-                startedAt: null,
-                completedAt: null,
-                error: null
-            };
+            const generation = createGenerationRecord(request);
+            const generationId = generation.generationId;
 
             generations.set(generationId, generation);
 
@@ -445,5 +454,12 @@ function createLocalGenerationRouter(options) {
 
 module.exports = {
     LOCAL_API_PREFIX,
-    createLocalGenerationRouter
+    createLocalGenerationRouter,
+    createOptionalTokenMiddleware,
+    createGenerationRecord,
+    normalizeGenerationRequest,
+    executeGeneration,
+    resultToAbsolutePath,
+    // Exported for tests only.
+    createHttpError
 };

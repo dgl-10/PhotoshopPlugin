@@ -73,9 +73,10 @@ const path = require('node:path');
 const fs = require('node:fs');
 const express = require('express');
 const { spawnSync } = require('node:child_process');
-const JSON5 = require('json5');
 const { generate } = require('./apiGenerator');
+const { getAvailableProviders } = require('./availableProviders');
 const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
+const { mountMcpServer } = require('./mcp');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -134,6 +135,7 @@ const VERSION = packageJson.version;
 let tray = null;
 let dragWindow = null;
 let httpServer = null;
+let closeMcpServer = null;
 let currentSessionFolder = null;  // Current drag session temp folder
 let currentFilePaths = [];        // Array of file paths for current drag session
 
@@ -356,10 +358,14 @@ function startHttpServer() {
     // Enable CORS for plugin access
     expressApp.use((req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
         // Authorization headers are included so browser-based local clients can use
         // the optional shared token without failing their CORS preflight request.
-        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
+        // MCP Streamable HTTP also sends session/protocol headers, including on DELETE.
+        res.header(
+            'Access-Control-Allow-Headers',
+            'Content-Type, Authorization, X-API-Key, mcp-session-id, mcp-protocol-version, Last-Event-ID, Accept'
+        );
         if (req.method === 'OPTIONS') {
             return res.sendStatus(200);
         }
@@ -375,6 +381,15 @@ function startHttpServer() {
         token: process.env.LOCAL_GENERATION_API_TOKEN || '',
         onGenerationAccepted: () => trackUsage(2)
     }));
+
+    closeMcpServer = mountMcpServer(expressApp, {
+        generate,
+        tempDir: WEBHELPER_TEMP_DIR,
+        token: process.env.LOCAL_GENERATION_API_TOKEN || '',
+        onGenerationAccepted: () => trackUsage(2),
+        appVersion: VERSION,
+        guidePath: path.join(getConfigPaths().resourcesPath, 'MCP_GUIDE.md')
+    });
 
     // GET /api/status - Health check endpoint
     expressApp.get('/api/status', (req, res) => {
@@ -630,50 +645,27 @@ function startHttpServer() {
     // GET /api/webhelper/providers - Get list of models/providers
     expressApp.get('/api/webhelper/providers', (req, res) => {
         try {
-            const { providersPath } = getConfigPaths();
-            if (fs.existsSync(providersPath)) {
-                const providersRaw = fs.readFileSync(providersPath, 'utf8');
-                const providersData = JSON5.parse(providersRaw);
+            const availableProviders = getAvailableProviders();
 
-                // 1. Filter out providers for which API keys are not defined in the system
-                const availableProviders = (providersData.providers || []).filter(p => {
-                    let configStr = JSON.stringify(p);
+            // Sanitize and elevate properties for the client
+            const sanitizedProviders = availableProviders.map(p => {
+                const sanitized = { ...p };
 
-                    // Also check the referenced response_handler for env variables
-                    if (p.response_config && p.response_config.$ref && providersData.response_handlers[p.response_config.$ref]) {
-                        configStr += JSON.stringify(providersData.response_handlers[p.response_config.$ref]);
-                    }
+                // Elevate single_image_per_request to client level if it exists in request_config
+                if (p.request_config && p.request_config.single_image_per_request) {
+                    sanitized.single_image_per_request = true;
+                } else {
+                    sanitized.single_image_per_request = false;
+                }
 
-                    // Extract all "{{env:SOME_API_KEY}}" variables that this provider or its handler needs
-                    const mapMatches = [...configStr.matchAll(/\{\{env:([a-zA-Z0-9_]+)\}\}/g)];
-                    const requiredKeys = [...new Set(mapMatches.map(m => m[1]))];
-
-                    // The provider is only available if ALL required API keys exist in process.env and are not empty
-                    return requiredKeys.every(key => process.env[key] && process.env[key].trim() !== "");
-                });
-
-                // 2. Sanitize and elevate properties for the client
-                const sanitizedProviders = availableProviders.map(p => {
-                    const sanitized = { ...p };
-
-                    // Elevate single_image_per_request to client level if it exists in request_config
-                    if (p.request_config && p.request_config.single_image_per_request) {
-                        sanitized.single_image_per_request = true;
-                    } else {
-                        sanitized.single_image_per_request = false;
-                    }
-
-                    delete sanitized.request_config;
-                    delete sanitized.response_config;
-                    delete sanitized.image_format;
-                    delete sanitized.filename_suffix;
-                    delete sanitized.preprocessor;
-                    return sanitized;
-                });
-                res.json({ providers: sanitizedProviders });
-            } else {
-                res.json({ providers: [] });
-            }
+                delete sanitized.request_config;
+                delete sanitized.response_config;
+                delete sanitized.image_format;
+                delete sanitized.filename_suffix;
+                delete sanitized.preprocessor;
+                return sanitized;
+            });
+            res.json({ providers: sanitizedProviders });
         } catch (error) {
             console.error('Error reading providers:', error);
             res.status(500).json({ error: error.message });
@@ -1046,6 +1038,9 @@ function startHttpServer() {
     httpServer = expressApp.listen(PORT, '127.0.0.1', () => {
         console.log(`Photoshop Helper server running on http://localhost:${PORT}`);
     });
+    // generate_image may wait up to timeout_seconds (max 600). Node's default
+    // HTTP requestTimeout is 300 seconds and would drop a long tool call.
+    httpServer.requestTimeout = 610000;
 
     httpServer.on('error', (error) => {
         console.error('Server error:', error);
@@ -1156,6 +1151,12 @@ app.on('before-quit', () => {
         } catch (e) {
             // Ignore cleanup errors
         }
+    }
+
+    if (closeMcpServer) {
+        Promise.resolve(closeMcpServer()).catch(error => {
+            console.error('[MCP] Failed to close sessions on quit:', error);
+        });
     }
 
     // Close HTTP server
