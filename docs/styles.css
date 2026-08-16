@@ -3,6 +3,12 @@
    Large fixed static art background (bg.svg) sits behind glass cards. */
 
 :root {
+  /*
+     This landing page has a deliberately light, translucent illustration palette.
+     Prevent browsers such as Chrome on Android from applying Auto Dark Theme and
+     inverting the artwork, glass surfaces, and navigation icon in dark OS mode.
+  */
+  color-scheme: only light;
   --bg-fallback: #fff4ea;
   --ink: #1f1630;
   --ink-soft: #4a3d63;

@@ -1209,6 +1209,13 @@ async function applySmartObjectNativeMask(parentDoc) {
         // Restore focus to parent document just in case
         app.activeDocument = parentDoc;
     }
+
+    // Step 7: Hide the Smart Object layer. It stays in the layer stack (for the inpaint mask
+    // to be picked up), but shouldn't be visible/rendered until the user turns it on manually.
+    console.log("Step 7: Hiding Smart Object layer...");
+    if (smartObjectLayer) {
+        smartObjectLayer.visible = false;
+    }
 }
 
 /**
