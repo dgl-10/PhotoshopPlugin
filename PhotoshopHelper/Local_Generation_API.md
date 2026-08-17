@@ -74,10 +74,19 @@ Only `t2i` and `i2i` are implemented. Video, SVG, and other output modalities ar
 possible future directions, not accepted Local API modes; adding an arbitrary mode name
 to provider configuration does not enable it.
 
-## Optional authentication
+## Authentication
 
-Authentication is disabled by default. To enable a shared-token check, set
-`LOCAL_GENERATION_API_TOKEN` in the Photoshop Helper `.env` file and restart the app.
+Both Local API endpoints always require a shared token — this API triggers paid provider
+calls, so it is never reachable without one. A token is generated automatically on first
+run and stored in the Helper's local settings; copy it from the system tray menu
+(**Access Tokens → Copy Local API Token**). To pin a fixed value instead — for example
+when a script's configuration should not change across reinstalls — set
+`LOCAL_GENERATION_API_TOKEN` in the Photoshop Helper `.env` file and restart the app; it
+overrides the generated token.
+
+This token is intentionally separate from the one paired into the Photoshop plugin (used
+for clipboard, drag-and-drop, and file save): the plugin's token is delivered as a file in
+its UXP data folder, so it must not by itself unlock anything that spends money.
 
 Clients may use either header:
 
@@ -91,7 +100,7 @@ or:
 X-API-Key: your-token
 ```
 
-When configured, the token is required by both Local API endpoints.
+A request with a missing or incorrect token receives HTTP `401`.
 
 ## 1. Start a generation
 
@@ -297,16 +306,20 @@ $generationRequest = @{
     }
 } | ConvertTo-Json -Depth 10
 
+$authHeaders = @{ Authorization = 'Bearer your-token' }
+
 $generation = Invoke-RestMethod `
     -Method Post `
     -Uri 'http://127.0.0.1:18345/api/local/v1/generations' `
     -ContentType 'application/json' `
+    -Headers $authHeaders `
     -Body $generationRequest
 
 do {
     Start-Sleep -Milliseconds 500
     $result = Invoke-RestMethod `
-        -Uri ('http://127.0.0.1:18345' + $generation.statusUrl)
+        -Uri ('http://127.0.0.1:18345' + $generation.statusUrl) `
+        -Headers $authHeaders
 } while ($result.status -in @('queued', 'running'))
 
 if ($result.status -eq 'failed') {
@@ -316,5 +329,5 @@ if ($result.status -eq 'failed') {
 $result.outputPaths
 ```
 
-When authentication is enabled, add
-`-Headers @{ Authorization = 'Bearer your-token' }` to both requests.
+Replace `your-token` with the value copied from the tray menu (**Access Tokens → Copy
+Local API Token**), or with your pinned `LOCAL_GENERATION_API_TOKEN` if you set one.

@@ -146,6 +146,8 @@ Browser drag-and-drop workflows do not require API keys. API keys are only neede
 
 To make the workflow work, the plugin/helper needs access to the local file system, clipboard, localhost communication, and network/API requests for the providers or browser tools you choose.
 
+The plugin and Helper authenticate to each other with a token that PhotoshopHelper generates and delivers automatically — no setup step is required. See [SECURITY.md](SECURITY.md) for the full local access model.
+
 Support reminders are based on a local usage counter; no usage data is sent for those reminders.
 
 The helper is not intended to be exposed as a public server. Keep it on localhost unless you understand the risks.
@@ -218,6 +220,9 @@ No. FromPS / ToPS is source-available for transparency and for personal/non-comm
 
 **6. Can I use the *generated images* for commercial client work?**
 FromPS / ToPS does not claim rights over your outputs. Usage rights for generated or processed images depend on your rights to the input material and on the terms of the AI tool or API provider you used. The NonCommercial license restricts selling, monetizing, or commercially redistributing the *FromPS / ToPS software code itself*.
+
+**7. Do I need to configure anything for the plugin to talk to PhotoshopHelper?**
+No. PhotoshopHelper pairs itself with the plugin automatically on startup. If the panel ever reports that the Helper is "not paired," copy the token from the tray menu (Access Tokens) into the plugin's Settings dialog as a one-time fallback.
 
 ---
 

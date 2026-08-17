@@ -23,6 +23,14 @@ API providers may retain inputs, outputs, prompts, account identifiers, or billi
 
 Do not attach `.env` files or unredacted configuration files to GitHub issues.
 
+## Local server authentication
+
+PhotoshopHelper generates two access tokens on first run and stores them alongside the
+other local settings above. One is delivered automatically into the Photoshop plugin's
+private UXP data folder so the plugin can authenticate without any manual step; the other
+protects the local automation API (`/api/local/v1/*`). Neither token leaves the machine.
+See [SECURITY.md](SECURITY.md) for what each token protects.
+
 ## Local images and temporary files
 
 PhotoshopHelper stores working images, masks, generation results, and drag-and-drop files under the system temporary directory in a folder named `ps_webhelper_tasks`. The Helper removes items older than 30 days when it starts. The folder can also be opened from the tray menu and cleaned manually after closing active tasks.

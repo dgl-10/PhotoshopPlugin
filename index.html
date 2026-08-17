@@ -324,6 +324,16 @@
             </div>
 
             <sp-divider size="small" style="margin-top: 12px; margin-bottom: 12px;"></sp-divider>
+
+            <sp-body style="margin-bottom: 4px;">Photoshop Helper Token:</sp-body>
+            <sp-detail style="display: block; margin-bottom: 8px; opacity: 0.7;">
+                Normally filled in automatically. Only needed if the panel reports that the
+                Helper is not paired — copy it from the Helper tray menu, Access Tokens.
+            </sp-detail>
+            <sp-textfield id="settings-helper-token" placeholder="Leave empty for automatic pairing" style="width: 100%;"></sp-textfield>
+            <div id="settings-helper-token-status" class="settings-token-status"></div>
+
+            <sp-divider size="small" style="margin-top: 12px; margin-bottom: 12px;"></sp-divider>
             <footer style="display: flex; justify-content: flex-end; gap: 8px;">
                 <sp-button variant="secondary" quiet id="btn-settings-cancel">Cancel</sp-button>
                 <sp-button variant="cta" id="btn-settings-save">Save</sp-button>

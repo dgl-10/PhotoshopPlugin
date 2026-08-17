@@ -4,6 +4,8 @@ const path = require('node:path');
 
 const express = require('express');
 
+const { createAuthMiddleware } = require('./auth');
+
 // The common prefix is versioned independently from the browser-oriented
 // WebHelper API so the local service contract can evolve without breaking the UI.
 const LOCAL_API_PREFIX = '/api/local/v1';
@@ -183,52 +185,6 @@ function normalizeGenerationRequest(body) {
 }
 
 /**
- * Compare a supplied token without leaking partial-match timing information.
- *
- * @param {string} suppliedToken - Token extracted from an HTTP header.
- * @param {string} expectedToken - Token configured in the environment.
- * @returns {boolean} True only when both UTF-8 byte sequences match exactly.
- */
-function tokensMatch(suppliedToken, expectedToken) {
-    const suppliedBuffer = Buffer.from(suppliedToken, 'utf8');
-    const expectedBuffer = Buffer.from(expectedToken, 'utf8');
-
-    if (suppliedBuffer.length !== expectedBuffer.length) {
-        return false;
-    }
-
-    return crypto.timingSafeEqual(suppliedBuffer, expectedBuffer);
-}
-
-/**
- * Create optional authentication middleware for every local automation route.
- *
- * @param {string} expectedToken - Configured LOCAL_GENERATION_API_TOKEN value.
- * @returns {import('express').RequestHandler} Express authentication middleware.
- */
-function createOptionalTokenMiddleware(expectedToken) {
-    return (req, res, next) => {
-        if (!expectedToken) {
-            return next();
-        }
-
-        const authorization = req.get('authorization') || '';
-        const bearerPrefix = 'Bearer ';
-        const bearerToken = authorization.startsWith(bearerPrefix)
-            ? authorization.slice(bearerPrefix.length)
-            : '';
-        const apiKeyToken = req.get('x-api-key') || '';
-        const suppliedToken = bearerToken || apiKeyToken;
-
-        if (!suppliedToken || !tokensMatch(suppliedToken, expectedToken)) {
-            return res.status(401).json({ error: 'Unauthorized.' });
-        }
-
-        return next();
-    };
-}
-
-/**
  * Convert a WebHelper result URL into an absolute generated file path.
  *
  * @param {object} result - One result returned by apiGenerator.generate().
@@ -350,7 +306,7 @@ async function executeGeneration(generation, dependencies) {
  * @param {object} options - Runtime dependencies supplied by main.js.
  * @param {Function} options.generate - Existing provider-driven generation function.
  * @param {string} options.tempDir - Existing WebHelper generation output directory.
- * @param {string} [options.token=''] - Optional shared token for local callers.
+ * @param {Function} options.getToken - Returns the shared token required of every caller.
  * @param {Function} [options.onGenerationAccepted] - Optional usage/accounting callback.
  * @returns {import('express').Router} A router mounted at LOCAL_API_PREFIX.
  */
@@ -360,6 +316,9 @@ function createLocalGenerationRouter(options) {
     }
     if (!options.tempDir || typeof options.tempDir !== 'string') {
         throw new TypeError('createLocalGenerationRouter requires a tempDir path.');
+    }
+    if (typeof options.getToken !== 'function') {
+        throw new TypeError('createLocalGenerationRouter requires a getToken function.');
     }
 
     const dependencies = {
@@ -371,7 +330,9 @@ function createLocalGenerationRouter(options) {
     const generations = new Map();
     const router = express.Router();
 
-    router.use(createOptionalTokenMiddleware(options.token || ''));
+    // These routes invoke paid providers, so the token is always required. Same-origin
+    // browser requests get no exemption: no browser UI is a client of this API.
+    router.use(createAuthMiddleware({ getToken: options.getToken }));
 
     // Accept one complete provider invocation without a preliminary task resource.
     router.post('/generations', (req, res) => {

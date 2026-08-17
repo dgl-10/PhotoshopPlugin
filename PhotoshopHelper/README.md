@@ -36,6 +36,10 @@ NEBULA_CS=XAI_API_KEY=XAI_API_KEY,FAL_API_KEY=FAL_API_KEY...
 # To disable Nebula, simply comment out the NEBULA_CS= line.
 
 # Standard key injection via environment variables is also supported.
+
+# Local server authentication (optional — see "Access control" below).
+LOCAL_GENERATION_API_TOKEN=
+WEBHELPER_ACCESS_PASSWORD=
 ```
 
 ### 3. Run
@@ -48,42 +52,52 @@ The application will minimize to the system tray. The server will be available a
 
 ## 📡 API Reference
 
+Every route below is marked with the access level it requires. See
+[SECURITY.md](../SECURITY.md#local-http-server-access-control) for what each level means
+and how the tokens are delivered — in short, the plugin is paired automatically and
+WebHelper works from its own page without any setup.
+
+- 🔓 **Open** — no credential required.
+- 🔌 **Plugin token** — the dedicated secret paired into the Photoshop plugin.
+- 🌐 **WebHelper** — same-origin browser request, or the plugin token.
+- 🔑 **Local API token** — the separate `LOCAL_GENERATION_API_TOKEN` secret.
+
 ### 🛠 Core & System
-- `GET /api/status` — Check server status, version, and retrieve update alerts.
+- 🔓 `GET /api/status` — Check server status, version, and retrieve update alerts.
   * Query parameters (optional):
     * `pluginVersion`: The version of the Photoshop UXP plugin.
   * Response details:
     * Returns an `alerts` object with platform-specific instructions if action is needed (e.g., plugin version mismatch, or Helper update is downloaded/ready).
-- `GET /api/is-local` — Detect local vs. remote access and device type (mobile/desktop).
+- 🔓 `GET /api/is-local` — Detect local vs. remote access and device type (mobile/desktop).
 
 ### 📋 Clipboard
-- `POST /api/clipboard/copy` — Copy a base64-encoded image to the system clipboard.
-- `GET /api/clipboard/paste` — Retrieve the current clipboard image as base64.
+- 🔌 `POST /api/clipboard/copy` — Copy a base64-encoded image to the system clipboard.
+- 🔌 `GET /api/clipboard/paste` — Retrieve the current clipboard image as base64.
 
 ### 🖱 Drag & Drop
-- `POST /api/drag/start` — Initiate a drag operation. Creates a floating preview window.
+- 🔌 `POST /api/drag/start` — Initiate a drag operation. Creates a floating preview window.
   - Accepts `image` (single file) or `images` (array).
 
 ### 💾 File System
-- `POST /api/file/save` — Save an image to disk with automatic filename conflict resolution (`image_1.png`, `image_2.png`).
+- 🔌 `POST /api/file/save` — Save an image to disk with automatic filename conflict resolution (`image_1.png`, `image_2.png`). Accepts any absolute destination path, so it is restricted to the plugin token rather than to a fixed directory.
 
 ### 🌐 WebHelper (AI API)
-- `GET /webhelper` — Entry point for the web UI (SPA).
-- `GET /api/webhelper/providers` — List of available models (Grok, FAL, FLUX) and their parameters.
-- `POST /api/webhelper/task` — Create a new task (upload Source + Mask from Photoshop).
-- `POST /api/webhelper/task/from-file` — **Iterative workflow**: create a new task from an existing generation result.
-- `GET /api/webhelper/queue` — Queue of new tasks (polled by the UI).
-- `POST /api/webhelper/mark_opened` — Mark tasks as accepted by the UI (clears the queue).
-- `GET /api/webhelper/task/:taskId` — Detailed task metadata and results.
-- `GET /api/webhelper/file/:filename` — Access temporary images (sources, masks, generations).
-- `POST /api/webhelper/generate` — Start the generation process via the selected AI provider.
-- `POST /api/webhelper/file/copy2clipboard` — Copy any file from the working directory to the clipboard at full resolution.
+- 🌐 `GET /webhelper` — Entry point for the web UI (SPA).
+- 🌐 `GET /api/webhelper/providers` — List of available models (Grok, FAL, FLUX) and their parameters.
+- 🌐 `POST /api/webhelper/task` — Create a new task (upload Source + Mask from Photoshop).
+- 🌐 `POST /api/webhelper/task/from-file` — **Iterative workflow**: create a new task from an existing generation result.
+- 🌐 `GET /api/webhelper/queue` — Queue of new tasks (polled by the UI).
+- 🌐 `POST /api/webhelper/mark_opened` — Mark tasks as accepted by the UI (clears the queue).
+- 🌐 `GET /api/webhelper/task/:taskId` — Detailed task metadata and results.
+- 🌐 `GET /api/webhelper/file/:filename` — Access temporary images (sources, masks, generations).
+- 🌐 `POST /api/webhelper/generate` — Start the generation process via the selected AI provider.
+- 🌐 `POST /api/webhelper/file/copy2clipboard` — Copy any file from the working directory to the clipboard at full resolution.
 
 ### Local Generation Service
 
-- `POST /api/local/v1/generations` — Start one self-contained asynchronous generation from optional source/mask paths, reference paths, and provider parameters.
-- `GET /api/local/v1/generations/:generationId` — Return one generation's state and absolute output paths.
-- See [Local_Generation_API.md](Local_Generation_API.md) for the complete request schema, polling flow, authentication option, and examples.
+- 🔑 `POST /api/local/v1/generations` — Start one self-contained asynchronous generation from optional source/mask paths, reference paths, and provider parameters.
+- 🔑 `GET /api/local/v1/generations/:generationId` — Return one generation's state and absolute output paths.
+- See [Local_Generation_API.md](Local_Generation_API.md) for the complete request schema, polling flow, authentication, and examples.
 
 ---
 
@@ -105,6 +119,8 @@ PhotoshopHelper/
 │   └── license-activation-preload.js # Secure bridge for license activation window
 ├── package.json                      # Dependencies (Electron, Express, Sharp)
 ├── main.js                           # Main process: HTTP/REST API and system tray
+├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware
+├── plugin-pairing.js                 # Delivers the plugin token into the Photoshop plugin's UXP data folder
 ├── preload.js                        # Context bridge for secure inter-process communication
 ├── providers.template.json           # Template for AI provider parameter configuration
 ├── providers.json                    # Configuration for AI providers and parameters
@@ -130,7 +146,7 @@ PhotoshopHelper/
 
 ## 🔧 Technical Details
 
-- **Security:** The application is designed for local and personal use. **Important: it is not intended for public deployment.** An environment detection system (`/api/is-local`) is implemented, allowing the UI to adapt when accessed via temporary tunnels (ngrok, cloudflared, etc.).
+- **Security:** The application is designed for local and personal use. **Important: it is not intended for public deployment.** Its local HTTP server requires a paired token or a same-origin browser request on every route except the health check — see [SECURITY.md](../SECURITY.md#local-http-server-access-control) for the full model. An environment detection system (`/api/is-local`) is implemented, allowing the UI to adapt when accessed via temporary tunnels (ngrok, cloudflared, etc.).
 - **Temp Management:** Session files are stored in `%TEMP%\ps_webhelper_tasks`. Files older than 30 days are cleaned up automatically.
 - **Nebula Secrets:** When `NEBULA_CS` is set, the application automatically calls `nebulabroker emit` to inject keys from your personal GSM (Google Secret Manager) into `process.env`.
 - **High-Res Copy:** When copying from WebHelper, NativeImage is used to guarantee the original resolution is preserved without browser-side compression.
@@ -150,6 +166,14 @@ To communicate with the helper from your plugin, use the standard `fetch` API.
   "network": { "domains": "all" }
 }
 ```
+
+The plugin-only routes (clipboard, drag, file save) require the Helper's plugin token on
+every request, sent as an `X-API-Key` header. Pairing is automatic: on startup, the Helper
+writes the token into the plugin's private UXP data folder (`getDataFolder()`), which the
+plugin reads without any user interaction. If a plugin installation is not found by that
+scan — an unusual install location, or a change to Adobe's storage layout — copy the token
+from the tray menu (**Access Tokens → Copy Plugin Pairing Token**) into the plugin's own
+Settings dialog as a one-time manual fallback.
 
 ---
 

@@ -44,6 +44,8 @@ For workflow changes, manually verify the affected path in Photoshop 24.0+:
 
 Provider changes should be tested with a non-sensitive image and the smallest practical paid request. Do not include generated test images unless they are safe and licensed for redistribution.
 
+Changes touching `PhotoshopHelper/main.js`, `auth.js`, `plugin-pairing.js`, or `localGenerationApi.js` affect the local server's access control. Run `npm test` (covers `_tests_/auth.test.js` and `_tests_/localGenerationApi.test.js`) and confirm the plugin can still reach the Helper after the change — see [SECURITY.md](SECURITY.md) for the access model those tests enforce.
+
 ## Pull requests
 
 A pull request should include:

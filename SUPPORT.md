@@ -8,7 +8,12 @@ FromPS / ToPS connects Photoshop to external browser tools and optional API prov
 2. Confirm that PhotoshopHelper is running in the system tray.
 3. Confirm that Photoshop is version 24.0 or newer.
 4. For WebHelper, open `http://localhost:18345/webhelper` and verify that the required provider key is configured.
-5. Retry with a non-sensitive test image.
+5. If a plugin action reports "Helper not paired" rather than "Helper not running," the
+   Helper is reachable but did not recognize the plugin's credentials. Reopen the panel
+   (pairing is automatic and refreshes periodically), or copy the token manually from the
+   Helper tray menu (**Access Tokens → Copy Plugin Pairing Token**) into the plugin's
+   Settings dialog.
+6. Retry with a non-sensitive test image.
 
 ## Bug reports
 

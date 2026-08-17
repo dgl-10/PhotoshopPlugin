@@ -7,6 +7,153 @@
 const HELPER_URL = 'http://localhost:18345';
 const HELPER_VERSION = '1.0.0';
 
+// Name of the file PhotoshopHelper writes into this plugin's private UXP data folder.
+const PAIRING_FILENAME = 'photoshop-helper.json';
+
+// Key used when the token has to be entered by hand from the plugin settings dialog.
+const TOKEN_STORAGE_KEY = 'helper-pairing-token';
+
+// Resolved once per panel session — the pairing file does not change while it runs.
+let cachedToken = null;
+
+/**
+ * Read the shared secret needed by the Helper's plugin-only endpoints.
+ *
+ * PhotoshopHelper writes the token into this plugin's private data folder, which UXP
+ * lets us read without a file picker, so pairing normally needs no user action. A value
+ * entered manually in the settings dialog wins, because it is the recovery path when the
+ * automatic delivery cannot find this installation.
+ *
+ * @returns {Promise<string|null>} The token, or null when the plugin is not paired.
+ */
+async function getHelperToken() {
+    if (cachedToken) {
+        return cachedToken;
+    }
+
+    try {
+        const manualToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+        if (manualToken) {
+            cachedToken = manualToken;
+            return cachedToken;
+        }
+    } catch (error) {
+        // localStorage being unavailable just means there is no manual override.
+    }
+
+    try {
+        const localFileSystem = require('uxp').storage.localFileSystem;
+        const dataFolder = await localFileSystem.getDataFolder();
+        const pairingFile = await dataFolder.getEntry(PAIRING_FILENAME);
+        const parsed = JSON.parse(await pairingFile.read());
+
+        if (parsed && parsed.token) {
+            cachedToken = parsed.token;
+            return cachedToken;
+        }
+    } catch (error) {
+        // getEntry throws when the Helper has not paired this installation yet.
+    }
+
+    return null;
+}
+
+/**
+ * Store a token supplied by the user and use it for subsequent requests.
+ *
+ * @param {string} token - Token copied from the PhotoshopHelper tray menu.
+ */
+function setManualToken(token) {
+    const trimmed = (token || '').trim();
+
+    try {
+        if (trimmed) {
+            window.localStorage.setItem(TOKEN_STORAGE_KEY, trimmed);
+        } else {
+            window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+        }
+    } catch (error) {
+        console.error('Failed to persist the Helper token:', error);
+    }
+
+    cachedToken = trimmed || null;
+}
+
+/**
+ * Read the token currently entered by hand, if any.
+ *
+ * @returns {string} The stored manual token, or an empty string.
+ */
+function getManualToken() {
+    try {
+        return window.localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+    } catch (error) {
+        return '';
+    }
+}
+
+/**
+ * Build request headers carrying the pairing token.
+ *
+ * @param {object} [extraHeaders] - Headers to merge in.
+ * @returns {Promise<object>} Headers for a fetch call.
+ */
+async function buildHeaders(extraHeaders = {}) {
+    const headers = { ...extraHeaders };
+    const token = await getHelperToken();
+
+    if (token) {
+        headers['X-API-Key'] = token;
+    }
+
+    return headers;
+}
+
+/**
+ * Translate a rejected response into the error shape used across this module.
+ *
+ * @param {Response} response - The failed response.
+ * @param {object} [result] - Parsed response body, when available.
+ * @returns {{success: boolean, error: string}} Normalized failure.
+ */
+function toErrorResult(response, result) {
+    // 401 means the Helper is running but does not accept this plugin's credentials;
+    // 503 means it has not finished initializing them. Both are pairing problems, and
+    // reporting them as such stops the user hunting for a Helper that is already running.
+    if (response.status === 401 || response.status === 503) {
+        return {
+            success: false,
+            error: 'HELPER_NOT_PAIRED'
+        };
+    }
+
+    return {
+        success: false,
+        error: (result && result.error) || `HTTP ${response.status}`
+    };
+}
+
+/**
+ * Translate a thrown fetch error into the error shape used across this module.
+ *
+ * @param {Error} error - The caught error.
+ * @returns {{success: boolean, error: string}} Normalized failure.
+ */
+function toThrownResult(error) {
+    // Connection error - Helper not running
+    if (error.name === 'TypeError' || error.message.includes('fetch') || error.message.includes('network')) {
+        return {
+            success: false,
+            error: 'HELPER_NOT_RUNNING'
+        };
+    }
+
+    return {
+        success: false,
+        error: error.message
+    };
+}
+
 /**
  * Check if PhotoshopHelper is running
  * @returns {Promise<boolean>}
@@ -40,6 +187,15 @@ async function isHelperRunning() {
 }
 
 /**
+ * Report whether this plugin currently holds a Helper token.
+ *
+ * @returns {Promise<boolean>} True when a token is available.
+ */
+async function isPaired() {
+    return (await getHelperToken()) !== null;
+}
+
+/**
  * Copy image to clipboard via PhotoshopHelper
  * @param {string} base64Png - Base64 encoded PNG data (without data URL prefix)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
@@ -48,9 +204,9 @@ async function copyToClipboard(base64Png) {
     try {
         const response = await fetch(`${HELPER_URL}/api/clipboard/copy`, {
             method: 'POST',
-            headers: {
+            headers: await buildHeaders({
                 'Content-Type': 'application/json'
-            },
+            }),
             body: JSON.stringify({
                 image: `data:image/png;base64,${base64Png}`
             })
@@ -59,27 +215,13 @@ async function copyToClipboard(base64Png) {
         const result = await response.json();
 
         if (!response.ok) {
-            return {
-                success: false,
-                error: result.error || `HTTP ${response.status}`
-            };
+            return toErrorResult(response, result);
         }
 
         return result;
 
     } catch (error) {
-        // Connection error - Helper not running
-        if (error.name === 'TypeError' || error.message.includes('fetch') || error.message.includes('network')) {
-            return {
-                success: false,
-                error: 'HELPER_NOT_RUNNING'
-            };
-        }
-
-        return {
-            success: false,
-            error: error.message
-        };
+        return toThrownResult(error);
     }
 }
 
@@ -98,36 +240,22 @@ async function startDrag(base64Images) {
 
         const response = await fetch(`${HELPER_URL}/api/drag/start`, {
             method: 'POST',
-            headers: {
+            headers: await buildHeaders({
                 'Content-Type': 'application/json'
-            },
+            }),
             body: JSON.stringify({ images })
         });
 
         const result = await response.json();
 
         if (!response.ok) {
-            return {
-                success: false,
-                error: result.error || `HTTP ${response.status}`
-            };
+            return toErrorResult(response, result);
         }
 
         return result;
 
     } catch (error) {
-        // Connection error - Helper not running
-        if (error.name === 'TypeError' || error.message.includes('fetch') || error.message.includes('network')) {
-            return {
-                success: false,
-                error: 'HELPER_NOT_RUNNING'
-            };
-        }
-
-        return {
-            success: false,
-            error: error.message
-        };
+        return toThrownResult(error);
     }
 }
 
@@ -138,33 +266,20 @@ async function startDrag(base64Images) {
 async function readClipboard() {
     try {
         const response = await fetch(`${HELPER_URL}/api/clipboard/paste`, {
-            method: 'GET'
+            method: 'GET',
+            headers: await buildHeaders()
         });
 
         const result = await response.json();
 
         if (!response.ok) {
-            return {
-                success: false,
-                error: result.error || `HTTP ${response.status}`
-            };
+            return toErrorResult(response, result);
         }
 
         return result;
 
     } catch (error) {
-        // Connection error - Helper not running
-        if (error.name === 'TypeError' || error.message.includes('fetch') || error.message.includes('network')) {
-            return {
-                success: false,
-                error: 'HELPER_NOT_RUNNING'
-            };
-        }
-
-        return {
-            success: false,
-            error: error.message
-        };
+        return toThrownResult(error);
     }
 }
 
@@ -180,9 +295,9 @@ async function saveViaHelper(fullPath, base64Data) {
     try {
         const response = await fetch(`${HELPER_URL}/api/file/save`, {
             method: 'POST',
-            headers: {
+            headers: await buildHeaders({
                 'Content-Type': 'application/json'
-            },
+            }),
             body: JSON.stringify({
                 path: fullPath,
                 data: base64Data
@@ -192,27 +307,13 @@ async function saveViaHelper(fullPath, base64Data) {
         const result = await response.json();
 
         if (!response.ok) {
-            return {
-                success: false,
-                error: result.error || `HTTP ${response.status}`
-            };
+            return toErrorResult(response, result);
         }
 
         return result;
 
     } catch (error) {
-        // Connection error - Helper not running
-        if (error.name === 'TypeError' || error.message.includes('fetch') || error.message.includes('network')) {
-            return {
-                success: false,
-                error: 'HELPER_NOT_RUNNING'
-            };
-        }
-
-        return {
-            success: false,
-            error: error.message
-        };
+        return toThrownResult(error);
     }
 }
 
@@ -231,19 +332,16 @@ async function sendToWebHelper(base64Image, base64Mask) {
 
         const response = await fetch(`${HELPER_URL}/api/webhelper/task`, {
             method: 'POST',
-            headers: {
+            headers: await buildHeaders({
                 'Content-Type': 'application/json'
-            },
+            }),
             body: JSON.stringify(payload)
         });
 
         const result = await response.json();
 
         if (!response.ok) {
-            return {
-                success: false,
-                error: result.error || `HTTP ${response.status}`
-            };
+            return toErrorResult(response, result);
         }
 
         return {
@@ -252,18 +350,7 @@ async function sendToWebHelper(base64Image, base64Mask) {
         };
 
     } catch (error) {
-        // Connection error - Helper not running
-        if (error.name === 'TypeError' || error.message.includes('fetch') || error.message.includes('network')) {
-            return {
-                success: false,
-                error: 'HELPER_NOT_RUNNING'
-            };
-        }
-
-        return {
-            success: false,
-            error: error.message
-        };
+        return toThrownResult(error);
     }
 }
 
@@ -271,6 +358,9 @@ module.exports = {
     HELPER_URL,
     HELPER_VERSION,
     isHelperRunning,
+    isPaired,
+    getManualToken,
+    setManualToken,
     copyToClipboard,
     readClipboard,
     startDrag,

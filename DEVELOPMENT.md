@@ -131,6 +131,8 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
 └── PhotoshopHelper/                      # Companion Electron application (UXP sandbox bypass)
     ├── package.json                      # Dependency manifest (Electron, Express, Sharp)
     ├── main.js                           # Main process: HTTP/REST API implementation and system tray
+    ├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware for the local HTTP server
+    ├── plugin-pairing.js                 # Delivers the plugin token into the Photoshop plugin's UXP data folder for automatic pairing
     ├── preload.js                        # Context bridge for secure inter-process communication
     ├── providers.template.json           # Template for AI provider parameter configuration
     ├── providers.json                    # Configuration for AI providers and parameters
@@ -183,7 +185,10 @@ npm install
 npm start
 ```
 
-The Electron Helper should expose `GET http://127.0.0.1:18345/api/status` after startup.
+The Electron Helper should expose `GET http://127.0.0.1:18345/api/status` after startup —
+this route stays open without a token so a client can check the server before pairing.
+Every other route requires either the plugin token, a same-origin WebHelper request, or
+the separate Local API token; see `SECURITY.md` for the full access model.
 If `npm start` fails with `TypeError: Cannot read properties of undefined (reading
 'isPackaged')`, check whether the shell inherited `ELECTRON_RUN_AS_NODE=1`. Remove it
 only for the Helper process, without changing the system environment:
@@ -227,8 +232,8 @@ Poll `statusUrl` every 1–2 seconds. A completed response contains `outputPaths
 absolute paths under `%TEMP%\ps_webhelper_tasks`; a failed response contains `error`.
 Each generation is independent, so one failure cannot affect another request.
 
-For the full request and response schema, authentication option, and PowerShell
-examples, see `PhotoshopHelper/Local_Generation_API.md`.
+For the full request and response schema, authentication, and PowerShell examples, see
+`PhotoshopHelper/Local_Generation_API.md`.
 
 ### Testing the local API
 
@@ -237,10 +242,12 @@ cd PhotoshopHelper
 npm test
 ```
 
-The automated tests start an isolated Express server with a mocked generator. They
-validate direct generation inputs, polling states, absolute-path validation, optional
-token protection, and error isolation; they do not contact external providers and do
-not create permanent files in `%TEMP%\ps_webhelper_tasks`.
+`_tests_/localGenerationApi.test.js` starts an isolated Express server with a mocked
+generator. It validates direct generation inputs, polling states, absolute-path
+validation, mandatory token protection, and error isolation; it does not contact external
+providers and does not create permanent files in `%TEMP%\ps_webhelper_tasks`.
+`_tests_/auth.test.js` covers the shared authentication and same-origin CORS middleware
+(`PhotoshopHelper/auth.js`) directly, independent of any router.
 
 To verify a provider integration manually, start Helper, submit one generation, and poll
 its `statusUrl`. This makes a real provider request and may incur provider charges. Use
@@ -254,8 +261,7 @@ legacy `{{placeholder}}`, `{{?variable}}key`, and `{{?!variable}}key` forms, it 
 the documented conditional expressions (`!`, `==`, `!=`, `&&`, `||`, and parentheses)
 without evaluating arbitrary JavaScript. Parser details and configuration examples
 are documented in `PhotoshopHelper/Providers_Configuration_Guide.md` under
-**Conditional Expressions**. The focused regression suite is
-`PhotoshopHelper/_tests_/templateEngine.test.js`.
+**Conditional Expressions**.
 
 ### Preparing to release a new version
 

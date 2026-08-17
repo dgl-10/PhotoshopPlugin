@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test *)",
+      "Bash(timeout 12000 npm start)",
+      "Bash(tee /c/Users/DENISB~1/AppData/Local/Temp/claude/c--Projects-PhotoshopDaDHelper/208e5455-2b7f-4857-b85b-1b26aef97f7d/scratchpad/start-output.log)",
+      "Bash(echo \"EXIT_CODE=$?\")",
+      "Bash(env -u ELECTRON_RUN_AS_NODE timeout 12000 npm start)",
+      "Bash(tee /c/Users/DENISB~1/AppData/Local/Temp/claude/c--Projects-PhotoshopDaDHelper/208e5455-2b7f-4857-b85b-1b26aef97f7d/scratchpad/start-output2.log)",
+      "Bash(cat \"C:/Users/denisBoss/AppData/Roaming/Adobe/UXP/PluginsStorage/PHSP/25/Developer/com.fromps-tops.dev/PluginData/photoshop-helper.json\")",
+      "Read(//c/Users/denisBoss/AppData/Roaming/Adobe/UXP/PluginsStorage/PHSP/25/Developer/com.fromps-tops.dev/PluginData/**)",
+      "Bash(curl -s -i http://127.0.0.1:18345/api/status)",
+      "Bash(curl -s -i http://127.0.0.1:18345/api/clipboard/paste)",
+      "Bash(curl -s -i -X OPTIONS http://127.0.0.1:18345/api/file/save -H \"Origin: https://evil.example\" -H \"Access-Control-Request-Method: POST\")",
+      "Bash(curl -s -i -X OPTIONS http://127.0.0.1:18345/api/webhelper/providers -H \"Origin: http://127.0.0.1:18345\" -H \"Access-Control-Request-Method: GET\")",
+      "Bash(curl -s -i -X POST http://127.0.0.1:18345/api/file/save -H 'Content-Type: text/plain' -H 'Origin: https://evil.example' --data '{\"path\":\"C:\\\\\\\\temp\\\\\\\\pwned.txt\",\"data\":\"aGVsbG8=\"}')",
+      "Bash(curl -s -i -X POST http://127.0.0.1:18345/api/file/save -H 'Content-Type: application/json' -H 'X-API-Key: ad252013a75ffe115bcf0ef5c07ac58719c2efa494bcb8a4f09b6cb828998c8a' --data '{\"path\":\"C:\\\\\\\\Projects\\\\\\\\PhotoshopDaDHelper\\\\\\\\PhotoshopHelper\\\\\\\\_tests_\\\\\\\\.tmp-file-save-check.txt\",\"data\":\"aGVsbG8gZnJvbSB0ZXN0\"}')",
+      "Bash(curl -s -i http://127.0.0.1:18345/api/webhelper/providers -H \"Origin: http://127.0.0.1:18345\")",
+      "Bash(curl -s -i http://127.0.0.1:18345/api/webhelper/providers -H \"Origin: https://evil.example\")",
+      "Bash(curl -s -i -X POST http://127.0.0.1:18345/api/local/v1/generations -H \"Content-Type: application/json\" --data '{\"providerId\":\"x\"}')",
+      "Bash(tasklist //FI \"IMAGENAME eq electron.exe\")",
+      "Bash(taskkill //PID 27012 //PID 1776 //PID 22752 //F)",
+      "Bash(node --check auth.js)",
+      "Bash(curl -s -i http://127.0.0.1:18345/api/webhelper/providers)",
+      "Bash(taskkill //PID 17984 //PID 2628 //PID 27348 //F)",
+      "Bash(curl -s -o /dev/null -w \"server status=%{http_code}\\\\n\" http://127.0.0.1:18345/api/status --max-time 3)",
+      "Bash(curl -s http://127.0.0.1:18345/api/webhelper/providers)",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const s = require\\('/c/Projects/PhotoshopDaDHelper/PhotoshopHelper/user-settings.json'\\); console.log\\(s.localApiToken\\)\")"
+    ]
+  }
+}

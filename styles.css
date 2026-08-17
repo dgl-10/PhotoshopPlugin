@@ -493,6 +493,21 @@ dialog::backdrop {
     flex: 1;
 }
 
+.settings-token-status {
+    font-size: 10px;
+    margin-top: 4px;
+    min-height: 14px;
+    line-height: 1.2;
+}
+
+.settings-token-status.is-paired {
+    color: var(--success-color);
+}
+
+.settings-token-status.is-unpaired {
+    color: var(--error-color);
+}
+
 .setting-sort-buttons {
     display: flex;
     gap: 4px;

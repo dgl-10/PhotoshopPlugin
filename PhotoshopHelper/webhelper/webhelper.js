@@ -993,13 +993,6 @@ class WhSourceTab extends HTMLElement {
                         : ` [unavailable for ${this.effectiveGenerationMode.toUpperCase()}]`;
                     return `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''} ${supportsMode ? '' : 'disabled'}>${p.name}${unavailableSuffix}</option>`;
                 }).join('')}
-                            ${this.providers.map(p => {
-                    const supportsMode = this.providerSupportsEffectiveGenerationMode(p);
-                    const unavailableSuffix = supportsMode
-                        ? ''
-                        : ` [unavailable for ${this.effectiveGenerationMode.toUpperCase()}]`;
-                    return `<option value="${p.id}" ${state.selectedProviderId === p.id ? 'selected' : ''} ${supportsMode ? '' : 'disabled'}>${p.name}${unavailableSuffix}</option>`;
-                }).join('')}
                         </select>
                     </div>
                     <div id="dynamic-params-container" class="wh-source-tab-settings border rounded bg-gray p-2 mb-2" style="max-height: 300px; overflow-y: auto; display: none;"></div>

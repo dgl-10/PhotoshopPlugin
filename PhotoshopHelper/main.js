@@ -76,6 +76,9 @@ const { spawnSync } = require('node:child_process');
 const JSON5 = require('json5');
 const { generate } = require('./apiGenerator');
 const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
+const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate } = require('./auth');
+const { writePairingFile } = require('./plugin-pairing');
+const { getPluginToken, regeneratePluginToken, getLocalApiToken } = require('./user-settings');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -136,6 +139,16 @@ let dragWindow = null;
 let httpServer = null;
 let currentSessionFolder = null;  // Current drag session temp folder
 let currentFilePaths = [];        // Array of file paths for current drag session
+
+// Shared secrets guarding the local HTTP server. They are resolved before the server
+// starts and read through closures, so regenerating one takes effect immediately.
+let pluginToken = '';
+let localApiToken = '';
+
+// How often the pairing file is refreshed, so a plugin installed after the Helper
+// started still receives its token without the user restarting anything.
+const PAIRING_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+let pairingRefreshTimer = null;
 
 // WebHelper specific globals
 global.tasks = {};
@@ -210,6 +223,59 @@ function updateTrayMenu() {
             click: () => {
                 clipboard.writeText(`http://localhost:${PORT}/webhelper`);
             }
+        }
+    );
+
+    menuTemplate.push(
+        { type: 'separator' },
+        {
+            label: 'Access Tokens',
+            submenu: [
+                {
+                    label: 'Copy Plugin Pairing Token',
+                    click: () => {
+                        clipboard.writeText(pluginToken);
+                    }
+                },
+                {
+                    label: 'Copy Local API Token',
+                    click: () => {
+                        clipboard.writeText(localApiToken);
+                    }
+                },
+                { type: 'separator' },
+                {
+                    label: 'Re-pair Plugin Now',
+                    click: () => {
+                        refreshPluginPairing();
+                    }
+                },
+                {
+                    label: 'Regenerate Plugin Token...',
+                    click: async () => {
+                        const { response } = await dialog.showMessageBox({
+                            type: 'warning',
+                            buttons: ['Regenerate', 'Cancel'],
+                            defaultId: 1,
+                            cancelId: 1,
+                            title: 'Regenerate Plugin Token',
+                            message: 'Regenerate the Photoshop plugin token?',
+                            detail: 'The current token stops working immediately. The new token is delivered to the plugin automatically, but the FromPS / ToPS panel must be closed and reopened to pick it up.'
+                        });
+
+                        if (response !== 0) {
+                            return;
+                        }
+
+                        try {
+                            pluginToken = await regeneratePluginToken();
+                            refreshPluginPairing();
+                        } catch (error) {
+                            log.error('Failed to regenerate the plugin token:', error);
+                        }
+                    }
+                }
+            ]
         }
     );
 
@@ -327,6 +393,39 @@ function checkIsLocal(req) {
 }
 
 /**
+ * Deliver the current plugin token into the Photoshop plugin's private data folder.
+ *
+ * Pairing is best-effort by design. When no plugin folder is found — a fresh install, or
+ * an Adobe storage layout this build does not know about — the plugin still works once
+ * the token is pasted into its Settings dialog.
+ */
+function refreshPluginPairing() {
+    if (!pluginToken) {
+        return;
+    }
+
+    try {
+        const { written, failed } = writePairingFile({
+            token: pluginToken,
+            port: PORT,
+            version: VERSION
+        });
+
+        if (written.length > 0) {
+            log.info(`Plugin pairing file written to: ${written.join(', ')}`);
+        } else {
+            log.info('No Photoshop plugin data folder found. The plugin can be paired manually from its Settings dialog.');
+        }
+
+        for (const failure of failed) {
+            log.warn(`Could not write plugin pairing file to ${failure.path}: ${failure.error}`);
+        }
+    } catch (error) {
+        log.error('Plugin pairing failed:', error);
+    }
+}
+
+/**
  * Start the HTTP server
  */
 function startHttpServer() {
@@ -353,26 +452,43 @@ function startHttpServer() {
     // Parse JSON bodies (limit to 50MB for large images)
     expressApp.use(express.json({ limit: '50mb' }));
 
-    // Enable CORS for plugin access
-    expressApp.use((req, res, next) => {
-        res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        // Authorization headers are included so browser-based local clients can use
-        // the optional shared token without failing their CORS preflight request.
-        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
-        if (req.method === 'OPTIONS') {
-            return res.sendStatus(200);
-        }
-        next();
+    // Reflect only this server's own origin. A wildcard policy would let any page the
+    // user has open in a browser drive these endpoints, because binding to loopback does
+    // not stop a local browser from reaching them.
+    expressApp.use(createSameOriginCorsMiddleware());
+
+    // The plugin is the only client of the clipboard, drag and file-save endpoints. They
+    // are what turns this server into a Photoshop sandbox escape, so they always require
+    // the shared secret and never accept a browser origin as proof of anything.
+    const requirePluginToken = createAuthMiddleware({ getToken: () => pluginToken });
+
+    // WebHelper's own page is a legitimate browser client, so a same-origin request is
+    // accepted. The plugin reaches the same routes without an origin and uses its token.
+    const requireWebHelperAccess = createAuthMiddleware({
+        getToken: () => pluginToken,
+        allowSameOrigin: true
     });
 
+    // Inert unless the user sets a password. It exists for the case where WebHelper is
+    // deliberately reachable beyond this machine, where an origin check proves nothing.
+    const webHelperPasswordGate = createPasswordGate({
+        getPassword: () => process.env.WEBHELPER_ACCESS_PASSWORD || '',
+        getToken: () => pluginToken
+    });
+
+    expressApp.use('/api/clipboard', requirePluginToken);
+    expressApp.use('/api/drag', requirePluginToken);
+    expressApp.use('/api/file', requirePluginToken);
+    expressApp.use('/webhelper', webHelperPasswordGate);
+    expressApp.use('/api/webhelper', webHelperPasswordGate, requireWebHelperAccess);
+
     // Mount the local service-to-service generation API over the existing provider
-    // pipeline. The server itself listens only on 127.0.0.1; a shared token adds an
-    // optional boundary for machines where untrusted local software is a concern.
+    // pipeline. Its token is deliberately distinct from the plugin token: the plugin's
+    // secret is delivered as a file on disk, and must not unlock paid generation.
     expressApp.use(LOCAL_API_PREFIX, createLocalGenerationRouter({
         generate,
         tempDir: WEBHELPER_TEMP_DIR,
-        token: process.env.LOCAL_GENERATION_API_TOKEN || '',
+        getToken: () => localApiToken,
         onGenerationAccepted: () => trackUsage(2)
     }));
 
@@ -1045,6 +1161,11 @@ function startHttpServer() {
     // Start listening
     httpServer = expressApp.listen(PORT, '127.0.0.1', () => {
         console.log(`Photoshop Helper server running on http://localhost:${PORT}`);
+
+        // Pair immediately, then keep refreshing so a plugin installed or first opened
+        // later in this session picks up the token without a Helper restart.
+        refreshPluginPairing();
+        pairingRefreshTimer = setInterval(refreshPluginPairing, PAIRING_REFRESH_INTERVAL_MS);
     });
 
     httpServer.on('error', (error) => {
@@ -1128,6 +1249,12 @@ app.whenReady().then(async () => {
         log.info('Running handleFirstRun...');
         await handleFirstRun();   // copies templates + shows wizard (packaged only)
 
+        // Resolve both secrets before any route exists, so the server can never come up
+        // in a state where the authentication middleware has nothing to compare against.
+        log.info('Resolving local API credentials...');
+        pluginToken = await getPluginToken();
+        localApiToken = await getLocalApiToken();
+
         log.info('Creating tray icon...');
         await createTray();
 
@@ -1148,6 +1275,12 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
     // Stop periodic update checks
     cleanupAutoUpdater();
+
+    // Stop refreshing the plugin pairing file
+    if (pairingRefreshTimer) {
+        clearInterval(pairingRefreshTimer);
+        pairingRefreshTimer = null;
+    }
 
     // Clean up temp file
     if (fs.existsSync(TEMP_FILE_PATH)) {

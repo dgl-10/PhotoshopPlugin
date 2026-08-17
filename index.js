@@ -21,6 +21,10 @@ let resultImage = null;      // Stores loaded result image data
 let resultFilePath = null;   // Native path to result file
 let resultFileToken = null;  // Session token for result file
 
+// Shown when PhotoshopHelper is reachable but rejects this plugin's credentials. It is a
+// distinct case from the Helper being absent, and needs a different fix from the user.
+const HELPER_NOT_PAIRED_MESSAGE = 'Helper not paired! Add its token in Settings';
+
 /**
  * Initialize plugin
  */
@@ -488,6 +492,8 @@ async function handleCopyToClipboard() {
             ui.showInfo('fromps', 'Copied to clipboard ✓');
         } else if (result.error === 'HELPER_NOT_RUNNING') {
             ui.showError('fromps', 'Helper not running! Start PhotoshopHelper app');
+        } else if (result.error === 'HELPER_NOT_PAIRED') {
+            ui.showError('fromps', HELPER_NOT_PAIRED_MESSAGE);
         } else {
             ui.showError('fromps', `Clipboard failed: ${result.error}`);
         }
@@ -525,6 +531,8 @@ async function handleCopyMask() {
             ui.showInfo('fromps', 'Mask copied to clipboard ✓');
         } else if (result.error === 'HELPER_NOT_RUNNING') {
             ui.showError('fromps', 'Helper not running! Start PhotoshopHelper app');
+        } else if (result.error === 'HELPER_NOT_PAIRED') {
+            ui.showError('fromps', HELPER_NOT_PAIRED_MESSAGE);
         } else {
             ui.showError('fromps', `Clipboard failed: ${result.error}`);
         }
@@ -570,6 +578,8 @@ async function handleDragOut(mode) {
                 ui.showInfo('fromps', 'Sent to WebHelper! Check browser.');
             } else if (result.error === 'HELPER_NOT_RUNNING') {
                 ui.showError('fromps', 'Helper not running! Start PhotoshopHelper app');
+            } else if (result.error === 'HELPER_NOT_PAIRED') {
+                ui.showError('fromps', HELPER_NOT_PAIRED_MESSAGE);
             } else {
                 ui.showError('fromps', `Failed to send: ${result.error}`);
             }
@@ -644,6 +654,8 @@ async function handleDragOut(mode) {
             ui.showInfo('fromps', `Drag ready (${result.count} file(s)) — drag from popup`);
         } else if (result.error === 'HELPER_NOT_RUNNING') {
             ui.showError('fromps', 'Helper not running! Start PhotoshopHelper app');
+        } else if (result.error === 'HELPER_NOT_PAIRED') {
+            ui.showError('fromps', HELPER_NOT_PAIRED_MESSAGE);
         } else {
             ui.showError('fromps', `Drag failed: ${result.error}`);
         }
@@ -753,6 +765,8 @@ async function handlePaste() {
                 } else {
                     if (helperResult.error === 'HELPER_NOT_RUNNING') {
                         ui.showError('tops', 'Start Helper for better Paste support');
+                    } else if (helperResult.error === 'HELPER_NOT_PAIRED') {
+                        ui.showError('tops', HELPER_NOT_PAIRED_MESSAGE);
                     } else {
                         ui.showError('tops', 'No image in clipboard');
                     }
@@ -761,6 +775,8 @@ async function handlePaste() {
                 console.error('Clipboard read failed:', err);
                 if (helperResult.error === 'HELPER_NOT_RUNNING') {
                     ui.showError('tops', 'Paste failed. Start PhotoshopHelper!');
+                } else if (helperResult.error === 'HELPER_NOT_PAIRED') {
+                    ui.showError('tops', HELPER_NOT_PAIRED_MESSAGE);
                 } else {
                     ui.showError('tops', 'Paste failed');
                 }
@@ -768,6 +784,8 @@ async function handlePaste() {
         } else {
             if (helperResult.error === 'HELPER_NOT_RUNNING') {
                 ui.showError('tops', 'Start PhotoshopHelper to Paste');
+            } else if (helperResult.error === 'HELPER_NOT_PAIRED') {
+                ui.showError('tops', HELPER_NOT_PAIRED_MESSAGE);
             } else {
                 ui.showError('tops', 'Clipboard API not supported');
             }

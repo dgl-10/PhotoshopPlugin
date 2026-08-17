@@ -3,6 +3,8 @@
  * Handles loading, saving, and UI rendering for Aspect Ratio Settings
  */
 
+const helper = require('./helper.js');
+
 const DEFAULT_RATIOS = [
     { id: '3:2', label: '2:3 and 3:2', enabled: true, landscapeValue: 1.5, portraitValue: 2/3, landscapeName: '3:2', portraitName: '2:3' },
     { id: '16:9', label: '9:16 and 16:9', enabled: true, landscapeValue: 16/9, portraitValue: 9/16, landscapeName: '16:9', portraitName: '9:16' },
@@ -179,6 +181,21 @@ function renderList(listContainer) {
 }
 
 /**
+ * Show whether the panel currently holds a Helper token.
+ *
+ * Pairing is normally automatic, so the field is only meaningful when it has failed.
+ * Reporting the current state avoids the user guessing whether they need to act.
+ */
+async function refreshTokenStatus() {
+    const statusEl = document.getElementById('settings-helper-token-status');
+    if (!statusEl) return;
+
+    const paired = await helper.isPaired();
+    statusEl.textContent = paired ? 'Paired ✓' : 'Not paired — Helper actions are unavailable';
+    statusEl.className = paired ? 'settings-token-status is-paired' : 'settings-token-status is-unpaired';
+}
+
+/**
  * Initialize event handlers for Save and Cancel buttons in dialog
  */
 function initSettings() {
@@ -198,6 +215,13 @@ function initSettings() {
             e.preventDefault();
             clearHighlight();
             saveSettings(editingSettings);
+
+            const tokenField = document.getElementById('settings-helper-token');
+            if (tokenField) {
+                // An empty field clears the override and returns to automatic pairing.
+                helper.setManualToken(tokenField.value || '');
+            }
+
             dialog.close();
         });
     }
@@ -224,10 +248,16 @@ function showSettingsDialog() {
 
     if (dialog && listContainer) {
         renderList(listContainer);
-        
+
+        const tokenField = document.getElementById('settings-helper-token');
+        if (tokenField) {
+            tokenField.value = helper.getManualToken();
+        }
+        refreshTokenStatus();
+
         try {
             if (typeof dialog.uxpShowModal === 'function') {
-                dialog.uxpShowModal({ size: { width: 300, height: 340 } });
+                dialog.uxpShowModal({ size: { width: 320, height: 480 } });
             } else {
                 dialog.showModal();
             }

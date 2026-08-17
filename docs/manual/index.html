@@ -594,6 +594,14 @@
                     aria-label="Requires Photoshop Helper">*</sup></strong> or <strong>Save as PNG</strong> instead.
                 Some browser and desktop targets do not accept multiple dragged files.</p>
             </details>
+            <details>
+              <summary>A Helper action<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup> says
+                the Helper is running but not paired</summary>
+              <p>Photoshop Helper and the plugin pair themselves automatically on startup, so this is uncommon.
+                Close and reopen the panel — pairing also refreshes periodically on its own. If it persists, open
+                the Helper's tray menu, choose <strong>Access Tokens → Copy Plugin Pairing Token</strong>, and paste
+                it into the plugin's <strong>Settings</strong> dialog.</p>
+            </details>
           </div>
         </section>
 
@@ -631,6 +639,11 @@
               <strong>Works without Helper:</strong> anything performed directly inside Photoshop, including Capture
               and Place Back; panel controls such as history, Clear, and Settings; and single-file operations such as
               Load File, Image Only, and Mask Only.
+            </p>
+            <p class="helper-independent">
+              <strong>Pairing:</strong> the plugin and Photoshop Helper authenticate to each other with a token that
+              Helper generates and delivers automatically — nothing to set up. A manual fallback is available in the
+              plugin's Settings dialog if a Helper action ever reports that pairing failed.
             </p>
           </div>
         </aside>
