@@ -12,7 +12,7 @@
    * This blocks browser Auto Dark Theme from inverting the illustrations, paper
    * surfaces, and text when a reader uses a dark mobile device theme.
    */
-  color-scheme: only light;
+  color-scheme: light dark;
   --bg: #fff4ea;
   --paper: rgba(255, 255, 255, 0.9);
   --paper-soft: rgba(255, 255, 255, 0.72);
