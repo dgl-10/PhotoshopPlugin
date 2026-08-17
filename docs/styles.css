@@ -8,7 +8,7 @@
      Prevent browsers such as Chrome on Android from applying Auto Dark Theme and
      inverting the artwork, glass surfaces, and navigation icon in dark OS mode.
   */
-  color-scheme: light dark;
+  color-scheme: only light;
   --bg-fallback: #fff4ea;
   --ink: #1f1630;
   --ink-soft: #4a3d63;
@@ -40,6 +40,7 @@
 html {
   scroll-behavior: smooth;
   scroll-padding-top: calc(var(--header-h) + 16px);
+  background-color: var(--bg-fallback);
 }
 
 body {
@@ -49,7 +50,6 @@ body {
   font-size: 17px;
   line-height: 1.55;
   color: var(--ink);
-  background-color: var(--bg-fallback);
   -webkit-font-smoothing: antialiased;
   position: relative;
 }

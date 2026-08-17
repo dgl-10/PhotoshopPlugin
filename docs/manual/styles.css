@@ -12,7 +12,7 @@
    * This blocks browser Auto Dark Theme from inverting the illustrations, paper
    * surfaces, and text when a reader uses a dark mobile device theme.
    */
-  color-scheme: light dark;
+  color-scheme: only light;
   --bg: #fff4ea;
   --paper: rgba(255, 255, 255, 0.9);
   --paper-soft: rgba(255, 255, 255, 0.72);
@@ -45,6 +45,7 @@
 html {
   scroll-behavior: smooth;
   scroll-padding-top: calc(var(--header-height) + 18px);
+  background-color: var(--bg);
 }
 
 body {
@@ -52,7 +53,6 @@ body {
   min-width: 300px;
   min-height: 100vh;
   color: var(--ink);
-  background: var(--bg);
   font-family: var(--font);
   font-size: 16px;
   line-height: 1.62;
