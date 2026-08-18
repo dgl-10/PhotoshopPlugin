@@ -45,9 +45,9 @@ You've found an incredible AI that generates exactly what you need — maybe it'
 
 ---
 
-## 🎬 Video Demo (40 Seconds)
+## 🎬 Video Demo (45 Seconds)
 
-https://github.com/user-attachments/assets/fe64b954-2257-489d-bef6-f94ab314ef13
+https://github.com/user-attachments/assets/5cc49ad5-6963-4f8f-b4a7-f4563ea18ef9
 
 ---
 
@@ -135,6 +135,12 @@ WebHelper is designed as a universal bridge. It includes modular **Response Hand
 - 🔁 **Re-generate**: Not happy? Tweak the prompt and generate again — previous results stay
 - ⛓️ **Iterative Chaining**: Launch a new task directly from any generated result to build complex generation chains
 - 🌐 **Works standalone**: WebHelper can also be used independently, without Photoshop
+
+---
+
+## 🎬 Video Demo 2 (100 Seconds)
+
+https://github.com/user-attachments/assets/4891579d-1a0f-4fa3-847f-225eda7ca1b4
 
 ---
 
