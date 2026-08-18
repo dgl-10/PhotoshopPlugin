@@ -41,6 +41,7 @@ html {
   scroll-behavior: smooth;
   scroll-padding-top: calc(var(--header-h) + 16px);
   background-color: var(--bg-fallback);
+  overflow-x: hidden;
 }
 
 body {
@@ -52,6 +53,7 @@ body {
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   position: relative;
+  overflow-x: hidden;
 }
 
 /* ===== LARGE STATIC BACKGROUND ===== */
@@ -178,6 +180,7 @@ a:hover {
 .header-cta {
   display: none;
   margin-left: 0.35rem;
+  flex-shrink: 0;
 }
 
 .nav-toggle {
