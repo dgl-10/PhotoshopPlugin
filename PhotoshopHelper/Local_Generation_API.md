@@ -113,7 +113,8 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 |---|---:|:---:|---|
-| `providerId` | string | yes | Provider `id` from the active configuration. |
+| `providerId` | string | conditional | Provider `id` from the active configuration. Mutually exclusive with `provider`. |
+| `provider` | object | conditional | Complete inline provider configuration JSON object. Mutually exclusive with `providerId`. |
 | `sourceImagePath` | string | no | Absolute path to the source image. |
 | `maskImagePath` | string | no | Absolute path to the mask image. |
 | `referenceImagePaths` | string[] | no | Ordered absolute reference paths. Defaults to `[]`. |
@@ -122,6 +123,15 @@ Content-Type: application/json
 | `aspect_ratio` | string | conditional | Provider-compatible ratio such as `"1:1"`. Required for text-to-image; optional for image-to-image. |
 | `use_mask` | boolean | no | Whether to use `maskImagePath`. Defaults to true when a mask path is supplied. |
 | `force_separate_requests` | boolean | no | Force one provider request per output. Defaults to `false`. |
+
+A request must specify **either** `providerId` **or** `provider`, but not both.
+
+When using an inline `provider` object:
+- `generation_modes`: Array containing `"t2i"` and/or `"i2i"`.
+- `image_format`: Format string (e.g. `"url"`, `"data_uri"`, or `"base64_raw"`).
+- `request_config`: Request template object including `endpoint_url`, `method`, `headers`, and `body_template`.
+- `response_config`: Response handler configuration object. Its `$ref` field must match a handler name already defined in `providers.json` (e.g. `"replicate"`, `"fal"`, `"sync"`, `"bfl"`). If an unknown `$ref` is specified, the request is rejected with HTTP `400`.
+- `id` (optional): Identifier used in status outputs and generated filenames. Defaults to `"inline"`.
 
 If `use_mask` is explicitly `true`, `maskImagePath` is required. Supplying a mask with
 `use_mask: false` is allowed; that mask is ignored for this generation.
@@ -200,6 +210,39 @@ Here `source.png` becomes the source and only `style-reference.jpg` remains a re
 }
 ```
 
+### Inline provider example (Replicate model test)
+
+```json
+{
+  "provider": {
+    "id": "my_replicate_test",
+    "generation_modes": ["t2i"],
+    "image_format": "url",
+    "request_config": {
+      "endpoint_url": "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer {{env:REPLICATE_API_TOKEN}}",
+        "Content-Type": "application/json"
+      },
+      "body_template": {
+        "input": {
+          "prompt": "{{prompt}}",
+          "aspect_ratio": "{{aspect_ratio}}"
+        }
+      }
+    },
+    "response_config": {
+      "$ref": "replicate"
+    }
+  },
+  "aspect_ratio": "1:1",
+  "params": {
+    "prompt": "A quiet observatory above a sea of clouds"
+  }
+}
+```
+
 ### Accepted response
 
 ```http
@@ -267,6 +310,31 @@ Poll until the state becomes `completed` or `failed`.
   "completedAt": "2026-08-13T10:00:31.250Z",
   "outputPaths": [
     "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\generated_image_2026-08-13_1.wh.gpt_image_2_i2i.png"
+  ],
+  "error": null,
+  "statusUrl": "/api/local/v1/generations/generation_1786540000000_00000000-0000-0000-0000-000000000000"
+}
+```
+
+When the generation was created using an inline `provider` object, the response also includes `providerSnapshot` echoing the configuration object used:
+
+```json
+{
+  "generationId": "generation_1786540000000_00000000-0000-0000-0000-000000000000",
+  "status": "completed",
+  "providerId": "my_replicate_test",
+  "providerSnapshot": {
+    "id": "my_replicate_test",
+    "generation_modes": ["t2i"],
+    "image_format": "url",
+    "request_config": { ... },
+    "response_config": { "$ref": "replicate" }
+  },
+  "createdAt": "2026-08-13T10:00:00.000Z",
+  "startedAt": "2026-08-13T10:00:00.010Z",
+  "completedAt": "2026-08-13T10:00:31.250Z",
+  "outputPaths": [
+    "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\generated_image_2026-08-13_1.wh.my_replicate_test_t2i.png"
   ],
   "error": null,
   "statusUrl": "/api/local/v1/generations/generation_1786540000000_00000000-0000-0000-0000-000000000000"

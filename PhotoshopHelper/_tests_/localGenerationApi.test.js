@@ -50,7 +50,8 @@ async function startTestServer(context, options) {
     application.use(LOCAL_API_PREFIX, createLocalGenerationRouter({
         generate: options.generate,
         tempDir: options.tempDir,
-        getToken: options.getToken || (() => 'test-local-token')
+        getToken: options.getToken || (() => 'test-local-token'),
+        getProvidersConfig: options.getProvidersConfig
     }));
 
     const server = await new Promise(resolve => {
@@ -260,4 +261,185 @@ test('a background provider failure is reported on the generation without crashi
     assert.equal(generation.status, 'failed');
     assert.equal(generation.error, 'Provider unavailable');
     assert.deepEqual(generation.outputPaths, []);
+});
+
+test('an inline provider runs to completion, passes the provider object, and returns providerSnapshot in status', async context => {
+    const fixtureDirectory = createFixtureDirectory(context);
+    const inlineProvider = {
+        id: 'custom-inline-provider',
+        generation_modes: ['t2i'],
+        image_format: 'url',
+        request_config: {
+            endpoint_url: 'https://example.com/api/generate',
+            method: 'POST'
+        },
+        response_config: {
+            $ref: 'sync'
+        }
+    };
+
+    let receivedProviderArg = null;
+
+    const baseUrl = await startTestServer(context, {
+        tempDir: fixtureDirectory,
+        getProvidersConfig: () => ({
+            response_handlers: { sync: { type: 'sync' } },
+            providers: []
+        }),
+        generate: async (input, providerIdOrObject) => {
+            receivedProviderArg = providerIdOrObject;
+            const outputFilename = 'inline-output.png';
+            fs.writeFileSync(path.join(fixtureDirectory, outputFilename), 'inline output data');
+            return [{ status: 'done', image: `/api/webhelper/file/${outputFilename}` }];
+        }
+    });
+
+    const started = await startGeneration(baseUrl, {
+        provider: inlineProvider,
+        aspect_ratio: '1:1',
+        params: { prompt: 'A test prompt for inline provider' }
+    });
+
+    assert.equal(started.response.status, 202);
+    assert.equal(started.body.status, 'queued');
+
+    const generation = await waitForTerminalGeneration(`${baseUrl}${started.body.statusUrl}`);
+    assert.equal(generation.status, 'completed');
+    assert.equal(generation.providerId, 'custom-inline-provider');
+    assert.deepEqual(generation.providerSnapshot, inlineProvider);
+    assert.deepEqual(generation.outputPaths, [path.resolve(fixtureDirectory, 'inline-output.png')]);
+    assert.deepEqual(receivedProviderArg, inlineProvider);
+});
+
+test('a request specifying both providerId and provider is rejected with 400', async context => {
+    const fixtureDirectory = createFixtureDirectory(context);
+    let generationCalls = 0;
+
+    const baseUrl = await startTestServer(context, {
+        tempDir: fixtureDirectory,
+        generate: async () => {
+            generationCalls += 1;
+            return [];
+        }
+    });
+
+    const started = await startGeneration(baseUrl, {
+        providerId: 'existing-provider',
+        provider: {
+            generation_modes: ['t2i'],
+            image_format: 'url',
+            request_config: {},
+            response_config: { $ref: 'sync' }
+        },
+        aspect_ratio: '1:1'
+    });
+
+    assert.equal(started.response.status, 400);
+    assert.match(started.body.error, /Cannot specify both "providerId" and "provider"/);
+    assert.equal(generationCalls, 0);
+});
+
+test('a request with neither providerId nor provider is rejected with 400', async context => {
+    const fixtureDirectory = createFixtureDirectory(context);
+    let generationCalls = 0;
+
+    const baseUrl = await startTestServer(context, {
+        tempDir: fixtureDirectory,
+        generate: async () => {
+            generationCalls += 1;
+            return [];
+        }
+    });
+
+    const started = await startGeneration(baseUrl, { aspect_ratio: '1:1' });
+
+    assert.equal(started.response.status, 400);
+    assert.match(started.body.error, /Either "providerId" or "provider" is required/);
+    assert.equal(generationCalls, 0);
+});
+
+test('an inline provider with invalid or missing schema fields is rejected with 400', async context => {
+    const fixtureDirectory = createFixtureDirectory(context);
+    const baseUrl = await startTestServer(context, {
+        tempDir: fixtureDirectory,
+        generate: async () => []
+    });
+
+    // Not an object
+    const notAnObject = await startGeneration(baseUrl, { provider: 'not-an-object', aspect_ratio: '1:1' });
+    assert.equal(notAnObject.response.status, 400);
+    assert.match(notAnObject.body.error, /"provider" must be a JSON object/);
+
+    // Missing generation_modes
+    const missingModes = await startGeneration(baseUrl, {
+        provider: { image_format: 'url', request_config: {}, response_config: { $ref: 'sync' } },
+        aspect_ratio: '1:1'
+    });
+    assert.equal(missingModes.response.status, 400);
+    assert.match(missingModes.body.error, /generation_modes/);
+
+    // Unsupported generation mode
+    const unsupportedModes = await startGeneration(baseUrl, {
+        provider: { generation_modes: ['video'], image_format: 'url', request_config: {}, response_config: { $ref: 'sync' } },
+        aspect_ratio: '1:1'
+    });
+    assert.equal(unsupportedModes.response.status, 400);
+    assert.match(unsupportedModes.body.error, /unsupported modes/);
+
+    // Missing image_format
+    const missingFormat = await startGeneration(baseUrl, {
+        provider: { generation_modes: ['t2i'], request_config: {}, response_config: { $ref: 'sync' } },
+        aspect_ratio: '1:1'
+    });
+    assert.equal(missingFormat.response.status, 400);
+    assert.match(missingFormat.body.error, /image_format/);
+
+    // Missing request_config
+    const missingReqConfig = await startGeneration(baseUrl, {
+        provider: { generation_modes: ['t2i'], image_format: 'url', response_config: { $ref: 'sync' } },
+        aspect_ratio: '1:1'
+    });
+    assert.equal(missingReqConfig.response.status, 400);
+    assert.match(missingReqConfig.body.error, /request_config/);
+
+    // Missing response_config
+    const missingRespConfig = await startGeneration(baseUrl, {
+        provider: { generation_modes: ['t2i'], image_format: 'url', request_config: {} },
+        aspect_ratio: '1:1'
+    });
+    assert.equal(missingRespConfig.response.status, 400);
+    assert.match(missingRespConfig.body.error, /response_config/);
+
+    // Missing $ref
+    const missingRef = await startGeneration(baseUrl, {
+        provider: { generation_modes: ['t2i'], image_format: 'url', request_config: {}, response_config: {} },
+        aspect_ratio: '1:1'
+    });
+    assert.equal(missingRef.response.status, 400);
+    assert.match(missingRef.body.error, /\$ref/);
+});
+
+test('an inline provider with unknown response handler $ref is rejected with 400', async context => {
+    const fixtureDirectory = createFixtureDirectory(context);
+    const baseUrl = await startTestServer(context, {
+        tempDir: fixtureDirectory,
+        getProvidersConfig: () => ({
+            response_handlers: { replicate: { type: 'async_poll' } },
+            providers: []
+        }),
+        generate: async () => []
+    });
+
+    const unknownRef = await startGeneration(baseUrl, {
+        provider: {
+            generation_modes: ['t2i'],
+            image_format: 'url',
+            request_config: {},
+            response_config: { $ref: 'non_existent_handler' }
+        },
+        aspect_ratio: '1:1'
+    });
+
+    assert.equal(unknownRef.response.status, 400);
+    assert.match(unknownRef.body.error, /Unknown response handler "non_existent_handler"/);
 });

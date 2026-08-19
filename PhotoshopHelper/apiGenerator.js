@@ -381,13 +381,22 @@ function computeFileSuffix(provider, context = {}, isTextToImage = false) {
 /**
  * Main function to start generating task
  */
-async function generate(taskOrId, providerId, num_images, aspect_ratio, userParams, referenceImages, use_mask, force_separate_requests, tempDir, globalTasks) {
+async function generate(taskOrId, providerIdOrObject, num_images, aspect_ratio, userParams, referenceImages, use_mask, force_separate_requests, tempDir, globalTasks) {
     const { task, taskLabel } = resolveGenerationTask(taskOrId, globalTasks);
 
     // 1. Load config
     const configData = getProvidersConfig();
-    const provider = configData.providers.find(p => p.id === providerId);
-    if (!provider) throw new Error(`Provider ${providerId} not found in config.`);
+    let provider;
+    let providerId;
+
+    if (typeof providerIdOrObject === 'object' && providerIdOrObject !== null) {
+        provider = providerIdOrObject;
+        providerId = provider.id || 'inline';
+    } else {
+        providerId = providerIdOrObject;
+        provider = configData.providers.find(p => p.id === providerId);
+        if (!provider) throw new Error(`Provider ${providerId} not found in config.`);
+    }
     const reqConfig = provider.request_config;
 
     // 2. Prepare Context
@@ -684,11 +693,14 @@ async function generate(taskOrId, providerId, num_images, aspect_ratio, userPara
 
 module.exports = {
     generate,
+    getProvidersConfig,
+    IMPLEMENTED_GENERATION_MODES,
 
-    // TEST-ONLY EXPORTS: Production code imports only generate(). These helpers are
-    // exposed solely so the focused unit tests can validate generation invariants
-    // without making remote provider requests. If those tests are removed, remove
-    // this entire test-only export block as well and keep the helpers module-private.
+    // TEST-ONLY EXPORTS: Production code imports only generate(), getProvidersConfig(),
+    // and IMPLEMENTED_GENERATION_MODES. These helpers are exposed solely so the focused
+    // unit tests can validate generation invariants without making remote provider requests.
+    // If those tests are removed, remove this entire test-only export block as well and
+    // keep the helpers module-private.
     resolveImageFilePath,
     resolveGenerationTask,
     normalizeGenerationImages,

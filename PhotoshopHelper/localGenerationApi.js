@@ -5,6 +5,7 @@ const path = require('node:path');
 const express = require('express');
 
 const { createAuthMiddleware } = require('./auth');
+const { getProvidersConfig, IMPLEMENTED_GENERATION_MODES } = require('./apiGenerator');
 
 // The common prefix is versioned independently from the browser-oriented
 // WebHelper API so the local service contract can evolve without breaking the UI.
@@ -87,16 +88,77 @@ function normalizeInputFilePath(value, fieldName, required) {
  * Validate one self-contained local generation request.
  *
  * @param {unknown} body - Parsed Express JSON request body.
+ * @param {object} [options] - Optional validation context.
+ * @param {Record<string, object>} [options.responseHandlers] - Map of available response handlers to validate $ref against.
  * @returns {object} Normalized image paths, provider, and generation arguments.
  */
-function normalizeGenerationRequest(body) {
+function normalizeGenerationRequest(body, options = {}) {
     if (!isPlainObject(body)) {
         throw createHttpError('The request body must be a JSON object.');
     }
 
-    const providerId = body.providerId;
-    if (typeof providerId !== 'string' || providerId.trim() === '') {
-        throw createHttpError('"providerId" is required and must be a non-empty string.');
+    const hasProviderId = body.providerId !== undefined && body.providerId !== null;
+    const hasInlineProvider = body.provider !== undefined && body.provider !== null;
+
+    if (hasProviderId && hasInlineProvider) {
+        throw createHttpError('Cannot specify both "providerId" and "provider". Use "providerId" to reference an existing provider or "provider" for an inline configuration.');
+    }
+
+    if (!hasProviderId && !hasInlineProvider) {
+        throw createHttpError('Either "providerId" or "provider" is required.');
+    }
+
+    let providerId;
+    let providerObject = null;
+
+    if (hasProviderId) {
+        if (typeof body.providerId !== 'string' || body.providerId.trim() === '') {
+            throw createHttpError('"providerId" must be a non-empty string.');
+        }
+        providerId = body.providerId.trim();
+    } else {
+        const provider = body.provider;
+        if (!isPlainObject(provider)) {
+            throw createHttpError('"provider" must be a JSON object.');
+        }
+
+        if (!Array.isArray(provider.generation_modes) || provider.generation_modes.length === 0) {
+            throw createHttpError('"provider.generation_modes" must be a non-empty array of generation modes.');
+        }
+
+        const hasUnsupportedMode = provider.generation_modes.some(
+            mode => typeof mode !== 'string' || !IMPLEMENTED_GENERATION_MODES.has(mode)
+        );
+        if (hasUnsupportedMode) {
+            throw createHttpError('"provider.generation_modes" contains unsupported modes. Only "t2i" and "i2i" are currently supported.');
+        }
+
+        if (typeof provider.image_format !== 'string' || provider.image_format.trim() === '') {
+            throw createHttpError('"provider.image_format" is required and must be a non-empty string.');
+        }
+
+        if (!isPlainObject(provider.request_config)) {
+            throw createHttpError('"provider.request_config" is required and must be a JSON object.');
+        }
+
+        if (!isPlainObject(provider.response_config)) {
+            throw createHttpError('"provider.response_config" is required and must be a JSON object.');
+        }
+
+        const handlerRef = provider.response_config.$ref;
+        if (typeof handlerRef !== 'string' || handlerRef.trim() === '') {
+            throw createHttpError('"provider.response_config.$ref" is required and must be a non-empty string.');
+        }
+
+        const trimmedRef = handlerRef.trim();
+        if (options.responseHandlers && !options.responseHandlers[trimmedRef]) {
+            throw createHttpError(`Unknown response handler "${trimmedRef}". Handler must be defined in providers configuration.`);
+        }
+
+        providerId = provider.id && typeof provider.id === 'string' && provider.id.trim() !== ''
+            ? provider.id.trim()
+            : 'inline';
+        providerObject = provider;
     }
 
     const params = body.params === undefined ? {} : body.params;
@@ -172,7 +234,8 @@ function normalizeGenerationRequest(body) {
     }
 
     return {
-        providerId: providerId.trim(),
+        providerId,
+        providerObject,
         sourceImagePath,
         maskImagePath,
         params: { ...params },
@@ -233,7 +296,7 @@ function serializeGeneration(generation, tempDir) {
         .map(result => resultToAbsolutePath(result, tempDir))
         .filter(Boolean);
 
-    return {
+    const serialized = {
         generationId: generation.generationId,
         status: generation.status,
         providerId: generation.providerId,
@@ -244,6 +307,12 @@ function serializeGeneration(generation, tempDir) {
         error: generation.error || null,
         statusUrl: getGenerationStatusUrl(generation.generationId)
     };
+
+    if (generation.providerObject) {
+        serialized.providerSnapshot = generation.providerObject;
+    }
+
+    return serialized;
 }
 
 /**
@@ -267,7 +336,7 @@ async function executeGeneration(generation, dependencies) {
         };
         const results = await dependencies.generate(
             generationInput,
-            generation.providerId,
+            generation.providerObject || generation.providerId,
             generation.numImages,
             generation.aspectRatio,
             generation.params,
@@ -307,6 +376,7 @@ async function executeGeneration(generation, dependencies) {
  * @param {Function} options.generate - Existing provider-driven generation function.
  * @param {string} options.tempDir - Existing WebHelper generation output directory.
  * @param {Function} options.getToken - Returns the shared token required of every caller.
+ * @param {Function} [options.getProvidersConfig] - Optional provider config loader.
  * @param {Function} [options.onGenerationAccepted] - Optional usage/accounting callback.
  * @returns {import('express').Router} A router mounted at LOCAL_API_PREFIX.
  */
@@ -325,6 +395,8 @@ function createLocalGenerationRouter(options) {
         generate: options.generate,
         tempDir: path.resolve(options.tempDir)
     };
+    const resolveProvidersConfig = options.getProvidersConfig || getProvidersConfig;
+
     // Generation state is deliberately private to this router. Local API requests
     // never enter WebHelper's task registry and cannot affect Photoshop/UI tasks.
     const generations = new Map();
@@ -337,13 +409,24 @@ function createLocalGenerationRouter(options) {
     // Accept one complete provider invocation without a preliminary task resource.
     router.post('/generations', (req, res) => {
         try {
-            const request = normalizeGenerationRequest(req.body);
+            let responseHandlers;
+            if (typeof resolveProvidersConfig === 'function') {
+                try {
+                    const config = resolveProvidersConfig();
+                    responseHandlers = config?.response_handlers;
+                } catch {
+                    // Ignore config load error; validation will run without responseHandlers map
+                }
+            }
+
+            const request = normalizeGenerationRequest(req.body, { responseHandlers });
             const generationId = `generation_${Date.now()}_${crypto.randomUUID()}`;
             const createdAt = new Date().toISOString();
             const generation = {
                 generationId,
                 status: 'queued',
                 providerId: request.providerId,
+                providerObject: request.providerObject,
                 sourceImagePath: request.sourceImagePath,
                 maskImagePath: request.maskImagePath,
                 params: request.params,
@@ -406,5 +489,12 @@ function createLocalGenerationRouter(options) {
 
 module.exports = {
     LOCAL_API_PREFIX,
-    createLocalGenerationRouter
+    createLocalGenerationRouter,
+
+    // TEST-ONLY EXPORTS: Production code imports only createLocalGenerationRouter
+    // and LOCAL_API_PREFIX. The helpers below are exported solely for unit testing
+    // request normalization, serialization invariants, and path resolution.
+    normalizeGenerationRequest,
+    serializeGeneration,
+    resultToAbsolutePath
 };
