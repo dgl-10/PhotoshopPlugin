@@ -1123,6 +1123,9 @@ function startHttpServer() {
         const { taskId, providerId, num_images, aspect_ratio, params, referenceImages, use_mask, force_separate_requests } = req.body;
 
         try {
+            // // MOCK TEST STUB: Throw test error immediately to track usage without invoking AI generation
+            // throw new Error("Mock test mode: generation disabled for usage testing");
+
             // Update task status
             if (global.tasks[taskId]) {
                 global.tasks[taskId].status = 'generating';

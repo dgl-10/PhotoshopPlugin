@@ -22,5 +22,10 @@ contextBridge.exposeInMainWorld('activationBridge', {
     // Open the Gumroad purchase URL in the external browser
     buyLicense: () => {
         ipcRenderer.send('activation-buy');
+    },
+
+    // Signal that the lockout countdown has ended and close can be unlocked
+    unlockClose: () => {
+        ipcRenderer.send('activation-unlock-close');
     }
 });

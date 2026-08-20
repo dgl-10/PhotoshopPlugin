@@ -5,6 +5,13 @@ const { generateToken } = require('./auth');
 const INITIAL_DONATION_THRESHOLD = 150;
 const DONATED_NEW_DONATION_THRESHOLD = 1000;
 
+// Hardcore lockout thresholds and configuration
+const HARDCORE_UNPAID_THRESHOLD = 750; // Actions beyond initial threshold before aggressive mode triggers for non-donors
+const HARDCORE_LOCKOUT_SECONDS = 15; // Lockout countdown duration in seconds
+const ENABLE_HARDCORE_FOR_DONORS = false; // Future-proof toggle for donors (disabled by default)
+const HARDCORE_DONOR_THRESHOLD = 2000; // Aggressive threshold for donors if enabled
+
+
 // Initialize the import dynamically.
 // storePromise will resolve to the Store instance.
 // getConfigPaths() is called lazily inside the callback to ensure app.getPath('userData')
@@ -194,8 +201,12 @@ module.exports = {
     getPluginToken,
     regeneratePluginToken,
     getLocalApiToken,
-    //INITIAL_DONATION_THRESHOLD,
-    DONATED_THRESHOLD: DONATED_NEW_DONATION_THRESHOLD
+    INITIAL_DONATION_THRESHOLD,
+    DONATED_THRESHOLD: DONATED_NEW_DONATION_THRESHOLD,
+    HARDCORE_UNPAID_THRESHOLD,
+    HARDCORE_LOCKOUT_SECONDS,
+    ENABLE_HARDCORE_FOR_DONORS,
+    HARDCORE_DONOR_THRESHOLD
 };
 
 

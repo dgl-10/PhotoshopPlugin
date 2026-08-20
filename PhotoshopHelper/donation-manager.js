@@ -77,8 +77,17 @@ async function trackUsage(ticks = 1) {
                 // Save the count at which we showed the donation dialog
                 await userSettings.setDonationShown(data.count);
 
+                // Determine if hardcore lockout mode should be activated
+                const isDonated = threshold >= userSettings.DONATED_THRESHOLD;
+                let isHardcore = false;
+                if (!isDonated) {
+                    isHardcore = currentOver >= userSettings.HARDCORE_UNPAID_THRESHOLD;
+                } else if (userSettings.ENABLE_HARDCORE_FOR_DONORS) {
+                    isHardcore = currentOver >= userSettings.HARDCORE_DONOR_THRESHOLD;
+                }
+
                 const { openLicenseActivationWindow } = require('./setup/license-activation');
-                openLicenseActivationWindow(true);
+                openLicenseActivationWindow(true, isHardcore, userSettings.HARDCORE_LOCKOUT_SECONDS);
             }
         }
     } catch (err) {
@@ -98,7 +107,7 @@ module.exports = {
     trackUsage,
     openLicenseActivationWindow: () => {
         const { openLicenseActivationWindow } = require('./setup/license-activation');
-        openLicenseActivationWindow(false);
+        openLicenseActivationWindow(false, false, 0);
     },
     getGumroadConfig
 };

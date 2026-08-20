@@ -39,6 +39,16 @@
         .card.done {
             animation: fadeOut .35s ease forwards;
         }
+
+        /* Lockout button styling */
+        .btn-locked {
+            filter: blur(1.2px);
+            opacity: 0.55;
+            cursor: not-allowed !important;
+            pointer-events: none;
+            user-select: none;
+            transition: filter 0.3s ease, opacity 0.3s ease;
+        }
     </style>
 </head>
 
@@ -136,17 +146,56 @@
         const successMsg = document.getElementById('status-success');
         const card = document.getElementById('card');
 
-        // Handle init data (check if already has a key)
-        window.activationBridge.onInit(({ donationIsAlive, isReminder }) => {
+        let countdownTimer = null;
+        let isLockedOut = false;
+
+        function unlockCloseButton() {
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+            isLockedOut = false;
+            btnClose.disabled = false;
+            btnClose.textContent = 'Close';
+            btnClose.classList.remove('btn-locked');
+            window.activationBridge.unlockClose();
+        }
+
+        // Handle init data (check if already has a key, reminder, or hardcore mode)
+        window.activationBridge.onInit(({ donationIsAlive, isReminder, isHardcore, lockoutSeconds }) => {
             if (donationIsAlive) {
                 document.getElementById('status-donation-active').style.display = 'block';
                 btnBuy.innerHTML = '<i class="icon icon-share"></i> Donate Again';
             }
             if (isReminder) {
-                document.getElementById('donate-desc').innerHTML =
-                    `This tool is free and source-available and it seems like you're getting some use out of it. 🙌<br/>` +
-                    `If you'd like to say thanks, a small donation would be hugely appreciated. ☕<br/>` +
-                    `No usage data is sent for this reminder — it is based on a local counter.`;
+                if (isHardcore) {
+                    document.getElementById('donate-desc').innerHTML =
+                        `You've reached a heavy usage milestone with PhotoshopHelper! 🔥<br/>` +
+                        `If this tool is saving you significant time and boosting your productivity, please consider supporting development. ☕<br/>` +
+                        `No usage data is sent — this reminder is calculated from a local action counter.`;
+                } else {
+                    document.getElementById('donate-desc').innerHTML =
+                        `This tool is free and source-available and it seems like you're getting some use out of it. 🙌<br/>` +
+                        `If you'd like to say thanks, a small donation would be hugely appreciated. ☕<br/>` +
+                        `No usage data is sent for this reminder — it is based on a local counter.`;
+                }
+            }
+
+            if (isHardcore && lockoutSeconds > 0) {
+                isLockedOut = true;
+                let remaining = lockoutSeconds;
+                btnClose.classList.add('btn-locked');
+                btnClose.disabled = true;
+                btnClose.textContent = `Close (${remaining}s)`;
+
+                countdownTimer = setInterval(() => {
+                    remaining--;
+                    if (remaining > 0) {
+                        btnClose.textContent = `Close (${remaining}s)`;
+                    } else {
+                        unlockCloseButton();
+                    }
+                }, 1000);
             }
         });
 
@@ -167,15 +216,13 @@
 
             resetStatus();
             setLoading(true);
-            // For testing/evaluation: hold loading state for 5 seconds
-            //await new Promise(resolve => setTimeout(resolve, 5000));
 
             try {
                 const result = await window.activationBridge.verifyLicense(key);
-                //const result = { success: true, message: "License verified successfully!" };
                 setLoading(false);
 
                 if (result.success) {
+                    unlockCloseButton(); // Immediately release lockout upon successful verification
                     successMsg.style.display = 'block';
                     errorMsg.style.display = 'none';
                     btnActivate.disabled = true;
@@ -196,6 +243,7 @@
 
         // Action: Close
         btnClose.addEventListener('click', () => {
+            if (isLockedOut) return;
             card.classList.add('done');
             setTimeout(() => window.activationBridge.close(), 360);
         });
@@ -204,7 +252,9 @@
             loader.style.display = isLoading ? 'flex' : 'none';
             input.disabled = isLoading;
             btnActivate.disabled = isLoading;
-            btnClose.disabled = isLoading;
+            if (!isLockedOut) {
+                btnClose.disabled = isLoading;
+            }
             btnBuy.disabled = isLoading;
         }
 

@@ -4,12 +4,25 @@ const userSettings = require('../user-settings');
 const { getGumroadConfig } = require('../donation-manager');
 
 let activationWindow = null;
+let isCloseLocked = false;
 
-function openLicenseActivationWindow(isReminder = false) {
+function openLicenseActivationWindow(isReminder = false, isHardcore = false, lockoutSeconds = 15) {
     if (activationWindow && !activationWindow.isDestroyed()) {
+        if (isHardcore) {
+            isCloseLocked = true;
+            activationWindow.setAlwaysOnTop(true);
+            activationWindow.webContents.send('activation-init', {
+                donationIsAlive: false,
+                isReminder: true,
+                isHardcore: true,
+                lockoutSeconds
+            });
+        }
         activationWindow.focus();
         return;
     }
+
+    isCloseLocked = isHardcore;
 
     activationWindow = new BrowserWindow({
         width: 600,
@@ -17,6 +30,7 @@ function openLicenseActivationWindow(isReminder = false) {
         resizable: false,
         title: 'PhotoshopHelper — Support & Donation',
         center: true,
+        alwaysOnTop: isHardcore,
         autoHideMenuBar: true,
         webPreferences: {
             preload: path.join(__dirname, 'license-activation-preload.js'),
@@ -25,12 +39,24 @@ function openLicenseActivationWindow(isReminder = false) {
         }
     });
 
+    // Prevent closing via system [X] button, Alt+F4, or taskbar while lockout timer is running
+    activationWindow.on('close', (e) => {
+        if (isCloseLocked) {
+            e.preventDefault();
+        }
+    });
+
     activationWindow.loadFile(path.join(__dirname, 'license-activation.html'));
 
     activationWindow.webContents.once('did-finish-load', async () => {
         const donationIsAlive = await userSettings.getCurrentDonationIsStiilAlive();
         if (!activationWindow.isDestroyed()) {
-            activationWindow.webContents.send('activation-init', { donationIsAlive, isReminder });
+            activationWindow.webContents.send('activation-init', {
+                donationIsAlive,
+                isReminder,
+                isHardcore,
+                lockoutSeconds
+            });
         }
     });
 }
@@ -135,6 +161,12 @@ ipcMain.handle('activation-verify', async (event, licenseKey) => {
             // Save key to store and update usage tracking threshold to the donated level
             await userSettings.setCurrentUsageTrackingThreshold(userSettings.DONATED_THRESHOLD, donationActivationKey);
 
+            // Immediately unlock closing and disable alwaysOnTop upon successful key activation
+            isCloseLocked = false;
+            if (activationWindow && !activationWindow.isDestroyed()) {
+                activationWindow.setAlwaysOnTop(false);
+            }
+
             console.log('[Activation] Donation key verified successfully. User upgraded to Donated level.');
             return { success: true };
         } else {
@@ -148,8 +180,14 @@ ipcMain.handle('activation-verify', async (event, licenseKey) => {
     }
 });
 
+// IPC unlock close handler (when countdown expires)
+ipcMain.on('activation-unlock-close', () => {
+    isCloseLocked = false;
+});
+
 // IPC close window handler
 ipcMain.on('activation-close', (event) => {
+    isCloseLocked = false;
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win && !win.isDestroyed()) {
         win.close();
