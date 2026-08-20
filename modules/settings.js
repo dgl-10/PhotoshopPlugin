@@ -20,6 +20,122 @@ let editingSettings = [];
 let highlightedRatioId = null;
 let highlightTimeoutId = null;
 
+let showFeatherPanel = false;
+let currentFeatherSettings = null;
+let settingsChangeListeners = [];
+
+/**
+ * Register listener for settings changes
+ * @param {Function} listener
+ */
+function onSettingsChanged(listener) {
+    if (typeof listener === 'function') {
+        settingsChangeListeners.push(listener);
+    }
+}
+
+/**
+ * Notify all settings change listeners
+ */
+function notifySettingsChanged() {
+    settingsChangeListeners.forEach(fn => {
+        try { fn(); } catch (e) { console.error('Error in settings change listener:', e); }
+    });
+}
+
+/**
+ * Get showFeatherPanel preference
+ * @returns {boolean}
+ */
+function getShowFeatherPanel() {
+    try {
+        const val = window.localStorage.getItem('show-feather-panel');
+        if (val === null) return false;
+        return val === 'true';
+    } catch (e) {
+        console.error("Failed to get showFeatherPanel:", e);
+        return false;
+    }
+}
+
+/**
+ * Set showFeatherPanel preference
+ * @param {boolean} val
+ */
+function setShowFeatherPanel(val) {
+    try {
+        showFeatherPanel = !!val;
+        window.localStorage.setItem('show-feather-panel', showFeatherPanel ? 'true' : 'false');
+    } catch (e) {
+        console.error("Failed to set showFeatherPanel:", e);
+    }
+}
+
+/**
+ * Get featherSettings from localStorage or create from MASK_FEATHER template
+ * Guaranteed to have bias: 1.0 in stored settings
+ * @returns {object}
+ */
+function getFeatherSettings() {
+    try {
+        const raw = window.localStorage.getItem('feather-settings');
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                // Bias is ALWAYS 1.0 in persistent stored settings
+                parsed.bias = 1.0;
+                currentFeatherSettings = parsed;
+                return parsed;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load featherSettings:", e);
+    }
+
+    // Default template fallback from ps.js
+    let template;
+    try {
+        const ps = require('./ps.js');
+        template = ps.MASK_FEATHER;
+    } catch (e) {
+        template = null;
+    }
+
+    if (!template) {
+        template = {
+            enabled: false,
+            bias: 1.0,
+            relative: 0.015,
+            minRadius: 2,
+            maxRadius: 20,
+            paddingShare: 0.4,
+            selectionShare: 0.25
+        };
+    }
+
+    const initial = Object.assign({}, template, {
+        enabled: false,
+        bias: 1.0
+    });
+
+    saveFeatherSettings(initial);
+    return initial;
+}
+
+/**
+ * Save featherSettings to localStorage (ensures bias is locked to 1.0 in storage)
+ * @param {object} settingsObj
+ */
+function saveFeatherSettings(settingsObj) {
+    try {
+        const toSave = Object.assign({}, settingsObj, { bias: 1.0 });
+        window.localStorage.setItem('feather-settings', JSON.stringify(toSave));
+        currentFeatherSettings = toSave;
+    } catch (e) {
+        console.error("Failed to save featherSettings:", e);
+    }
+}
+
 /**
  * Clear any active highlight and its timeout
  */
@@ -222,6 +338,13 @@ function initSettings() {
                 helper.setManualToken(tokenField.value || '');
             }
 
+            const featherCheckbox = document.getElementById('settings-show-feather');
+            if (featherCheckbox) {
+                setShowFeatherPanel(featherCheckbox.checked);
+            }
+
+            notifySettingsChanged();
+
             dialog.close();
         });
     }
@@ -255,6 +378,17 @@ function showSettingsDialog() {
         }
         refreshTokenStatus();
 
+        const featherCheckbox = document.getElementById('settings-show-feather');
+        if (featherCheckbox) {
+            const isShown = getShowFeatherPanel();
+            featherCheckbox.checked = isShown;
+            if (isShown) {
+                featherCheckbox.setAttribute('checked', '');
+            } else {
+                featherCheckbox.removeAttribute('checked');
+            }
+        }
+
         try {
             if (typeof dialog.uxpShowModal === 'function') {
                 dialog.uxpShowModal({ size: { width: 320, height: 480 } });
@@ -272,5 +406,10 @@ function showSettingsDialog() {
 module.exports = {
     initSettings,
     showSettingsDialog,
-    getEnabledRatios
+    getEnabledRatios,
+    getShowFeatherPanel,
+    setShowFeatherPanel,
+    getFeatherSettings,
+    saveFeatherSettings,
+    onSettingsChanged
 };

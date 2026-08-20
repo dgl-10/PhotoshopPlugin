@@ -567,11 +567,12 @@ dialog::backdrop {
 
 
 #status-warning-container {
-    position: absolute;
+    position: relative;
     z-index: 100;
-    top: -16px;
-    left: -22px;
     display: none;
+
+    top: -11px;
+    left: -5px;
 }
 
 #status-warning-button {
@@ -579,9 +580,16 @@ dialog::backdrop {
     padding: 0;
     margin: 0;
     background: transparent;
-    height: auto;
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    min-height: 18px !important;
+    max-width: 18px !important;
+    max-height: 18px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
 }
-
 
 #status-warning-button>sp-icon {
     color: #ffaa00;
@@ -592,7 +600,7 @@ dialog::backdrop {
 #status-warning-tooltip {
     padding: 5px;
     position: absolute;
-    left: -106px;
+    left: -112px;
     top: 33px;
     --spectrum-tooltip-max-width: 255px;
     min-width: 255px;
@@ -600,4 +608,201 @@ dialog::backdrop {
     width: 255px;
     white-space: pre-wrap;
     z-index: 1000;
+}
+
+/* Middle Controls between Cards (Feather Bias) */
+.middle-controls-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    position: relative;
+    z-index: 50;
+    align-self: center;
+    margin: 0 -2px;
+}
+
+/* When feather panel is disabled in settings */
+.middle-controls-container.feather-hidden {
+    display: none !important;
+}
+
+/* Icon-only state (no feather panel): the container collapses to a single
+   point so it adds no width/height of its own between the cards, and the
+   icon is pulled out of flow and centered exactly ON that point via
+   transform — self-computing off the icon's own box, not a guessed offset. */
+.middle-controls-container.feather-hidden.has-warning {
+    display: flex !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+}
+
+.middle-controls-container.feather-hidden.has-warning #status-warning-container {
+    position: absolute;
+    /*top: 0;*/
+    /*left: 50%;*/
+    transform: translate(-50%, -50%);
+}
+
+.middle-controls-container.feather-hidden .feather-panel-horizontal,
+.middle-controls-container.feather-hidden .feather-panel-vertical {
+    display: none !important;
+}
+
+/* Default (Wide / Side-by-Side Cards): Show vertical feather bar, hide horizontal */
+.feather-panel-horizontal {
+    display: none !important;
+}
+
+.feather-panel-vertical {
+    display: flex !important;
+}
+
+/* Narrow / Stacked Cards Layout (wrapping at ~530px): Show horizontal feather bar, hide vertical */
+@media (max-width: 530px) {
+
+    /* Row direction so the warning icon sits before the feather row,
+       centered on the cross axis (vertically) — the same relationship the
+       wide layout has (icon before the vertical bar, centered horizontally),
+       just rotated to match this panel's own orientation. */
+    .middle-controls-container {
+        flex: 1 1 100%;
+        flex-direction: row;
+        width: 100%;
+        margin: 4px 0;
+    }
+
+    /* Row layout has different geometry than the wide/column case, so the
+       base rule's nudge (tuned for sitting above the vertical bar) likely
+       won't land right here — retune top/left for this case specifically. */
+    .middle-controls-container #status-warning-container {
+        top: -5px;
+        left: -17px;
+    }
+
+    .feather-panel-horizontal {
+        display: inline-flex !important;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .feather-panel-horizontal sp-label {
+        flex-shrink: 0;
+    }
+
+    .feather-status-label {
+        min-width: 48px;
+        text-align: left;
+    }
+
+    .feather-panel-vertical {
+        display: none !important;
+    }
+
+
+    .middle-controls-container.feather-hidden.has-warning #status-warning-container {
+        top: -6px;
+        left: calc(50% - 6px);
+    }
+
+    /* Tooltip position override for narrow/stacked layout */
+    .middle-controls-container.feather-visible #status-warning-tooltip {
+        left: -5px;
+    }
+}
+
+/* Compact Feather Split Button Container (Never stretches to 100%) */
+.split-button-container.compact-feather {
+    width: auto !important;
+    max-width: fit-content !important;
+    min-width: 0 !important;
+    height: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    padding: 1px;
+    display: inline-flex;
+    align-items: center;
+    box-shadow: none;
+    flex: 0 0 auto;
+    margin: 0px 3px;
+}
+
+.split-button-container.compact-feather.vertical {
+    flex-direction: column;
+    width: 28px !important;
+    max-width: 28px !important;
+    height: auto;
+    margin: 3px;
+}
+
+.feather-button-group {
+    display: flex;
+    flex-direction: row;
+    gap: 0;
+}
+
+.feather-button-group.vertical {
+    flex-direction: column;
+}
+
+.feather-btn {
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+    max-width: 24px !important;
+    max-height: 24px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 3px !important;
+    border: none !important;
+    background: transparent !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.feather-btn svg {
+    width: 18px;
+    height: 18px;
+    margin: auto;
+    display: block;
+    flex-shrink: 0;
+}
+
+.feather-button-group.vertical .feather-btn svg {
+    transform: rotate(-90deg);
+    transform-origin: center;
+}
+
+/* Spectrum neutral dark selected state (Adobe standard for quiet toolbars) */
+.feather-btn[selected],
+.feather-btn.selected {
+    background: #4a4a4a !important;
+    color: #ffffff !important;
+}
+
+.feather-btn:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.compact-feather .split-button-dropdown {
+    width: 18px;
+    min-width: 18px;
+    max-width: 18px;
+    height: 24px;
+}
+
+.compact-feather.vertical .split-button-dropdown {
+    width: 24px;
+    min-width: 24px;
+    max-width: 24px;
+    height: 18px;
+    min-height: 18px;
+    max-height: 18px;
+    border-left: none !important;
+    border-top: 1px solid var(--border-color) !important;
 }

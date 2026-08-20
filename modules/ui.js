@@ -357,9 +357,13 @@ function getToPSState() {
  */
 function showStatusWarning(tooltipText) {
     const container = document.getElementById('status-warning-container');
+    const middleContainer = document.getElementById('middle-controls-container');
     const tooltip = document.getElementById('status-warning-tooltip');
     if (container) {
         container.style.display = 'block';
+    }
+    if (middleContainer) {
+        middleContainer.classList.add('has-warning');
     }
     if (tooltip) {
         tooltip.textContent = tooltipText;
@@ -371,9 +375,13 @@ function showStatusWarning(tooltipText) {
  */
 function hideStatusWarning() {
     const container = document.getElementById('status-warning-container');
+    const middleContainer = document.getElementById('middle-controls-container');
     const tooltip = document.getElementById('status-warning-tooltip');
     if (container) {
         container.style.display = 'none';
+    }
+    if (middleContainer) {
+        middleContainer.classList.remove('has-warning');
     }
     if (tooltip) {
         tooltip.textContent = '';

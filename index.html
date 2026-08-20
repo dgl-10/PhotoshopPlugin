@@ -220,11 +220,149 @@
             </div>
         </div>
 
-        <!-- status warning icon -->
-        <div style="position: relative;">
-            <div id="status-warning-container"><sp-action-button id="status-warning-button" quiet><sp-icon
-                        name="ui:AlertSmall" size="xxs"></sp-icon><sp-tooltip id="status-warning-tooltip" self-managed
-                        placement="bottom"></sp-tooltip></sp-action-button>
+        <!-- Middle Controls between FromPS and ToPS -->
+        <div class="middle-controls-container" id="middle-controls-container">
+            <!-- status warning icon -->
+            <div id="status-warning-container">
+                <sp-action-button id="status-warning-button" quiet>
+                    <sp-icon name="ui:AlertSmall" size="xxs"></sp-icon>
+                    <sp-tooltip id="status-warning-tooltip" self-managed placement="bottom" tip="false"></sp-tooltip>
+                </sp-action-button>
+            </div>
+
+            <!-- Feather Bias Horizontal (shown when cards stack vertically in narrow layout) -->
+            <div class="feather-panel-horizontal" id="feather-panel-horizontal">
+                <sp-label>Feather:</sp-label>
+                <div class="split-button-container compact-feather">
+                    <div class="feather-button-group">
+                        <sp-action-button data-value="off" selected quiet class="icon-only feather-btn" title="Off">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" slot="icon">
+                                <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                                    opacity="0.3" stroke-width="1" />
+                                <rect x="2" y="4" width="7" height="10" fill="currentColor" />
+                                <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                                    d="M9,2 v14" />
+                            </svg>
+                        </sp-action-button>
+                        <sp-action-button data-value="1" quiet class="icon-only feather-btn" title="Outward">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" slot="icon">
+                                <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                                    opacity="0.3" stroke-width="1" />
+                                <rect x="2" y="4" width="7" height="10" fill="currentColor" />
+                                <rect x="9" y="4" width="1.4" height="10" fill="currentColor" opacity="0.8" />
+                                <rect x="10.4" y="4" width="1.4" height="10" fill="currentColor" opacity="0.6" />
+                                <rect x="11.8" y="4" width="1.4" height="10" fill="currentColor" opacity="0.4" />
+                                <rect x="13.2" y="4" width="1.4" height="10" fill="currentColor" opacity="0.25" />
+                                <rect x="14.6" y="4" width="1.4" height="10" fill="currentColor" opacity="0.1" />
+                                <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                                    d="M9,2 v14" />
+                            </svg>
+                        </sp-action-button>
+                        <sp-action-button data-value="0" quiet class="icon-only feather-btn" title="Center">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" slot="icon">
+                                <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                                    opacity="0.3" stroke-width="1" />
+                                <rect x="2" y="4" width="2.5" height="10" fill="currentColor" />
+                                <rect x="4.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.85" />
+                                <rect x="6" y="4" width="1.5" height="10" fill="currentColor" opacity="0.7" />
+                                <rect x="7.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.55" />
+                                <rect x="9" y="4" width="1.5" height="10" fill="currentColor" opacity="0.4" />
+                                <rect x="10.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.25" />
+                                <rect x="12" y="4" width="1.5" height="10" fill="currentColor" opacity="0.1" />
+                                <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                                    d="M9,2 v14" />
+                            </svg>
+                        </sp-action-button>
+                        <sp-action-button data-value="-1" quiet class="icon-only feather-btn" title="Inward">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" slot="icon">
+                                <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                                    opacity="0.3" stroke-width="1" />
+                                <rect x="2" y="4" width="1.2" height="10" fill="currentColor" />
+                                <rect x="3.2" y="4" width="1.2" height="10" fill="currentColor" opacity="0.85" />
+                                <rect x="4.4" y="4" width="1.2" height="10" fill="currentColor" opacity="0.7" />
+                                <rect x="5.6" y="4" width="1.2" height="10" fill="currentColor" opacity="0.55" />
+                                <rect x="6.8" y="4" width="1.2" height="10" fill="currentColor" opacity="0.35" />
+                                <rect x="8" y="4" width="1" height="10" fill="currentColor" opacity="0.15" />
+                                <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                                    d="M9,2 v14" />
+                            </svg>
+                        </sp-action-button>
+                    </div>
+                    <sp-action-button id="btn-feather-options-h" quiet class="split-button-dropdown icon-only"
+                        style="display:none;" title="Feather options">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18" slot="icon">
+                            <path fill="currentColor"
+                                d="M4,7.01a1,1,0,0,1,1.7055-.7055l3.289,3.286,3.289-3.286a1,1,0,0,1,1.437,1.3865l-.0245.0245L9.7,11.7075a1,1,0,0,1-1.4125,0L4.293,7.716A.9945.9945,0,0,1,4,7.01Z" />
+                        </svg>
+                    </sp-action-button>
+                </div>
+                <sp-label id="feather-status-label" class="feather-status-label">Off</sp-label>
+            </div>
+
+            <!-- Feather Bias Vertical (shown when cards are side-by-side in horizontal layout) -->
+            <div class="split-button-container compact-feather vertical feather-panel-vertical"
+                id="feather-panel-vertical">
+                <div class="feather-button-group vertical">
+                    <sp-action-button data-value="off" selected quiet class="icon-only feather-btn" title="Off">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" slot="icon">
+                            <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                                opacity="0.3" stroke-width="1" />
+                            <rect x="2" y="4" width="7" height="10" fill="currentColor" />
+                            <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                                d="M9,2 v14" />
+                        </svg>
+                    </sp-action-button>
+                    <sp-action-button data-value="1" quiet class="icon-only feather-btn" title="Outward">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" slot="icon">
+                            <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                                opacity="0.3" stroke-width="1" />
+                            <rect x="2" y="4" width="7" height="10" fill="currentColor" />
+                            <rect x="9" y="4" width="1.4" height="10" fill="currentColor" opacity="0.8" />
+                            <rect x="10.4" y="4" width="1.4" height="10" fill="currentColor" opacity="0.6" />
+                            <rect x="11.8" y="4" width="1.4" height="10" fill="currentColor" opacity="0.4" />
+                            <rect x="13.2" y="4" width="1.4" height="10" fill="currentColor" opacity="0.25" />
+                            <rect x="14.6" y="4" width="1.4" height="10" fill="currentColor" opacity="0.1" />
+                            <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                                d="M9,2 v14" />
+                        </svg>
+                    </sp-action-button>
+                    <sp-action-button data-value="0" quiet class="icon-only feather-btn" title="Center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" slot="icon">
+                            <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                                opacity="0.3" stroke-width="1" />
+                            <rect x="2" y="4" width="2.5" height="10" fill="currentColor" />
+                            <rect x="4.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.85" />
+                            <rect x="6" y="4" width="1.5" height="10" fill="currentColor" opacity="0.7" />
+                            <rect x="7.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.55" />
+                            <rect x="9" y="4" width="1.5" height="10" fill="currentColor" opacity="0.4" />
+                            <rect x="10.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.25" />
+                            <rect x="12" y="4" width="1.5" height="10" fill="currentColor" opacity="0.1" />
+                            <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                                d="M9,2 v14" />
+                        </svg>
+                    </sp-action-button>
+                    <sp-action-button data-value="-1" quiet class="icon-only feather-btn" title="Inward">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" slot="icon">
+                            <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                                opacity="0.3" stroke-width="1" />
+                            <rect x="2" y="4" width="1.2" height="10" fill="currentColor" />
+                            <rect x="3.2" y="4" width="1.2" height="10" fill="currentColor" opacity="0.85" />
+                            <rect x="4.4" y="4" width="1.2" height="10" fill="currentColor" opacity="0.7" />
+                            <rect x="5.6" y="4" width="1.2" height="10" fill="currentColor" opacity="0.55" />
+                            <rect x="6.8" y="4" width="1.2" height="10" fill="currentColor" opacity="0.35" />
+                            <rect x="8" y="4" width="1" height="10" fill="currentColor" opacity="0.15" />
+                            <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                                d="M9,2 v14" />
+                        </svg>
+                    </sp-action-button>
+                </div>
+                <sp-action-button id="btn-feather-options-v" quiet class="split-button-dropdown icon-only"
+                    style="display:none;" title="Feather options">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 0 18 18" width="18" slot="icon">
+                        <path fill="currentColor"
+                            d="M10.99,4a1,1,0,0,1,.7055,1.7055l-3.286,3.289,3.286,3.289a1,1,0,0,1-1.3865,1.437l-.0245-.0245L6.2925,9.7a1,1,0,0,1,0-1.4125L10.284,4.293A.9945.9945,0,0,1,10.99,4Z" />
+                    </svg>
+                </sp-action-button>
             </div>
         </div>
 
@@ -298,6 +436,7 @@
                                         Larger File Size</sp-menu-item>
                                     <sp-menu-item value="maskSmartObject">Custom Inpaint
                                         Mask</sp-menu-item>
+                                    <sp-menu-item value="restoreSelection">Restore Selection</sp-menu-item>
                                 </sp-menu>
                             </div>
                         </div>
@@ -325,12 +464,20 @@
 
             <sp-divider size="small" style="margin-top: 12px; margin-bottom: 12px;"></sp-divider>
 
+            <sp-body style="margin-bottom: 8px;">General Features:</sp-body>
+            <div style="margin-bottom: 6px;">
+                <sp-checkbox id="settings-show-feather">Show Feather Bias controls</sp-checkbox>
+            </div>
+
+            <sp-divider size="small" style="margin-top: 12px; margin-bottom: 12px;"></sp-divider>
+
             <sp-body style="margin-bottom: 4px;">Photoshop Helper Token:</sp-body>
             <sp-detail style="display: block; margin-bottom: 8px; opacity: 0.7;">
                 Normally filled in automatically. Only needed if the panel reports that the
                 Helper is not paired — copy it from the Helper tray menu, Access Tokens.
             </sp-detail>
-            <sp-textfield id="settings-helper-token" placeholder="Leave empty for automatic pairing" style="width: 100%;"></sp-textfield>
+            <sp-textfield id="settings-helper-token" placeholder="Leave empty for automatic pairing"
+                style="width: 100%;"></sp-textfield>
             <div id="settings-helper-token-status" class="settings-token-status"></div>
 
             <sp-divider size="small" style="margin-top: 12px; margin-bottom: 12px;"></sp-divider>

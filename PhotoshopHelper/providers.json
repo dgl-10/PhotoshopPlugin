@@ -1887,6 +1887,83 @@
                     "default": "pro"
                 }
             ]
+        },
+        {
+            "id": "pruna_p_image_replicate",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "P-Image via Replicate ($0.005 T2I / $0.01 I2I)",
+            "nice_name": "P-Image (Replicate)",
+            "filename_suffix": "pruna_p_image",
+            "image_format": "data_uri",
+            "max_reference_images": 4,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            // "mask_handling": {
+            //     "supported": false,
+            //     "required": false
+            // },
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image"
+            },
+            "allowed_aspect_ratios": [
+                "1:1",
+                "16:9",
+                "9:16",
+                "4:3",
+                "3:4",
+                "3:2",
+                "2:3"
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                "{{?!source_image}}endpoint_url": "https://api.replicate.com/v1/models/prunaai/p-image/predictions",
+                "{{?source_image}}endpoint_url": "https://api.replicate.com/v1/models/prunaai/p-image-edit/predictions",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:REPLICATE_API_KEY}}"
+                },
+                "body_template": {
+                    "input": {
+                        "prompt": "{{prompt}}",
+                        "prompt_upsampling": false,
+                        "disable_safety_checker": true,
+                        // T2I
+                        "{{?!source_image}}aspect_ratio": "{{aspect_ratio}}",
+                        // I2I
+                        "{{?source_image}}images": [
+                            "{{source_image}}",
+                            "{{resolved_image_array}}"
+                        ],
+                        "{{?source_image && aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                        "{{?source_image && !aspect_ratio}}aspect_ratio": "match_input_image",
+                        "{{?source_image}}turbo": "{{turbo}}"
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "replicate"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "turbo",
+                    "type": "boolean",
+                    "label": "Turbo (I2I only). Disable for complex edits",
+                    "default": false
+                }
+            ]
         }
     ]
 }

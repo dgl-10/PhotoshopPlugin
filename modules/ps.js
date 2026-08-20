@@ -745,17 +745,405 @@ async function encodeToPNGBase64(pixelData, width, height, components) {
 }
 
 /**
- * Place result image back into Photoshop
- * Creates Smart Object with layer mask and Gaussian blur
+ * Tuning for the mask edge softening (feathering) applied during place back.
+ *
+ * Softening the mask edge creates a smooth transition between the generated fragment
+ * and the original image, making the seam invisible.
+ */
+const MASK_FEATHER = {
+    // Enable or disable the entire edge-softening workflow.
+    enabled: false,
+
+    // Controls the shift of the transition relative to the original selection edge.
+    //  1.0 = Push transition entirely outward (grows the mask). Keeps the selected area 100% replaced.
+    //  0.0 = Center transition on the edge (half inward, half outward).
+    // -1.0 = Pull transition entirely inward (shrinks the mask).
+    bias: 1.0,
+
+    // Starting feather radius calculated as a fraction of the shorter side of the captured image
+    // (e.g., 0.015 is 1.5% of the shorter dimension).
+    relative: 0.015,
+
+    // Minimum feather radius in pixels. If the calculated radius is smaller than this,
+    // softening is skipped to avoid useless micro-blurs.
+    minRadius: 2,
+
+    // Maximum cap for the feather radius in pixels, preventing excessive blur on large documents.
+    maxRadius: 20,
+
+    // Max fraction of the available padding (the space between the mask boundary and the capture edge)
+    // that the transition can occupy. This prevents the blur from getting cut off at the edge of the layer.
+    paddingShare: 0.4,
+
+    // Max fraction of the selection's smallest dimension that can be eaten by the blur.
+    // This prevents small selections from being completely blurred out.
+    selectionShare: 0.25
+};
+
+/**
+ * Find the bounding box of the visible part of a grayscale mask.
+ * @returns {?object} {left, top, right, bottom} in buffer coordinates, or null if empty
+ */
+function measureMaskBox(buffer, width, height, threshold = 128) {
+    let left = width;
+    let top = height;
+    let right = -1;
+    let bottom = -1;
+
+    for (let y = 0; y < height; y++) {
+        const row = y * width;
+        for (let x = 0; x < width; x++) {
+            if (buffer[row + x] >= threshold) {
+                if (x < left) left = x;
+                if (x > right) right = x;
+                if (y < top) top = y;
+                if (y > bottom) bottom = y;
+            }
+        }
+    }
+
+    return right < 0 ? null : { left, top, right, bottom };
+}
+
+/**
+ * Grayscale dilation (enlargement / expansion): Expands (thickens) the white areas of the mask outward by `radius` pixels.
+ * (Note: This is "dilation" as in expanding/widening/enlargement)
+ * 
+ * Implemented efficiently using two separable sliding window maximum passes with a
+ * monotonic queue, meaning execution time is constant O(1) relative to the radius.
+ * 
+ * @returns {Uint8Array} A new buffer; the input is left untouched.
+ */
+function dilateMask(buffer, width, height, radius) {
+    const r = Math.max(1, Math.round(radius));
+    const horizontal = new Uint8Array(width * height);
+    const result = new Uint8Array(width * height);
+    const queue = new Int32Array(Math.max(width, height));
+
+    for (let y = 0; y < height; y++) {
+        const row = y * width;
+        let head = 0;
+        let tail = 0;
+
+        for (let x = 0; x < width + r; x++) {
+            if (x < width) {
+                const value = buffer[row + x];
+                while (tail > head && buffer[row + queue[tail - 1]] <= value) tail--;
+                queue[tail++] = x;
+            }
+
+            const target = x - r;
+            if (target >= 0) {
+                while (queue[head] < target - r) head++;
+                horizontal[row + target] = buffer[row + queue[head]];
+            }
+        }
+    }
+
+    for (let x = 0; x < width; x++) {
+        let head = 0;
+        let tail = 0;
+
+        for (let y = 0; y < height + r; y++) {
+            if (y < height) {
+                const value = horizontal[y * width + x];
+                while (tail > head && horizontal[queue[tail - 1] * width + x] <= value) tail--;
+                queue[tail++] = y;
+            }
+
+            const target = y - r;
+            if (target >= 0) {
+                while (queue[head] < target - r) head++;
+                result[target * width + x] = horizontal[queue[head] * width + x];
+            }
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Grayscale erosion (shrinking / reduction): Shrinks (thins) the white areas of the mask inward by `radius` pixels.
+ * (Note: This is "erosion" as in wearing away/shrinking/reduction)
+ * 
+ * Done by inverting the mask, dilating (expanding) it, and inverting back.
+ * 
+ * @returns {Uint8Array} A new buffer; the input is left untouched.
+ */
+function erodeMask(buffer, width, height, radius) {
+    const inverted = new Uint8Array(buffer.length);
+    for (let i = 0; i < buffer.length; i++) {
+        inverted[i] = 255 - buffer[i];
+    }
+
+    const grown = dilateMask(inverted, width, height, radius);
+    for (let i = 0; i < grown.length; i++) {
+        grown[i] = 255 - grown[i];
+    }
+
+    return grown;
+}
+
+/**
+ * Work out how far the mask edge may be softened.
+ *
+ * The transition spreads roughly +-radius around the edge, and pushing it fully outside
+ * moves it another `radius` out, so it needs about twice the radius in free space. That
+ * space is the ring between the selection and the border of the captured area. If the
+ * transition ran past that border it would be cut off by the edge of the placed layer,
+ * which shows up as a straight soft line - worse than the seam we are trying to hide.
+ *
+ * Sides on the document border do not drive `radius` (a clipped transition there is
+ * invisible), but outward `offset` is still capped by the real gap on every side.
+ * Otherwise a 5px strip of original next to the canvas is swallowed by a 15px expand.
+ *
+ * @param {Uint8Array} buffer - Grayscale mask
+ * @param {object} freeSides - {left, top, right, bottom}: false for sides that sit on the
+ *        document border, where a clipped transition is invisible anyway
+ * @returns {object} {radius, offset} in pixels; radius 0 means no softening
+ */
+function resolveMaskFeather(buffer, width, height, freeSides, overrides = {}) {
+    const config = Object.assign({}, MASK_FEATHER, overrides);
+    const none = { radius: 0, offset: 0 };
+
+    if (!config.enabled) {
+        console.log('[Feather] Disabled (enabled=false), skipping mask softening.');
+        return none;
+    }
+
+    const box = measureMaskBox(buffer, width, height);
+    if (!box) {
+        console.log('[Feather] Mask is empty, skipping.');
+        return none;
+    }
+
+    const gapLeft = box.left;
+    const gapTop = box.top;
+    const gapRight = width - 1 - box.right;
+    const gapBottom = height - 1 - box.bottom;
+    const physical = Math.min(gapLeft, gapTop, gapRight, gapBottom);
+
+    const visibleGaps = [];
+    if (!freeSides || freeSides.left) visibleGaps.push(gapLeft);
+    if (!freeSides || freeSides.top) visibleGaps.push(gapTop);
+    if (!freeSides || freeSides.right) visibleGaps.push(gapRight);
+    if (!freeSides || freeSides.bottom) visibleGaps.push(gapBottom);
+
+    // All sides sit on the document border: a clipped transition cannot be seen
+    const padding = visibleGaps.length > 0 ? Math.min(...visibleGaps) : Math.max(width, height);
+    const selectionSide = Math.min(box.right - box.left + 1, box.bottom - box.top + 1);
+
+    const radius = Math.floor(Math.min(
+        config.relative * Math.min(width, height),
+        config.maxRadius,
+        padding * config.paddingShare,
+        selectionSide * config.selectionShare
+    ));
+
+    if (radius < config.minRadius) {
+        console.log(`[Feather] Not enough room (padding=${padding}px, selection=${selectionSide}px), skipping.`);
+        return none;
+    }
+
+    let offset = Math.round(radius * config.bias);
+    // Outward growth cannot exceed the real buffer gap on any side, including
+    // document-aligned ones that were ignored when picking radius.
+    if (offset > physical) {
+        offset = physical;
+    }
+
+    console.log(`[Feather] radius=${radius}px, offset=${offset}px, padding=${padding}px, gap=${physical}px, selection=${selectionSide}px`);
+    return { radius, offset };
+}
+
+/**
+ * Prepares mask buffer, computes feather/offset, applies dilation/erosion if needed,
+ * and creates a grayscale PhotoshopImageData instance.
+ * @param {object} doc - Active Photoshop document
+ * @param {object} bounds - Capture bounds {left, top, width, height}
+ * @param {object} maskImageData - Mask ImageData (or buffer container)
+ * @param {object} [featherOptions={}] - Feather configuration overrides
+ * @returns {Promise<{psImageData: PhotoshopImageData, feather: {radius: number, offset: number}, maskWidth: number, maskHeight: number, maskBuffer: Uint8Array}>}
+ */
+async function prepareMaskBufferAndImageData(doc, bounds, maskImageData, featherOptions = {}) {
+    let maskBuffer, maskWidth, maskHeight;
+
+    if (maskImageData.imageData instanceof Uint8Array) {
+        // Direct buffer from capture
+        maskBuffer = maskImageData.imageData;
+        maskWidth = maskImageData.width;
+        maskHeight = maskImageData.height;
+    } else if (maskImageData.getData) {
+        // PhotoshopImageData object
+        maskBuffer = new Uint8Array(await maskImageData.getData());
+        maskWidth = maskImageData.width;
+        maskHeight = maskImageData.height;
+    } else {
+        throw new Error("Invalid mask data format");
+    }
+
+    console.log(`Mask dimensions: ${maskWidth}x${maskHeight}, buffer size: ${maskBuffer.length}`);
+
+    // Soften the mask edge so the generated fragment does not meet the original
+    // image along a hard step. A capture side on the document border does not
+    // drive the feather radius (clipping there is invisible), but growth is
+    // still capped by the real gap so a near-edge strip is not swallowed.
+    const freeSides = {
+        left: bounds.left > 0,
+        top: bounds.top > 0,
+        right: bounds.left + maskWidth < doc.width,
+        bottom: bounds.top + maskHeight < doc.height
+    };
+    const feather = resolveMaskFeather(maskBuffer, maskWidth, maskHeight, freeSides, featherOptions);
+
+    if (feather.offset !== 0) {
+        // Move the edge before feathering, so the transition ends up where the
+        // bias asks for it. Positive offset grows the mask (transition lands in
+        // the padding ring instead of eating into the area the user asked to
+        // replace), negative shrinks it. Both return a new buffer, leaving the
+        // cached capture intact.
+        maskBuffer = feather.offset > 0
+            ? dilateMask(maskBuffer, maskWidth, maskHeight, feather.offset)
+            : erodeMask(maskBuffer, maskWidth, maskHeight, -feather.offset);
+    }
+
+    // Create proper PhotoshopImageData for the mask (grayscale)
+    const psImageData = await imaging.createImageDataFromBuffer(maskBuffer, {
+        width: maskWidth,
+        height: maskHeight,
+        components: 1,  // Masks are grayscale
+        chunky: false,
+        colorProfile: "Gray Gamma 2.2",
+        colorSpace: "Grayscale"
+    });
+
+    return { psImageData, feather, maskWidth, maskHeight, maskBuffer };
+}
+
+/**
+ * Applies a layer mask to the specified layer and sets its feather property.
+ * @param {object} doc - Active Photoshop document
+ * @param {object} layer - Target layer
+ * @param {PhotoshopImageData} psImageData - Prepared mask image data
+ * @param {object} bounds - Original capture bounds
+ * @param {number} maskWidth - Mask width in pixels
+ * @param {number} maskHeight - Mask height in pixels
+ * @param {number} [featherRadius=0] - Mask feather radius in pixels
+ */
+async function applyLayerMaskToLayer(doc, layer, psImageData, bounds, maskWidth, maskHeight, featherRadius = 0) {
+    // First create an empty mask (reveal all / hide all)
+    await action.batchPlay([
+        {
+            _obj: "make",
+            at: { _ref: "channel", _enum: "channel", _value: "mask" },
+            new: { _class: "channel" },
+            using: { _enum: "userMaskEnabled", _value: "hideAll" }
+        }
+    ], { synchronousExecution: true });
+
+    // Put the mask data with correct target bounds
+    await imaging.putLayerMask({
+        documentID: doc.id,
+        layerID: layer.id,
+        imageData: psImageData,
+        targetBounds: {
+            left: bounds.left,
+            top: bounds.top,
+            right: bounds.left + maskWidth,
+            bottom: bounds.top + maskHeight
+        }
+    });
+
+    if (featherRadius > 0) {
+        // Photoshop's own mask feather: it stays live, so the user can still
+        // drag the Feather slider in Properties without redoing the place back.
+        try {
+            layer.layerMaskFeather = featherRadius;
+        } catch (featherError) {
+            console.warn("Could not set layer mask feather:", featherError);
+        }
+    }
+}
+
+/**
+ * Restores selection in the document based on maskImageData and featherOptions without modifying layers.
+ * @param {object} doc - Active Photoshop document
+ * @param {object} bounds - Original capture bounds {left, top, width, height}
+ * @param {object} [maskImageData] - Mask ImageData or buffer
+ * @param {object} [featherOptions={}] - Feather configuration overrides
+ */
+async function restoreSelection(doc, bounds, maskImageData, featherOptions = {}) {
+    console.log("Restoring selection from mask data...");
+
+    if (maskImageData) {
+        const { psImageData, feather } = await prepareMaskBufferAndImageData(doc, bounds, maskImageData, featherOptions);
+
+        await imaging.putSelection({
+            documentID: doc.id,
+            imageData: psImageData,
+            replace: true,
+            targetBounds: {
+                left: bounds.left,
+                top: bounds.top
+            }
+        });
+
+        if (feather.radius > 0) {
+            console.log(`Applying native selection feather: ${feather.radius}px...`);
+            try {
+                await action.batchPlay([
+                    {
+                        _obj: "feather",
+                        radius: {
+                            _unit: "pixelsUnit",
+                            _value: feather.radius
+                        },
+                        applyEffectAtCanvasBounds: false,
+                        _options: {
+                            dialogOptions: "dontDisplay"
+                        }
+                    }
+                ], { synchronousExecution: true });
+            } catch (featherError) {
+                console.warn("Native selection feather failed:", featherError);
+            }
+        }
+    } else if (bounds) {
+        // Fallback: restore rectangular selection matching bounds
+        console.log("No mask data provided, restoring rectangular selection from bounds:", bounds);
+        await action.batchPlay([
+            {
+                _obj: "set",
+                _target: [{ _ref: "channel", _enum: "channel", _value: "selection" }],
+                to: {
+                    _obj: "rectangle",
+                    top: { _unit: "pixelsUnit", _value: bounds.top },
+                    left: { _unit: "pixelsUnit", _value: bounds.left },
+                    bottom: { _unit: "pixelsUnit", _value: bounds.bottom !== undefined ? bounds.bottom : (bounds.top + bounds.height) },
+                    right: { _unit: "pixelsUnit", _value: bounds.right !== undefined ? bounds.right : (bounds.left + bounds.width) }
+                }
+            }
+        ], { synchronousExecution: true });
+    }
+}
+
+/**
+ * Place result image back into Photoshop or restore selection
+ * Creates Smart Object with optional layer mask and feathering, or restores selection
+ * @param {'so'|'editableSo'|'mask'|'selection'} placeBackMode - Placement mode ('so' for fast standard placement, 'editableSo' for editable Smart Object, 'mask' for editable Smart Object with native document mask, 'selection' to restore selection only)
  * @param {string} fileToken - Session token for result file
  * @param {object} bounds - Original capture bounds {left, top, width, height}
- * @param {object} maskData - The mask ImageData
+ * @param {object} [maskImageData] - The mask ImageData (or null if no mask)
+ * @param {object} [featherOptions={}] - Overrides for the mask edge softening; see MASK_FEATHER
+ *        for the defaults and the meaning of each field. Pass `{ enabled: false }` to place
+ *        the mask with a hard edge, as it was before this option existed.
  */
-async function placeBack(placeBackMode, fileToken, bounds, maskImageData) {
+async function placeBack(placeBackMode, fileToken, bounds, maskImageData, featherOptions = {}) {
     const doc = app.activeDocument;
 
-    const applyPlaceBackAsMask = placeBackMode == 'mask';
-    const CREATE_EDITABLE_SMART_OBJECTS = applyPlaceBackAsMask || placeBackMode == 'editableSo';
+    const isSelectionOnly = placeBackMode === 'selection';
+    const applyPlaceBackAsMask = placeBackMode === 'mask';
+    const CREATE_EDITABLE_SMART_OBJECTS = applyPlaceBackAsMask || placeBackMode === 'editableSo';
 
     await core.executeAsModal(async (executionContext) => {
         const hostControl = executionContext.hostControl;
@@ -764,23 +1152,30 @@ async function placeBack(placeBackMode, fileToken, bounds, maskImageData) {
         // Suspend history for single undo
         const suspensionID = await hostControl.suspendHistory({
             documentID: documentID,
-            name: "Place Back FromPS/ToPS"
+            name: isSelectionOnly ? "Restore Selection FromPS" : "Place Back FromPS/ToPS"
         });
 
-        console.log("Starting Place Back operation...");
+        console.log(`Starting Place Back operation (mode: ${placeBackMode})...`);
         console.log("File Token:", fileToken ? "Present" : "Missing");
         console.log("Bounds:", JSON.stringify(bounds));
         console.log("Mask Data:", maskImageData ? "Present" : "Missing");
+        const effectiveFeatherConfig = Object.assign({}, MASK_FEATHER, featherOptions);
+        console.log("Feather Config:", JSON.stringify(effectiveFeatherConfig));
 
         try {
+            if (isSelectionOnly) {
+                await restoreSelection(doc, bounds, maskImageData, featherOptions);
+                return;
+            }
+
             // Step 1 to 3: Placement & Transformation
             let placedImageWidth = 0;
             let placedImageHeight = 0;
 
             if (CREATE_EDITABLE_SMART_OBJECTS) {
                 // NEW PATH: High-Res Editable Smart Object via Temp Document 
-                // usefull when pasted image is larger than the document. 
-                // it's prevets from automatic resizing of pasted image
+                // useful when pasted image is larger than the document. 
+                // it prevents automatic resizing of pasted image
                 console.log("Using High-Res Editable Smart Object path...");
                 const result = await placeAsEditableSmartObject(fileToken, bounds, doc);
                 placedImageWidth = result.placedImageWidth;
@@ -877,64 +1272,13 @@ async function placeBack(placeBackMode, fileToken, bounds, maskImageData) {
                 }
             }
 
-
             // Step 4: Apply layer mask from captured mask
             if (maskImageData && !applyPlaceBackAsMask) {
                 try {
                     console.log("Step 4: Applying mask...");
-
-                    // Extract raw grayscale data from maskImageData
-                    let maskBuffer, maskWidth, maskHeight;
-
-                    if (maskImageData.imageData instanceof Uint8Array) {
-                        // Direct buffer from capture
-                        maskBuffer = maskImageData.imageData;
-                        maskWidth = maskImageData.width;
-                        maskHeight = maskImageData.height;
-                    } else if (maskImageData.getData) {
-                        // PhotoshopImageData object
-                        maskBuffer = new Uint8Array(await maskImageData.getData());
-                        maskWidth = maskImageData.width;
-                        maskHeight = maskImageData.height;
-                    } else {
-                        throw new Error("Invalid mask data format");
-                    }
-
-                    console.log(`Mask dimensions: ${maskWidth}x${maskHeight}, buffer size: ${maskBuffer.length}`);
-
-                    // Create proper PhotoshopImageData for the mask (grayscale)
-                    const psImageData = await imaging.createImageDataFromBuffer(maskBuffer, {
-                        width: maskWidth,
-                        height: maskHeight,
-                        components: 1,  // Masks are grayscale
-                        chunky: false,
-                        colorProfile: "Gray Gamma 2.2",
-                        colorSpace: "Grayscale"
-                    });
-
-                    // First create an empty mask (reveal all)
-                    await action.batchPlay([
-                        {
-                            _obj: "make",
-                            at: { _ref: "channel", _enum: "channel", _value: "mask" },
-                            new: { _class: "channel" },
-                            using: { _enum: "userMaskEnabled", _value: "hideAll" }
-                        }
-                    ], { synchronousExecution: true });
-
-                    // Put the mask data with correct target bounds
+                    const maskPrep = await prepareMaskBufferAndImageData(doc, bounds, maskImageData, featherOptions);
                     const updatedLayer = doc.activeLayers[0];
-                    await imaging.putLayerMask({
-                        documentID: doc.id,
-                        layerID: updatedLayer.id,
-                        imageData: psImageData,
-                        targetBounds: {
-                            left: bounds.left,
-                            top: bounds.top,
-                            right: bounds.left + maskWidth,
-                            bottom: bounds.top + maskHeight
-                        }
-                    });
+                    await applyLayerMaskToLayer(doc, updatedLayer, maskPrep.psImageData, bounds, maskPrep.maskWidth, maskPrep.maskHeight, maskPrep.feather.radius);
                 } catch (maskError) {
                     console.error("Step 4 Failed (Mask):", maskError);
                     throw new Error(`Failed to apply mask: ${maskError.message}`);
@@ -988,7 +1332,6 @@ async function placeBack(placeBackMode, fileToken, bounds, maskImageData) {
                 }
             }
 
-
         } catch (fatalError) {
             console.error("PlaceBack Fatal Error:", fatalError);
             throw fatalError;
@@ -997,7 +1340,7 @@ async function placeBack(placeBackMode, fileToken, bounds, maskImageData) {
             await hostControl.resumeHistory(suspensionID);
         }
 
-    }, { commandName: "Place Back FromPS/ToPS" });
+    }, { commandName: isSelectionOnly ? "Restore Selection FromPS" : "Place Back FromPS/ToPS" });
 }
 
 /**
@@ -1307,5 +1650,6 @@ module.exports = {
     captureSelection,
     imageDataToDataURL,
     placeBack,
-    getActiveLayerInfo
+    getActiveLayerInfo,
+    MASK_FEATHER
 };

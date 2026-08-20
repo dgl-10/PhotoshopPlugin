@@ -20,6 +20,7 @@ let capturedPayload = null;  // Stores captured image, mask, bounds, context
 let resultImage = null;      // Stores loaded result image data
 let resultFilePath = null;   // Native path to result file
 let resultFileToken = null;  // Session token for result file
+let currentFeatherOptions = { enabled: false }; // Mask feathering bias settings
 
 // Shown when PhotoshopHelper is reachable but rejects this plugin's credentials. It is a
 // distinct case from the Helper being absent, and needs a different fix from the user.
@@ -137,7 +138,10 @@ function setupEventListeners() {
     });
     setupDropdownMenu('btn-place-back-options', 'place-back-options-menu', (value) => {
         console.log('Place back mode changed to:', value);
-        const mode = value == 'maskSmartObject' ? 'mask' : value == 'smartObjectSlow' ? 'editableSo' : 'so';
+        updatePlaceButtonState();
+        const mode = value == 'maskSmartObject' ? 'mask' :
+            value == 'smartObjectSlow' ? 'editableSo' :
+                value == 'restoreSelection' ? 'selection' : 'so';
         handlePlaceBack(mode);
     });
 
@@ -153,18 +157,104 @@ function setupEventListeners() {
     document.getElementById('btn-place-back').addEventListener('click', () => {
         const menu = document.querySelector('#place-back-options-menu sp-menu');
         const value = menu ? menu.value : 'smartObjectFast';
-        const mode = value == 'maskSmartObject' ? 'mask' : value == 'smartObjectSlow' ? 'editableSo' : 'so';
+        const mode = value == 'maskSmartObject' ? 'mask' :
+            value == 'smartObjectSlow' ? 'editableSo' :
+                value == 'restoreSelection' ? 'selection' : 'so';
         handlePlaceBack(mode);
     });
     document.getElementById('btn-clear-tops').addEventListener('click', handleClearToPS);
 
-    // NOT works: pastes image direcrly to phoshop active image. No good!
-    // // Keyboard shortcut for paste
-    // document.addEventListener('keydown', (e) => {
-    //     if (e.ctrlKey && e.key === 'v') {
-    //         handlePaste();
-    //     }
-    // });
+    // Setup Feather Bias segmented buttons
+    setupFeatherControls();
+}
+
+/**
+ * Apply feather panel visibility based on user settings
+ */
+function applyFeatherVisibility() {
+    const isShown = settings.getShowFeatherPanel();
+    const container = document.getElementById('middle-controls-container');
+    if (container) {
+        if (isShown) {
+            container.classList.remove('feather-hidden');
+            container.classList.add('feather-visible');
+        } else {
+            container.classList.remove('feather-visible');
+            container.classList.add('feather-hidden');
+        }
+    }
+}
+
+const FEATHER_LABELS = {
+    'off': 'Off',
+    '1': 'Outward',
+    '0': 'Center',
+    '-1': 'Inward'
+};
+
+/**
+ * Update the Feather segmented buttons UI to reflect the active selection
+ * @param {string} value - 'off', '1', '0', or '-1'
+ */
+function setFeatherButtonsUI(value) {
+    const strVal = String(value);
+    const featherButtons = document.querySelectorAll('.feather-btn');
+    featherButtons.forEach(b => {
+        if (b.dataset.value === strVal) {
+            b.setAttribute('selected', '');
+            b.classList.add('selected');
+        } else {
+            b.removeAttribute('selected');
+            b.classList.remove('selected');
+        }
+    });
+
+    const statusLabel = document.getElementById('feather-status-label');
+    if (statusLabel) {
+        statusLabel.textContent = FEATHER_LABELS[strVal] || 'Off';
+    }
+}
+
+/**
+ * Setup Feather Bias segmented buttons (sync horizontal and vertical panels)
+ */
+function setupFeatherControls() {
+    // Initial load from settings
+    const stored = settings.getFeatherSettings();
+    currentFeatherOptions = Object.assign({}, stored);
+
+    // Sync initial UI state: if enabled is true, bias is 1; if enabled is false, off
+    if (!currentFeatherOptions.enabled) {
+        setFeatherButtonsUI('off');
+    } else {
+        const valStr = currentFeatherOptions.bias !== undefined ? String(currentFeatherOptions.bias) : '1';
+        setFeatherButtonsUI(valStr);
+    }
+
+    const featherButtons = document.querySelectorAll('.feather-btn');
+    featherButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const val = btn.dataset.value;
+            setFeatherButtonsUI(val);
+
+            if (val === 'off') {
+                currentFeatherOptions.enabled = false;
+                currentFeatherOptions.bias = 1.0;
+                settings.saveFeatherSettings(currentFeatherOptions);
+            } else {
+                currentFeatherOptions.enabled = true;
+                currentFeatherOptions.bias = parseFloat(val);
+                // Save enabled state, keeping bias locked to 1.0 in persistent settings
+                settings.saveFeatherSettings(Object.assign({}, currentFeatherOptions, { bias: 1.0 }));
+            }
+        });
+    });
+
+    // Apply initial panel visibility and listen for changes from Settings dialog
+    applyFeatherVisibility();
+    settings.onSettingsChanged(() => {
+        applyFeatherVisibility();
+    });
 }
 
 /**
@@ -810,7 +900,7 @@ async function handlePlaceBack(mode = 'so') {
         return;
     }
 
-    if (!resultImage || !resultFileToken) {
+    if (mode !== 'selection' && (!resultImage || !resultFileToken)) {
         ui.showError('tops', 'No result image loaded');
         return;
     }
@@ -821,15 +911,29 @@ async function handlePlaceBack(mode = 'so') {
     }
 
     try {
-        ui.showInfo('tops', 'Placing...');
+        // Determine effective feather options
+        const isFeatherVisible = settings.getShowFeatherPanel();
+        let effectiveFeather;
+        if (!isFeatherVisible) {
+            effectiveFeather = Object.assign({}, settings.getFeatherSettings(), { enabled: false });
+        } else {
+            effectiveFeather = Object.assign({}, settings.getFeatherSettings(), currentFeatherOptions);
+        }
 
         // Place back into Photoshop
         await ps.placeBack(
             mode,
             resultFileToken,
             capturedPayload.bounds,
-            capturedPayload.maskData
+            capturedPayload.maskData,
+            effectiveFeather
         );
+
+        // Auto-reset rule: if feather was visible, enabled, and had non-default bias (0 or -1), reset to 1.0
+        if (isFeatherVisible && currentFeatherOptions.enabled && currentFeatherOptions.bias !== 1.0) {
+            currentFeatherOptions.bias = 1.0;
+            setFeatherButtonsUI('1');
+        }
 
         // Detect platform dynamically to show proper keyboard shortcut
         let isMac = false;
@@ -841,7 +945,10 @@ async function handlePlaceBack(mode = 'so') {
         }
         const undoShortcut = isMac ? 'Cmd+Z' : 'Ctrl+Z';
 
-        ui.showInfo('tops', `Placed successfully! ${undoShortcut} to undo.`);
+        const successMessage = mode === 'selection'
+            ? `Selection restored! ${undoShortcut} to undo.`
+            : `Placed successfully! ${undoShortcut} to undo.`;
+        ui.showInfo('tops', successMessage);
 
     } catch (error) {
         console.error('Place back error:', error);
@@ -864,9 +971,9 @@ function handleClearToPS() {
  * Update Place Back button enabled state
  */
 function updatePlaceButtonState() {
-    // Enable if we have a result image.
-    // If capture data is missing, clicking will show a helpful error.
-    const hasData = resultImage || resultFileToken;
+    const menu = document.querySelector('#place-back-options-menu sp-menu');
+    const isSelectionOnly = menu && menu.value === 'restoreSelection';
+    const hasData = isSelectionOnly ? !!capturedPayload : !!(resultImage || resultFileToken);
     ui.setPlaceButtonEnabled(!!hasData);
 }
 
