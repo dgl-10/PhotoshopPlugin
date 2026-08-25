@@ -180,13 +180,117 @@ async function regeneratePluginToken() {
  * @returns {Promise<string>} The local service API token.
  */
 async function getLocalApiToken() {
-    const configured = process.env.LOCAL_GENERATION_API_TOKEN;
+    const configured = process.env.PHOTOSHOP_HELPER_LOCAL_API_TOKEN;
 
     if (typeof configured === 'string' && configured.trim() !== '') {
         return configured.trim();
     }
 
     return getOrCreateSecret('localApiToken');
+}
+
+/**
+ * Replace the local service API secret with a freshly generated one.
+ *
+ * @returns {Promise<string>} The newly generated local service API token.
+ */
+async function regenerateLocalApiToken() {
+    const store = await storePromise;
+    const created = generateToken();
+    store.set('localApiToken', created);
+    return created;
+}
+
+/**
+ * Save a token to the current user's OS environment variables.
+ *
+ * On Windows, writes to HKCU\Environment via PowerShell and broadcasts WM_SETTINGCHANGE.
+ *
+ * @param {string} token - Secret token value to persist.
+ * @param {string} [varName='PHOTOSHOP_HELPER_LOCAL_API_TOKEN'] - Environment variable name.
+ * @returns {{ success: boolean, varName: string, error?: string, unsupported?: boolean }} Result of the operation.
+ */
+function saveTokenToUserEnvironment(token, varName = 'PHOTOSHOP_HELPER_LOCAL_API_TOKEN') {
+    if (!token || typeof token !== 'string') {
+        return { success: false, varName, error: 'Invalid token value.' };
+    }
+
+    if (process.platform === 'win32') {
+        const { spawnSync } = require('node:child_process');
+        try {
+            const result = spawnSync('powershell.exe', [
+                '-NoProfile',
+                '-ExecutionPolicy', 'Bypass',
+                '-Command',
+                '& { param($name, $val) [System.Environment]::SetEnvironmentVariable($name, $val, [System.EnvironmentVariableTarget]::User) }',
+                varName,
+                token
+            ], {
+                windowsHide: true,
+                encoding: 'utf-8'
+            });
+
+            if (result.error) {
+                return { success: false, varName, error: result.error.message };
+            }
+
+            if (result.status !== 0) {
+                return { success: false, varName, error: result.stderr || `Exit code ${result.status}` };
+            }
+
+            return { success: true, varName };
+        } catch (error) {
+            return { success: false, varName, error: error.message };
+        }
+    }
+
+    return {
+        success: false,
+        varName,
+        unsupported: true,
+        error: 'Automatic environment export is supported on Windows. On macOS/Linux, add the export to your shell profile (~/.zshrc or ~/.bash_profile).'
+    };
+}
+
+/**
+ * Read the current value of PHOTOSHOP_HELPER_LOCAL_API_TOKEN from the Windows
+ * User Environment store (HKCU\Environment), bypassing the current process.env.
+ *
+ * This is used to determine whether the token has already been exported by the
+ * user, and whether the stored value still matches the active token.
+ *
+ * On platforms other than Windows, always returns null.
+ *
+ * @param {string} [varName='PHOTOSHOP_HELPER_LOCAL_API_TOKEN'] - Environment variable name.
+ * @returns {string | null} The stored value, or null if absent / unsupported platform.
+ */
+function getTokenFromUserEnvironment(varName = 'PHOTOSHOP_HELPER_LOCAL_API_TOKEN') {
+    if (process.platform !== 'win32') {
+        return null;
+    }
+
+    const { spawnSync } = require('node:child_process');
+    try {
+        const result = spawnSync('powershell.exe', [
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-Command',
+            '& { param($name) [System.Environment]::GetEnvironmentVariable($name, [System.EnvironmentVariableTarget]::User) }',
+            varName
+        ], {
+            windowsHide: true,
+            encoding: 'utf-8'
+        });
+
+        if (result.error || result.status !== 0) {
+            return null;
+        }
+
+        const value = (result.stdout || '').trim();
+        return value !== '' ? value : null;
+    } catch {
+        return null;
+    }
 }
 
 module.exports = {
@@ -201,6 +305,9 @@ module.exports = {
     getPluginToken,
     regeneratePluginToken,
     getLocalApiToken,
+    regenerateLocalApiToken,
+    saveTokenToUserEnvironment,
+    getTokenFromUserEnvironment,
     INITIAL_DONATION_THRESHOLD,
     DONATED_THRESHOLD: DONATED_NEW_DONATION_THRESHOLD,
     HARDCORE_UNPAID_THRESHOLD,
@@ -208,5 +315,6 @@ module.exports = {
     ENABLE_HARDCORE_FOR_DONORS,
     HARDCORE_DONOR_THRESHOLD
 };
+
 
 

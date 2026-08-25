@@ -78,7 +78,7 @@ const { generate } = require('./apiGenerator');
 const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
 const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
-const { getPluginToken, regeneratePluginToken, getLocalApiToken } = require('./user-settings');
+const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment } = require('./user-settings');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -132,6 +132,12 @@ loadNebulaSecrets();
 const packageJson = require('./package.json');
 const PORT = 18345;
 const VERSION = packageJson.version;
+
+// Feature flag for /api/file/save endpoint (arbitrary file save).
+// Security guard: always forced to false in packaged/installed builds (app.isPackaged).
+// In development (!app.isPackaged), you can toggle IS_FILE_SAVE_ENABLED_DEV to test.
+const IS_FILE_SAVE_ENABLED_DEV = false;
+const IS_FILE_SAVE_ENABLED = !app.isPackaged && IS_FILE_SAVE_ENABLED_DEV;
 
 // Global references
 let tray = null;
@@ -226,24 +232,156 @@ function updateTrayMenu() {
         }
     );
 
+    // Query HKCU\Environment once synchronously so the checkbox reflects the real state.
+    const userEnvToken = getTokenFromUserEnvironment();
+    const isTokenSavedInUserEnv = userEnvToken !== null && userEnvToken === localApiToken;
+
     menuTemplate.push(
         { type: 'separator' },
         {
             label: 'Access Tokens',
             submenu: [
                 {
-                    label: 'Copy Plugin Pairing Token',
-                    click: () => {
-                        clipboard.writeText(pluginToken);
-                    }
-                },
-                {
                     label: 'Copy Local API Token',
                     click: () => {
                         clipboard.writeText(localApiToken);
                     }
                 },
+                {
+                    // Checkbox reflects whether the current active token is already
+                    // saved to HKCU\Environment and matches the value in use.
+                    label: isTokenSavedInUserEnv ? 'Token Saved in User Environment' : 'Save Token to User Environment...',
+                    type: 'checkbox',
+                    checked: isTokenSavedInUserEnv,
+                    click: async () => {
+                        if (isTokenSavedInUserEnv) {
+                            // Token is already saved and up-to-date – inform and do nothing.
+                            await dialog.showMessageBox({
+                                type: 'info',
+                                buttons: ['OK'],
+                                defaultId: 0,
+                                title: 'Token Already Saved',
+                                message: 'PHOTOSHOP_HELPER_LOCAL_API_TOKEN is already saved in your User Environment.',
+                                detail: 'The stored value matches the active token. No action is needed.'
+                            });
+                            return;
+                        }
+
+                        // Token is not saved yet, or the stored value is stale – prompt to save.
+                        const { response } = await dialog.showMessageBox({
+                            type: 'info',
+                            buttons: ['Save to Environment', 'Cancel'],
+                            defaultId: 0,
+                            cancelId: 1,
+                            title: 'Save Token to User Environment',
+                            message: 'Save the Local API token to your User Environment Variables?',
+                            detail: 'This sets PHOTOSHOP_HELPER_LOCAL_API_TOKEN in your user account environment so newly launched terminals, scripts, and AI agents (MCP) can access the Local Generation API automatically.'
+                        });
+
+                        if (response !== 0) {
+                            return;
+                        }
+
+                        const result = saveTokenToUserEnvironment(localApiToken);
+                        if (result.success) {
+                            await dialog.showMessageBox({
+                                type: 'info',
+                                buttons: ['OK'],
+                                defaultId: 0,
+                                title: 'Token Saved',
+                                message: 'Token saved to User Environment Variables.',
+                                detail: 'PHOTOSHOP_HELPER_LOCAL_API_TOKEN has been set for your user account.\n\nNote: Any already opened terminal windows or IDEs will need to be restarted to pick up the new variable.'
+                            });
+                            // Rebuild the tray menu so the checkbox reflects the new state.
+                            updateTrayMenu();
+                        } else {
+                            await dialog.showMessageBox({
+                                type: 'error',
+                                buttons: ['OK'],
+                                defaultId: 0,
+                                title: 'Failed to Save Token',
+                                message: 'Could not save token to User Environment Variables.',
+                                detail: result.error || 'Unknown error occurred.'
+                            });
+                        }
+                    }
+                },
+                {
+                    label: 'Copy Env Var Name (PHOTOSHOP_HELPER_LOCAL_API_TOKEN)',
+                    click: () => {
+                        clipboard.writeText('PHOTOSHOP_HELPER_LOCAL_API_TOKEN');
+                    }
+                },
+                {
+                    label: 'Regenerate Local API Token...',
+                    visible: false,
+                    click: async () => {
+                        const isOverridden = !!(process.env.PHOTOSHOP_HELPER_LOCAL_API_TOKEN);
+                        if (isOverridden) {
+                            await dialog.showMessageBox({
+                                type: 'info',
+                                buttons: ['OK'],
+                                defaultId: 0,
+                                title: 'Local API Token',
+                                message: 'Token is managed via environment variable / .env',
+                                detail: 'A token is currently set in your environment or .env file (PHOTOSHOP_HELPER_LOCAL_API_TOKEN). To change it, update your environment or .env file directly and restart Photoshop Helper.'
+                            });
+                            return;
+                        }
+
+                        const { response } = await dialog.showMessageBox({
+                            type: 'warning',
+                            buttons: ['Regenerate', 'Cancel'],
+                            defaultId: 1,
+                            cancelId: 1,
+                            title: 'Regenerate Local API Token',
+                            message: 'Regenerate the Local API token?',
+                            detail: 'The current token stops working immediately. Any external scripts or tools using this token will need to be updated with the new token.'
+                        });
+
+                        if (response !== 0) {
+                            return;
+                        }
+
+                        try {
+                            localApiToken = await regenerateLocalApiToken();
+                            clipboard.writeText(localApiToken);
+
+                            const envPrompt = await dialog.showMessageBox({
+                                type: 'info',
+                                buttons: ['Update Environment Variable', 'Copy Only'],
+                                defaultId: 0,
+                                cancelId: 1,
+                                title: 'Token Regenerated',
+                                message: 'New Local API token generated and copied to clipboard.',
+                                detail: 'Do you also want to update PHOTOSHOP_HELPER_LOCAL_API_TOKEN in your Windows User Environment Variables?'
+                            });
+
+                            if (envPrompt.response === 0) {
+                                const saveResult = saveTokenToUserEnvironment(localApiToken);
+                                if (saveResult.success) {
+                                    await dialog.showMessageBox({
+                                        type: 'info',
+                                        buttons: ['OK'],
+                                        defaultId: 0,
+                                        title: 'Environment Updated',
+                                        message: 'Environment variable updated successfully.',
+                                        detail: 'PHOTOSHOP_HELPER_LOCAL_API_TOKEN was updated in your user environment.\n\nRestart active terminal windows or IDEs to apply the change.'
+                                    });
+                                }
+                            }
+                        } catch (error) {
+                            log.error('Failed to regenerate the local API token:', error);
+                        }
+                    }
+                },
                 { type: 'separator' },
+                {
+                    label: 'Copy Plugin Pairing Token',
+                    click: () => {
+                        clipboard.writeText(pluginToken);
+                    }
+                },
                 {
                     label: 'Re-pair Plugin Now',
                     click: () => {
@@ -667,6 +805,15 @@ function startHttpServer() {
 
     // POST /api/file/save - Save file (renaming if exists)
     expressApp.post('/api/file/save', (req, res) => {
+        if (!IS_FILE_SAVE_ENABLED) {
+            return res.status(403).json({
+                success: false,
+                supported: false,
+                code: 'FEATURE_DISABLED',
+                error: 'Endpoint /api/file/save is disabled for security reasons'
+            });
+        }
+
         try {
             const { path: targetPath, data } = req.body;
 

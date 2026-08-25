@@ -359,7 +359,7 @@
                     <dd>Saves the black-and-white selection mask.</dd>
                   </div>
                   <div>
-                    <dt>Both<sup class="helper-mark" aria-label="Requires Photoshop Helper">*</sup></dt>
+                    <dt>Both</dt>
                     <dd>Saves image and mask as separate PNG files.</dd>
                   </div>
                 </dl>
@@ -426,9 +426,9 @@
 
           <div class="reference-grid">
             <figure class="detail-figure">
-              <img src="assets/place-modes.png" alt="ToPS ready state and the three Place Back modes" width="567"
+              <img src="assets/place-modes.png" alt="ToPS initial state and the four Place Back modes" width="567"
                 height="610" />
-              <figcaption>A loaded result on the left; Place Back modes on the right.</figcaption>
+              <figcaption>Initial ToPS state on the left; loaded result with Place Back modes on the right.</figcaption>
             </figure>
 
             <div class="control-list">
@@ -468,7 +468,13 @@
                   </div>
                   <div>
                     <dt>Custom Inpaint Mask</dt>
-                    <dd>Designed for B&amp;W inpaint masks. Inserts the mask as a hidden Smart Object; <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + click its layer thumbnail to reload the selection.</dd>
+                    <dd>Designed for B&amp;W inpaint masks. Inserts the mask as a hidden Smart Object;
+                      <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + click its layer thumbnail to reload the selection.</dd>
+                  </div>
+                  <div>
+                    <dt>Restore Selection</dt>
+                    <dd>Restores the original capture selection (or bounds) and feathering back into the active
+                      Photoshop document without inserting a new layer.</dd>
                   </div>
                 </dl>
               </div>
@@ -508,7 +514,9 @@
 
             <article class="global-card">
               <figure class="settings-figure">
-                <img src="assets/settings.png" alt="Allowed Aspect Ratios settings dialog" width="586" height="590" />
+                <img src="assets/settings.png"
+                  alt="Plugin Settings dialog with aspect ratios, general features, and helper token" width="586"
+                  height="590" />
                 <!-- Highlight frame for native panel menu icon -->
                 <div class="menu-focus-rect" aria-hidden="true"></div>
               </figure>
@@ -525,19 +533,29 @@
                   </div>
                   <div>
                     <dt>Settings…</dt>
-                    <dd>Opens the allowed aspect-ratio list shown above.</dd>
+                    <dd>Opens the settings dialog shown on the right.</dd>
                   </div>
                   <div>
                     <dt>Checkboxes</dt>
-                    <dd>Enable the ratios you want the plugin to recognize.</dd>
+                    <dd>Enable the aspect ratios you want the plugin to recognize.</dd>
                   </div>
                   <div>
                     <dt>Up / Down</dt>
                     <dd>Change the order in which enabled ratios are evaluated.</dd>
                   </div>
                   <div>
+                    <dt>Feather Bias</dt>
+                    <dd>Enables the Feather Bias controls between cards for fine-tuning mask edge expansion and
+                      softness.</dd>
+                  </div>
+                  <div>
+                    <dt>Helper Token</dt>
+                    <dd>Manual token entry to pair with Photoshop Helper if automatic pairing fails (shows pairing
+                      status).</dd>
+                  </div>
+                  <div>
                     <dt>Save</dt>
-                    <dd>Stores the ratio configuration locally.</dd>
+                    <dd>Stores ratio configuration, feature toggles, and token overrides locally.</dd>
                   </div>
                 </dl>
               </div>
@@ -618,10 +636,6 @@
             </p>
             <ul class="helper-actions" aria-label="Actions that require Photoshop Helper">
               <li>
-                <strong>Save two files at once</strong>
-                <span>Image + mask in one action</span>
-              </li>
-              <li>
                 <strong>Use the system clipboard</strong>
                 <span>Copy Image, Copy Mask, and Paste</span>
               </li>
@@ -636,8 +650,8 @@
             </ul>
             <p class="helper-independent">
               <strong>Works without Helper:</strong> anything performed directly inside Photoshop, including Capture
-              and Place Back; panel controls such as history, Clear, and Settings; and single-file operations such as
-              Load File, Image Only, and Mask Only.
+              and Place Back; panel controls such as history, Clear, and Settings; and saving files (Image Only, Mask
+              Only, and Both) or Load File.
             </p>
             <p class="helper-independent">
               <strong>Pairing:</strong> the plugin and Photoshop Helper authenticate to each other with a token that
