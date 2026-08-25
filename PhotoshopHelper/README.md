@@ -38,7 +38,7 @@ NEBULA_CS=XAI_API_KEY=XAI_API_KEY,FAL_API_KEY=FAL_API_KEY...
 # Standard key injection via environment variables is also supported.
 
 # Local server authentication (optional — see "Access control" below).
-LOCAL_GENERATION_API_TOKEN=
+PHOTOSHOP_HELPER_LOCAL_API_TOKEN=
 WEBHELPER_ACCESS_PASSWORD=
 ```
 
@@ -60,7 +60,7 @@ WebHelper works from its own page without any setup.
 - 🔓 **Open** — no credential required.
 - 🔌 **Plugin token** — the dedicated secret paired into the Photoshop plugin.
 - 🌐 **WebHelper** — same-origin browser request, or the plugin token.
-- 🔑 **Local API token** — the separate `LOCAL_GENERATION_API_TOKEN` secret.
+- 🔑 **Local API token** — the `PHOTOSHOP_HELPER_LOCAL_API_TOKEN` secret.
 
 ### 🛠 Core & System
 - 🔓 `GET /api/status` — Check server status, version, and retrieve update alerts.
@@ -79,7 +79,7 @@ WebHelper works from its own page without any setup.
   - Accepts `image` (single file) or `images` (array).
 
 ### 💾 File System
-- 🔌 `POST /api/file/save` — Save an image to disk with automatic filename conflict resolution (`image_1.png`, `image_2.png`). Accepts any absolute destination path, so it is restricted to the plugin token rather than to a fixed directory.
+- 🔌 `POST /api/file/save` — Save an image to disk with automatic filename conflict resolution (`image_1.png`, `image_2.png`). Accepts any absolute destination path, so it is restricted to the plugin token rather than to a fixed directory. Currently disabled (`403`, `FEATURE_DISABLED`) in packaged builds; in development it stays off unless the source flag is flipped.
 
 ### 🌐 WebHelper (AI API)
 - 🌐 `GET /webhelper` — Entry point for the web UI (SPA).

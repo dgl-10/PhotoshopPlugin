@@ -46,9 +46,11 @@ settings, not shared between the levels above:
 - The **plugin token** is delivered automatically into the Photoshop plugin's private
   UXP data folder, so it exists as a file readable by any process running as the same
   Windows/macOS user. It guards only the sandbox-escape endpoints (clipboard, drag,
-  file save) and is never sufficient to trigger a paid generation.
-- The **local service API token** (`LOCAL_GENERATION_API_TOKEN`) guards `/api/local/v1/*`
-  and any future local MCP server built on the same router. It is configured
+  file save) and is never sufficient to trigger a paid generation. Arbitrary file saving
+  via `/api/file/save` is additionally forced off in packaged builds, even with a valid
+  plugin token.
+- The **local service API token** (`PHOTOSHOP_HELPER_LOCAL_API_TOKEN`) guards `/api/local/v1/*`
+  and any local MCP server or automated scripts built on the same router. It is configured
   independently so that a leak of the plugin token cannot be used to spend API credits.
 
 Cross-origin browser requests are also rejected outright: the server reflects only its

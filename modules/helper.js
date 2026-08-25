@@ -123,12 +123,14 @@ function toErrorResult(response, result) {
     if (response.status === 401 || response.status === 503) {
         return {
             success: false,
+            code: 'HELPER_NOT_PAIRED',
             error: 'HELPER_NOT_PAIRED'
         };
     }
 
     return {
         success: false,
+        code: (result && result.code) || null,
         error: (result && result.error) || `HTTP ${response.status}`
     };
 }
@@ -144,12 +146,14 @@ function toThrownResult(error) {
     if (error.name === 'TypeError' || error.message.includes('fetch') || error.message.includes('network')) {
         return {
             success: false,
+            code: 'HELPER_NOT_RUNNING',
             error: 'HELPER_NOT_RUNNING'
         };
     }
 
     return {
         success: false,
+        code: null,
         error: error.message
     };
 }

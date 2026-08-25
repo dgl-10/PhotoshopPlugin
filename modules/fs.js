@@ -139,10 +139,10 @@ async function saveMask(maskData, defaultName = 'mask.png') {
 }
 
 /**
- * Save both image and mask (single dialog for image, auto-save map)
+ * Save both image and mask (single dialog for image, auto-save mask via helper)
  * @param {object} capturePayload 
  * @param {string} defaultName - Suggested name for the main image
- * @returns {Promise<boolean>}
+ * @returns {Promise<{success: boolean, cancelled?: boolean, imageSaved?: boolean, maskSaved?: boolean, maskError?: string}>}
  */
 async function saveImageAndMask(capturePayload, defaultName = 'capture.png') {
     try {
@@ -151,7 +151,9 @@ async function saveImageAndMask(capturePayload, defaultName = 'capture.png') {
             types: ['png']
         });
 
-        if (!imageFile) return false; // User cancelled
+        if (!imageFile) {
+            return { success: false, cancelled: true }; // User cancelled
+        }
 
         // 2. Save the main image locally
         // If we have cached PNG base64, write it directly — avoids re-encoding restored imageData
@@ -163,6 +165,9 @@ async function saveImageAndMask(capturePayload, defaultName = 'capture.png') {
         }
 
         // 3. Save the mask via helper (if exists)
+        let maskSaved = true;
+        let maskError = null;
+
         if (capturePayload.maskData) {
             // Construct mask path based on the chosen image path
             const imagePath = imageFile.nativePath;
@@ -176,10 +181,19 @@ async function saveImageAndMask(capturePayload, defaultName = 'capture.png') {
             const maskBase64 = await imageUtils.maskDataToBase64(capturePayload.maskData);
 
             // Save via helper (handles existence check and renaming)
-            await helper.saveViaHelper(maskPath, maskBase64);
+            const saveResult = await helper.saveViaHelper(maskPath, maskBase64);
+            if (!saveResult || !saveResult.success) {
+                maskSaved = false;
+                maskError = (saveResult && (saveResult.code || saveResult.error)) || 'FAILED';
+            }
         }
 
-        return true;
+        return {
+            success: true,
+            imageSaved: true,
+            maskSaved,
+            maskError
+        };
 
     } catch (error) {
         console.error('Error saving image and mask:', error);

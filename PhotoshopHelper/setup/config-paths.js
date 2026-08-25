@@ -11,7 +11,7 @@ const path = require('node:path');
  * spread across main.js and other modules.
  */
 function getConfigPaths() {
-    if (app.isPackaged) {
+    if (app && app.isPackaged) {
         const userDataPath = app.getPath('userData');
         return {
             envPath:        path.join(userDataPath, '.env'),

@@ -536,12 +536,29 @@ async function handleSaveAndMask() {
         // We now pass a default filename with extension to getFileForSaving
         const defaultName = `${safeName}.png`;
 
-        const success = await fsModule.saveImageAndMask(capturedPayload, defaultName);
+        const result = await fsModule.saveImageAndMask(capturedPayload, defaultName);
 
-        if (success) {
-            ui.showInfo('fromps', 'Image and mask saved successfully');
-        } else {
+        if (!result || result.cancelled) {
             ui.clearStatus('fromps'); // User cancelled
+            return;
+        }
+
+        if (result.maskSaved) {
+            ui.showInfo('fromps', 'Image and mask saved successfully');
+        } else if (capturedPayload.maskData) {
+            // Mask auto-save via Helper was not possible (e.g. disabled or helper offline).
+            // Fallback: prompt the user with a file picker dialog to save the mask directly via UXP.
+            ui.showInfo('fromps', 'Image saved. Choose location for mask...');
+            const maskDefaultName = `${safeName}_mask.png`;
+            const maskSaved = await fsModule.saveMask(capturedPayload.maskData, maskDefaultName);
+
+            if (maskSaved) {
+                ui.showInfo('fromps', 'Image and mask saved successfully');
+            } else {
+                ui.showInfo('fromps', 'Image saved (mask save cancelled)');
+            }
+        } else {
+            ui.showInfo('fromps', 'Image saved successfully');
         }
     } catch (error) {
         if (error.message && error.message.startsWith('MASK_EXISTS')) {
@@ -549,7 +566,7 @@ async function handleSaveAndMask() {
             ui.showError('fromps', `Mask exists: ${maskName}`);
         } else {
             console.error('Save both error:', error);
-            ui.showError('fromps', 'Failed to save files');
+            ui.showError('fromps', error.message || 'Failed to save files');
         }
     }
 }
