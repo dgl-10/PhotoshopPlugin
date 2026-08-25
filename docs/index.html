@@ -79,9 +79,7 @@
             result back, aligned, masked, and non-destructive.
           </p>
           <div class="hero-actions">
-            <a class="btn btn-primary btn-lg"
-              href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-Setup-1.0.5.exe"
-              data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-Setup-{version}.exe">
+            <a class="btn btn-primary btn-lg" href="#download-win">
               <span class="btn-icon" aria-hidden="true">⊞</span>
               Download for Windows
             </a>
@@ -280,76 +278,115 @@
           </p>
         </div>
 
-        <div class="dl-grid">
-          <article class="dl-card">
-            <div class="dl-os">Windows</div>
-            <h3>Windows 10 / 11 · x64</h3>
-            <p>Standard installer. Automatic updates included.</p>
-            <a class="btn btn-primary btn-block"
-              href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-Setup-1.0.5.exe"
-              data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-Setup-{version}.exe"
-              data-version-template="Download .exe · {version}">
-              Download .exe · 1.0.5
-            </a>
-            <details class="install-help">
-              <summary>Windows SmartScreen note</summary>
-              <p>
-                Because this is a source-available project without a paid code-signing certificate,
-                Windows may show <em>“Windows protected your PC”</em>. That is expected.
-              </p>
-              <ol>
-                <li>Click <strong>More info</strong>.</li>
-                <li>Click <strong>Run anyway</strong>.</li>
-              </ol>
-            </details>
-          </article>
+        <div class="download-layout">
+          <div class="download-side-downloads">
+            <article class="dl-card" id="download-win">
+              <div class="dl-os">Windows</div>
+              <h3>Windows 10 / 11 · x64</h3>
+              <p>Standard installer. Automatic updates included.</p>
+              <a class="btn btn-primary btn-block"
+                href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-Setup-1.0.5.exe"
+                data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-Setup-{version}.exe"
+                data-version-template="Download .exe · {version}">
+                Download .exe · 1.0.5
+              </a>
+              <details class="install-help">
+                <summary>Windows SmartScreen note</summary>
+                <p>
+                  Because this is a source-available project without a paid code-signing certificate,
+                  Windows may show <em>“Windows protected your PC”</em>. That is expected.
+                </p>
+                <ol>
+                  <li>Click <strong>More info</strong>.</li>
+                  <li>Click <strong>Run anyway</strong>.</li>
+                </ol>
+              </details>
+            </article>
 
-          <article class="dl-card" id="download-mac">
-            <div class="dl-os">macOS</div>
-            <h3>Experimental unsigned build</h3>
-            <p>Provided as-is. Prefer the Apple Silicon DMG on M1/M2/M3/M4 Macs.</p>
-            <div class="btn-stack">
-              <a class="btn btn-secondary btn-block"
-                href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-1.0.5-arm64.dmg"
-                data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-{version}-arm64.dmg">
-                Apple Silicon · .dmg
-              </a>
-              <a class="btn btn-ghost btn-block"
-                href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-1.0.5.dmg"
-                data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-{version}.dmg">
-                Intel Mac · .dmg
-              </a>
+            <article class="dl-card" id="download-mac">
+              <div class="dl-os">macOS</div>
+              <h3>Experimental unsigned build</h3>
+              <p>Provided as-is. Prefer Apple Silicon on M1–M4 Macs.</p>
+              <div class="btn-stack">
+                <a class="btn btn-secondary btn-block"
+                  href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-1.0.5-arm64.dmg"
+                  data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-{version}-arm64.dmg">
+                  Apple Silicon · .dmg
+                </a>
+                <a class="btn btn-ghost btn-block"
+                  href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v1.0.5/PhotoshopHelper-1.0.5.dmg"
+                  data-version-href="https://github.com/dgl-10/PhotoshopPlugin/releases/download/v{version}/PhotoshopHelper-{version}.dmg">
+                  Intel Mac · .dmg
+                </a>
+              </div>
+              <details class="install-help">
+                <summary>macOS Gatekeeper note</summary>
+                <p>
+                  The macOS build is currently unsigned. Gatekeeper may say the app is damaged
+                  or from an unidentified developer.
+                </p>
+                <ol>
+                  <li>Download the <strong>.dmg</strong> (not the .zip — zip is for auto-update internals).</li>
+                  <li>Open the DMG and drag <strong>PhotoshopHelper</strong> to Applications.</li>
+                  <li><strong>Right-click → Open</strong> the app the first time, then confirm Open.</li>
+                  <li>If it still fails, Terminal:
+                    <code>xattr -cr /Applications/PhotoshopHelper.app</code>
+                  </li>
+                </ol>
+              </details>
+            </article>
+          </div>
+
+          <div class="quickstart" id="after-download">
+            <div class="quickstart-header">
+              <span class="quickstart-badge">Quick start guide</span>
+              <h3>What to do after download</h3>
             </div>
-            <details class="install-help">
-              <summary>macOS Gatekeeper note</summary>
+            <ol class="quickstart-steps">
+              <li>
+                <div class="quickstart-step-body">
+                  <div class="quickstart-step-title">Install and launch PhotoshopHelper</div>
+                  <p>Run the downloaded installer. PhotoshopHelper starts silently and lives in your system tray.</p>
+                </div>
+              </li>
+              <li>
+                <div class="quickstart-step-body">
+                  <div class="quickstart-step-title">Install the Photoshop Plugin via <code>plugin.ccx</code></div>
+                  <p>
+                    On first launch, PhotoshopHelper opens the Setup Wizard — click <strong>“Open Plugin Folder”</strong>
+                    and double-click <strong><code>plugin.ccx</code></strong>. Adobe Creative Cloud Desktop will
+                    automatically install and activate the plugin in <strong>Adobe Photoshop 2024+</strong>.
+                  </p>
+                  <p class="quickstart-hint">
+                    <em>Window didn’t appear?</em> Right-click the PhotoshopHelper icon in the system tray (or menu bar on macOS) and choose <strong>Settings…</strong> to open it anytime.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <div class="quickstart-step-body">
+                  <div class="quickstart-step-title">Open the panel in Photoshop</div>
+                  <p>
+                    In Photoshop menu, open <span class="mono">Plugins → FromPS / ToPS</span>. PhotoshopHelper pairs with
+                    the plugin automatically in the background — zero token setup required.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <div class="quickstart-step-body">
+                  <div class="quickstart-step-title">Capture, generate &amp; place back</div>
+                  <p>
+                    Make a selection in Photoshop, click <strong>Capture Selection</strong>, drag or copy the image &amp; mask to your AI tool, and click <strong>Place Back</strong> when done.
+                  </p>
+                </div>
+              </li>
+            </ol>
+            <div class="quickstart-note">
+              <span class="quickstart-note-icon" aria-hidden="true">💡</span>
               <p>
-                The macOS build is currently unsigned. Gatekeeper may say the app is damaged
-                or from an unidentified developer.
+                <strong>No API keys needed for browser workflow:</strong> Drag-and-drop into ChatGPT, Midjourney, or Gemini works right away. WebHelper is only needed if you want direct API generation using your own keys.
               </p>
-              <ol>
-                <li>Download the <strong>.dmg</strong> (not the .zip — zip is for auto-update internals).</li>
-                <li>Open the DMG and drag <strong>PhotoshopHelper</strong> to Applications.</li>
-                <li><strong>Right-click → Open</strong> the app the first time, then confirm Open.</li>
-                <li>If it still fails, Terminal:
-                  <code>xattr -cr /Applications/PhotoshopHelper.app</code>
-                </li>
-              </ol>
-            </details>
-          </article>
-        </div>
-
-        <div class="quickstart">
-          <h3>After download</h3>
-          <ol>
-            <li>Install / open <strong>PhotoshopHelper</strong> (it runs in the system tray).</li>
-            <li>Install the plugin into <strong>Adobe Photoshop 2024+</strong>.</li>
-            <li>Open the panel: <span class="mono">Plugins → FromPS / ToPS</span>.</li>
-            <li>Select something. Capture. Drag out. Place back.</li>
-          </ol>
-          <p class="quickstart-note">
-            Browser drag-and-drop needs no API keys. WebHelper only needs a key for the provider you choose.
-            PhotoshopHelper pairs itself with the plugin automatically — no token to copy by hand.
-          </p>
+            </div>
+          </div>
         </div>
       </div>
     </section>

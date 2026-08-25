@@ -456,25 +456,49 @@ async function captureSelection(sourceMode, viaTempDocCreation, fullDocMask = fa
             imageData = await captureSelectionAsBase64PNG(sourceMode, expandedBounds, activeLayer, doc, psImageData, returnedBounds, executionContext);
         } else {
             console.log("Using traditional getPixels method for capture...");
+
+            // Determine if the document requires 8-bit depth or sRGB profile conversion
+            const isHighBitDepth = doc.bitsPerChannel === 16 ||
+                                   doc.bitsPerChannel === 32 ||
+                                   String(doc.bitsPerChannel).includes('16') ||
+                                   String(doc.bitsPerChannel).includes('32');
+
+            const profileName = (doc.colorProfileName || '').toLowerCase();
+            const isWideGamutOrCustom = profileName.includes('prophoto') ||
+                                        profileName.includes('adobe rgb') ||
+                                        profileName.includes('display p3') ||
+                                        profileName.includes('dci-p3') ||
+                                        profileName.includes('wide gamut');
+
+            const pixelOptions = {
+                documentID: doc.id,
+                sourceBounds: expandedBounds,
+                components: 4,
+                applyAlpha: true
+            };
+
+            if (isHighBitDepth) {
+                console.log(`[Capture] High bit depth detected (${doc.bitsPerChannel}). Enforcing componentSize: 8.`);
+                pixelOptions.componentSize = 8;
+            }
+
+            if (isWideGamutOrCustom) {
+                console.log(`[Capture] Wide gamut profile detected (${doc.colorProfileName}). Enforcing sRGB conversion.`);
+                pixelOptions.colorSpace = 'RGB';
+                pixelOptions.colorProfile = 'sRGB IEC61966-2.1';
+            }
+
             if (sourceMode === 'copyMerged') {
                 // Get merged (composite) pixels
-                imageData = await imaging.getPixels({
-                    documentID: doc.id,
-                    sourceBounds: expandedBounds,
-                    components: 4,
-                    applyAlpha: true
-                });
+                imageData = await imaging.getPixels(pixelOptions);
             } else {
                 // Get pixels from current layer only
                 if (!activeLayer) {
                     throw new Error("No active layer");
                 }
                 imageData = await imaging.getPixels({
-                    documentID: doc.id,
-                    layerID: activeLayer.id,
-                    sourceBounds: expandedBounds, // Use expanded bounds
-                    components: 4,
-                    applyAlpha: true
+                    ...pixelOptions,
+                    layerID: activeLayer.id
                 });
             }
         }

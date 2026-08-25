@@ -565,17 +565,22 @@ kbd {
 }
 
 .marker-5 {
-  top: 62%;
+  top: 51.5%;
   left: 7%;
 }
 
 .marker-6 {
-  top: 50.5%;
-  left: 86%;
+  top: calc(62% + 50px);
+  left: 7%;
 }
 
 .marker-7 {
-  top: 86%;
+  top: calc(50.5% + 50px);
+  left: 86%;
+}
+
+.marker-8 {
+  top: calc(86% + 50px);
   left: 50%;
 }
 
@@ -813,6 +818,25 @@ kbd {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   vertical-align: 0.12em;
+}
+
+.feather-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 0.35rem;
+  vertical-align: -4px;
+  color: #e0e0e0;
+  background: #363636;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+}
+
+.feather-badge svg {
+  width: 15px;
+  height: 15px;
 }
 
 /* Asterisks identify controls that cross the UXP sandbox through the companion desktop application. */

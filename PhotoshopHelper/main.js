@@ -80,7 +80,7 @@ const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate
 const { writePairingFile } = require('./plugin-pairing');
 const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment } = require('./user-settings');
 const { getConfigPaths } = require('./setup/config-paths');
-const { handleFirstRun, openSetupWindow } = require('./setup/first-run');
+const { handleFirstRun, openSetupWindow, setPairingRefresher } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
 const { initializeAutoUpdater, cleanupAutoUpdater, getUpdaterMenuItem, getUpdateStatus, getUpdateAlert } = require('./updater');
 
@@ -1396,14 +1396,16 @@ app.whenReady().then(async () => {
         log.info('Initializing auto updater...');
         initializeAutoUpdater(() => updateTrayMenu());
 
-        log.info('Running handleFirstRun...');
-        await handleFirstRun();   // copies templates + shows wizard (packaged only)
-
-        // Resolve both secrets before any route exists, so the server can never come up
-        // in a state where the authentication middleware has nothing to compare against.
+        // Resolve both secrets before any route or setup window exists, so pairing can
+        // occur immediately and the server has credentials ready.
         log.info('Resolving local API credentials...');
         pluginToken = await getPluginToken();
         localApiToken = await getLocalApiToken();
+
+        setPairingRefresher(refreshPluginPairing);
+
+        log.info('Running handleFirstRun...');
+        await handleFirstRun();   // copies templates + shows wizard (packaged only)
 
         log.info('Creating tray icon...');
         await createTray();

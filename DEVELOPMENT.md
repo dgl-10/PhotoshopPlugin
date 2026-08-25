@@ -211,13 +211,15 @@ GET /api/local/v1/generations/:generationId
     -> poll until status is "completed" or "failed"
 ```
 
-`POST /api/local/v1/generations` accepts `providerId`, optional absolute
-`sourceImagePath`/`maskImagePath`, `referenceImagePaths`, `params`, `num_images`,
-`aspect_ratio`, `use_mask`, and `force_separate_requests`. `aspect_ratio` is required
-when the effective request is text-to-image and optional for image-to-image. Supplied
-paths must identify readable regular files; they are read directly and are not copied.
-The caller remains responsible for parameters compatible with the current
-`providers.json`.
+`POST /api/local/v1/generations` accepts either `providerId` (a catalog id from
+the active `providers.json`) or a complete inline `provider` object — not both —
+plus optional absolute `sourceImagePath`/`maskImagePath`, `referenceImagePaths`,
+`params`, `num_images`, `aspect_ratio`, `use_mask`, and `force_separate_requests`.
+`aspect_ratio` is required when the effective request is text-to-image and optional
+for image-to-image. Supplied paths must identify readable regular files; they are
+read directly and are not copied. A `providerId` request must send parameters
+compatible with that catalog entry; an inline `provider` is not looked up in
+discovery.
 
 Every provider explicitly declares a non-empty `generation_modes` array. The current
 runtime implements only `t2i` and `i2i`; video, SVG, and other modality names are
@@ -266,14 +268,17 @@ are documented in `PhotoshopHelper/Providers_Configuration_Guide.md` under
 ### Preparing to release a new version
 
 1. Prepare a new version for the Photoshop plugin (if needed):
-   1. Update the version number in `manifest.json` and update `ps-plugin-version` in `PhotoshopHelper/package.json` to match it. Also update `APP_VERSION` at the top of `docs/script.js` so the GitHub Pages download links and displayed version point to the new release.
+   1. Update the version number in `manifest.json` and update `ps-plugin-version` in `PhotoshopHelper/package.json` to match it.
    2. Run `prepare-package-ccx.bat` (it copies all needed files to the `_PluginToCCX` directory).
    3. Open Adobe UXP Developer Tools, load the plugin from the `_PluginToCCX` directory, and select "Package..." to build the CCX.
    4. Rename the generated package to `plugin.ccx` and move it to the root of the workspace.
 2. Revalidate `PhotoshopHelper/providers.template.json`.
 3. Update the version number in `PhotoshopHelper/package.json`.
-
-4. Build the application installer using one of the following methods:
+4. Update the changelog and documentation:
+   1. Add release information and a summary of changes to `CHANGELOG.md`.
+   2. Review and update all relevant `.md` files (such as `README.md`, `DEVELOPMENT.md`, `SECURITY.md`, `PhotoshopHelper/README.md`, `PhotoshopHelper/Providers_Configuration_Guide.md`, `PhotoshopHelper/Local_Generation_API.md`) if new features, configurations, or changes require updates.
+   3. Review and update the two GitHub Pages in the `docs` folder (`docs/index.html` and `docs/manual/index.html`) if UI features, user guides, or manual instructions need adjustments.
+5. Build the application installer using one of the following methods:
    - **Method A: Local Build (Windows only)**
      1. Run `npm run dist:win` in PowerShell with admin rights.
      2. The installer will be created in the `PhotoshopHelper/dist` folder as `PhotoshopHelper Setup [version].exe`.
@@ -283,6 +288,9 @@ are documented in `PhotoshopHelper/Providers_Configuration_Guide.md` under
      3. Once the workflow completes, go to the **Releases** section on your GitHub repository page.
      4. You will find a new **Draft** release created automatically (containing the installers and `latest.yml` files). 
      5. Edit the draft, add any release notes (you can use the AI assistant's `/generate-release-notes` skill to generate them), and click **Publish release**. As soon as it's published, the auto-updater in the app will detect the new version.
+6. Post-release (Update GitHub Pages):
+   1. Update `APP_VERSION` at the top of `docs/script.js` to match the newly published version so the GitHub Pages download links and displayed version point to the live release.
+   2. Commit and push the changes to update GitHub Pages.
 
 ## 📜 License
 

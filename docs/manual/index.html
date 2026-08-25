@@ -75,8 +75,9 @@
           <a href="#capture-controls"><span>03</span> Capture controls</a>
           <a href="#output-controls"><span>04</span> Send image &amp; mask</a>
           <a href="#place-controls"><span>05</span> Place back</a>
-          <a href="#history-settings"><span>06</span> History &amp; settings</a>
-          <a href="#troubleshooting"><span>07</span> Troubleshooting</a>
+          <a href="#feather-controls"><span>06</span> Feather bias</a>
+          <a href="#history-settings"><span>07</span> History &amp; settings</a>
+          <a href="#troubleshooting"><span>08</span> Troubleshooting</a>
         </nav>
         <p class="sidebar-note">
           Requires Adobe Photoshop 2024 or newer and the FromPS / ToPS panel open.
@@ -206,6 +207,7 @@
               <span class="marker marker-5" aria-hidden="true">5</span>
               <span class="marker marker-6" aria-hidden="true">6</span>
               <span class="marker marker-7" aria-hidden="true">7</span>
+              <span class="marker marker-8" aria-hidden="true">8</span>
             </figure>
 
             <div class="map-legend-groups">
@@ -241,19 +243,28 @@
                 </div>
               </div>
 
-              <!-- Group 3: ToPS controls -->
-              <div class="map-legend-group map-legend-grid-2col">
+              <!-- Group 3: Feather controls -->
+              <div class="map-legend-group">
                 <div class="map-legend-item">
                   <span>5</span>
+                  <div><strong>Feather Bias controls</strong><small>Adjust mask expansion and edge softness between
+                      captures and placements (enabled in Settings).</small></div>
+                </div>
+              </div>
+
+              <!-- Group 4: ToPS controls -->
+              <div class="map-legend-group map-legend-grid-2col">
+                <div class="map-legend-item">
+                  <span>6</span>
                   <div><strong>ToPS preview</strong><small>The external image waiting to be placed back.</small></div>
                 </div>
                 <div class="map-legend-item">
-                  <span>6</span>
+                  <span>7</span>
                   <div><strong>Clear loaded image</strong><small>Removes the incoming image without changing capture
                       history.</small></div>
                 </div>
                 <div class="map-legend-item map-legend-item-full">
-                  <span>7</span>
+                  <span>8</span>
                   <div><strong>Place Back</strong><small>Inserts the incoming image at the active capture's original
                       coordinates.</small></div>
                 </div>
@@ -384,7 +395,7 @@
                 <dl>
                   <div>
                     <dt>Main button</dt>
-                    <dd>Click and drag from the icon into a browser or desktop application.</dd>
+                    <dd>Triggers drag-and-drop or export using the currently selected option.</dd>
                   </div>
                   <div>
                     <dt>Image Only</dt>
@@ -409,9 +420,18 @@
             <figure class="detail-figure">
               <img src="assets/output-modes.png" alt="Save and Drag menus with image and mask output options"
                 width="583" height="610" />
-              <figcaption>Save options on the left; Drag options on the right.</figcaption>
+              <figcaption>Save options on the left; Drag menu and floating drag thumbnail on the right.</figcaption>
             </figure>
           </div>
+
+          <aside class="note">
+            <span class="note-icon" aria-hidden="true">i</span>
+            <p>
+              <strong>Floating drag thumbnail:</strong> For drag options, clicking the Drag button creates a floating
+              preview under your cursor. Grab and drag from this thumbnail directly into your target web or desktop
+              application. If untouched, the preview automatically dismisses after <strong>5 seconds</strong>.
+            </p>
+          </aside>
         </section>
 
         <section class="doc-section" id="place-controls" aria-labelledby="place-controls-title">
@@ -469,7 +489,8 @@
                   <div>
                     <dt>Custom Inpaint Mask</dt>
                     <dd>Designed for B&amp;W inpaint masks. Inserts the mask as a hidden Smart Object;
-                      <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + click its layer thumbnail to reload the selection.</dd>
+                      <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + click its layer thumbnail to reload the selection.
+                    </dd>
                   </div>
                   <div>
                     <dt>Restore Selection</dt>
@@ -482,9 +503,129 @@
           </div>
         </section>
 
-        <section class="doc-section" id="history-settings" aria-labelledby="history-settings-title">
+        <section class="doc-section" id="feather-controls" aria-labelledby="feather-controls-title">
           <div class="section-heading">
             <p class="section-number">06</p>
+            <div>
+              <p class="section-kicker">Middle toolbar</p>
+              <h2 id="feather-controls-title">Feather Bias controls</h2>
+              <p>Adaptive edge blending and live Photoshop layer mask feathering.</p>
+            </div>
+          </div>
+
+          <div class="reference-grid reference-grid-reverse">
+            <div class="control-list">
+              <div class="control-group">
+                <h3>Feather modes</h3>
+                <dl>
+                  <div>
+                    <dt>
+                      <span class="feather-badge" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
+                          <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                            opacity="0.3" stroke-width="1" />
+                          <rect x="2" y="4" width="7" height="10" fill="currentColor" />
+                          <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                            d="M9,2 v14" />
+                        </svg>
+                      </span>
+                      Off <span class="tag">default</span>
+                    </dt>
+                    <dd>Disables mask feathering. Inserts the result with a crisp, exact boundary edge.</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <span class="feather-badge" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
+                          <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                            opacity="0.3" stroke-width="1" />
+                          <rect x="2" y="4" width="7" height="10" fill="currentColor" />
+                          <rect x="9" y="4" width="1.4" height="10" fill="currentColor" opacity="0.8" />
+                          <rect x="10.4" y="4" width="1.4" height="10" fill="currentColor" opacity="0.6" />
+                          <rect x="11.8" y="4" width="1.4" height="10" fill="currentColor" opacity="0.4" />
+                          <rect x="13.2" y="4" width="1.4" height="10" fill="currentColor" opacity="0.25" />
+                          <rect x="14.6" y="4" width="1.4" height="10" fill="currentColor" opacity="0.1" />
+                          <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                            d="M9,2 v14" />
+                        </svg>
+                      </span>
+                      Outward
+                    </dt>
+                    <dd>Shifts the soft transition outward past the selection boundary to blend smoothly into the
+                      surrounding canvas.</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <span class="feather-badge" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
+                          <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                            opacity="0.3" stroke-width="1" />
+                          <rect x="2" y="4" width="2.5" height="10" fill="currentColor" />
+                          <rect x="4.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.85" />
+                          <rect x="6" y="4" width="1.5" height="10" fill="currentColor" opacity="0.7" />
+                          <rect x="7.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.55" />
+                          <rect x="9" y="4" width="1.5" height="10" fill="currentColor" opacity="0.4" />
+                          <rect x="10.5" y="4" width="1.5" height="10" fill="currentColor" opacity="0.25" />
+                          <rect x="12" y="4" width="1.5" height="10" fill="currentColor" opacity="0.1" />
+                          <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                            d="M9,2 v14" />
+                        </svg>
+                      </span>
+                      Center
+                    </dt>
+                    <dd>Centers the soft feathering transition symmetrically across the selection edge (half inside,
+                      half outside).</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <span class="feather-badge" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
+                          <rect x="2" y="3.5" width="14" height="11" rx="1" fill="none" stroke="currentColor"
+                            opacity="0.3" stroke-width="1" />
+                          <rect x="2" y="4" width="1.2" height="10" fill="currentColor" />
+                          <rect x="3.2" y="4" width="1.2" height="10" fill="currentColor" opacity="0.85" />
+                          <rect x="4.4" y="4" width="1.2" height="10" fill="currentColor" opacity="0.7" />
+                          <rect x="5.6" y="4" width="1.2" height="10" fill="currentColor" opacity="0.55" />
+                          <rect x="6.8" y="4" width="1.2" height="10" fill="currentColor" opacity="0.35" />
+                          <rect x="8" y="4" width="1" height="10" fill="currentColor" opacity="0.15" />
+                          <path fill="none" stroke="currentColor" stroke-dasharray="2 1.5" stroke-width="1"
+                            d="M9,2 v14" />
+                        </svg>
+                      </span>
+                      Inward
+                    </dt>
+                    <dd>Pulls the soft transition inward inside the selection, keeping outer canvas edges crisp and
+                      unblended.</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+
+            <figure class="detail-figure">
+              <img src="assets/feather-panel.png" alt="Feather Bias toolbar showing direction modes" width="283"
+                height="116" />
+              <figcaption>Feather Bias toolbar located between the FromPS and ToPS cards.</figcaption>
+            </figure>
+          </div>
+
+          <aside class="note">
+            <span class="note-icon" aria-hidden="true">i</span>
+            <p>
+              <strong>Adaptive &amp; Non-destructive:</strong> The feather radius is automatically computed from the
+              capture
+              padding and selection dimensions so the soft edge never clips at the crop border. It applies to
+              Photoshop's
+              native layer mask <strong>Feather</strong> property, allowing you to freely fine-tune the slider in
+              Photoshop's
+              <strong>Properties</strong> panel at any time. Enable this toolbar via <strong>Settings… → General
+                Features → Show Feather Bias controls</strong>.
+            </p>
+          </aside>
+        </section>
+
+        <section class="doc-section" id="history-settings" aria-labelledby="history-settings-title">
+          <div class="section-heading">
+            <p class="section-number">07</p>
             <div>
               <p class="section-kicker">Global controls</p>
               <h2 id="history-settings-title">History, status, and settings</h2>
@@ -574,7 +715,7 @@
         <!-- Troubleshooting is intentionally short and action-oriented so it remains useful inside an installer. -->
         <section class="doc-section" id="troubleshooting" aria-labelledby="troubleshooting-title">
           <div class="section-heading">
-            <p class="section-number">07</p>
+            <p class="section-number">08</p>
             <div>
               <p class="section-kicker">Fast fixes</p>
               <h2 id="troubleshooting-title">Troubleshooting</h2>

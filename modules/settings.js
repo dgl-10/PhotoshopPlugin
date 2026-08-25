@@ -296,6 +296,8 @@ function renderList(listContainer) {
     });
 }
 
+let tokenStatusPollTimer = null;
+
 /**
  * Show whether the panel currently holds a Helper token.
  *
@@ -304,11 +306,40 @@ function renderList(listContainer) {
  */
 async function refreshTokenStatus() {
     const statusEl = document.getElementById('settings-helper-token-status');
-    if (!statusEl) return;
+    if (!statusEl) return false;
 
     const paired = await helper.isPaired();
     statusEl.textContent = paired ? 'Paired ✓' : 'Not paired — Helper actions are unavailable';
     statusEl.className = paired ? 'settings-token-status is-paired' : 'settings-token-status is-unpaired';
+    return paired;
+}
+
+/**
+ * Start periodic token status polling while settings dialog is open.
+ *
+ * Stops itself as soon as pairing is confirmed — there is nothing left to wait for once
+ * the Helper has written the token, so polling on is just wasted work.
+ */
+function startTokenStatusPolling() {
+    stopTokenStatusPolling();
+    refreshTokenStatus().then(paired => {
+        if (paired) return;
+
+        tokenStatusPollTimer = setInterval(async () => {
+            const nowPaired = await refreshTokenStatus();
+            if (nowPaired) stopTokenStatusPolling();
+        }, 1500);
+    });
+}
+
+/**
+ * Stop periodic token status polling when settings dialog closes.
+ */
+function stopTokenStatusPolling() {
+    if (tokenStatusPollTimer) {
+        clearInterval(tokenStatusPollTimer);
+        tokenStatusPollTimer = null;
+    }
 }
 
 /**
@@ -323,6 +354,10 @@ function initSettings() {
         return;
     }
 
+    dialog.addEventListener('close', () => {
+        stopTokenStatusPolling();
+    });
+
     const btnSave = document.getElementById('btn-settings-save');
     const btnCancel = document.getElementById('btn-settings-cancel');
 
@@ -330,6 +365,7 @@ function initSettings() {
         btnSave.addEventListener('click', (e) => {
             e.preventDefault();
             clearHighlight();
+            stopTokenStatusPolling();
             saveSettings(editingSettings);
 
             const tokenField = document.getElementById('settings-helper-token');
@@ -353,6 +389,7 @@ function initSettings() {
         btnCancel.addEventListener('click', (e) => {
             e.preventDefault();
             clearHighlight();
+            stopTokenStatusPolling();
             dialog.close();
         });
     }
@@ -376,7 +413,7 @@ function showSettingsDialog() {
         if (tokenField) {
             tokenField.value = helper.getManualToken();
         }
-        refreshTokenStatus();
+        startTokenStatusPolling();
 
         const featherCheckbox = document.getElementById('settings-show-feather');
         if (featherCheckbox) {

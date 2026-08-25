@@ -52,6 +52,31 @@ function copyTemplatesIfNeeded() {
 // ---------------------------------------------------------------------------
 
 let wizardWindow = null;
+let onRefreshPairing = null;
+let pairingPollTimer = null;
+
+function setPairingRefresher(fn) {
+    onRefreshPairing = fn;
+}
+
+function startPairingPolling() {
+    stopPairingPolling();
+    if (typeof onRefreshPairing === 'function') {
+        onRefreshPairing();
+        pairingPollTimer = setInterval(() => {
+            if (typeof onRefreshPairing === 'function') {
+                onRefreshPairing();
+            }
+        }, 2500);
+    }
+}
+
+function stopPairingPolling() {
+    if (pairingPollTimer) {
+        clearInterval(pairingPollTimer);
+        pairingPollTimer = null;
+    }
+}
 
 function createFirstRunWizard(isFirstRun, userDataPath, pluginPath, pluginFilePath) {
     if (wizardWindow && !wizardWindow.isDestroyed()) {
@@ -60,7 +85,7 @@ function createFirstRunWizard(isFirstRun, userDataPath, pluginPath, pluginFilePa
 
     wizardWindow = new BrowserWindow({
         width: 670,
-        height: 540,
+        height: 580,
         resizable: false,
         title: isFirstRun ? 'PhotoshopHelper — First Run Setup' : 'PhotoshopHelper — Settings',
         // Center on screen
@@ -75,6 +100,8 @@ function createFirstRunWizard(isFirstRun, userDataPath, pluginPath, pluginFilePa
     });
 
     wizardWindow.isFirstRun = isFirstRun;
+    startPairingPolling();
+
     wizardWindow.loadFile(path.join(__dirname, 'first-run-wizard.html'));
 
     wizardWindow.webContents.once('did-finish-load', () => {
@@ -83,6 +110,10 @@ function createFirstRunWizard(isFirstRun, userDataPath, pluginPath, pluginFilePa
     });
 
     wizardWindow.on('closed', () => {
+        stopPairingPolling();
+        if (typeof onRefreshPairing === 'function') {
+            onRefreshPairing();
+        }
         wizardWindow = null;
     });
 }
@@ -115,6 +146,9 @@ ipcMain.on('wizard-complete', async (event) => {
             await markSetupComplete();
         }
         if (!win.isDestroyed()) win.close();
+    }
+    if (typeof onRefreshPairing === 'function') {
+        onRefreshPairing();
     }
 });
 
@@ -161,4 +195,4 @@ async function openSetupWindow() {
 }
 
 
-module.exports = { handleFirstRun, openSetupWindow };
+module.exports = { handleFirstRun, openSetupWindow, setPairingRefresher };

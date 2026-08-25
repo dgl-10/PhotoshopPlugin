@@ -29,6 +29,8 @@ Because the macOS build is currently unsigned, macOS Gatekeeper will block it by
 4. *(Alternative for advanced users)* If macOS stubbornly blocks the app, open Terminal and run this command to clear the quarantine flag:
    `xattr -cr /Applications/PhotoshopHelper.app`
 
+> 💡 **Next Step:** Once installed, follow the [Quick Start](#️-quick-start) guide below to set up the Photoshop plugin and get started.
+
 ---
 
 ## 🤔 The Problem
@@ -134,6 +136,7 @@ WebHelper is designed as a universal bridge. It includes modular **Response Hand
 - 📋 **One-click copy**: Copy result straight to clipboard and paste into Photoshop
 - 🔁 **Re-generate**: Not happy? Tweak the prompt and generate again — previous results stay
 - ⛓️ **Iterative Chaining**: Launch a new task directly from any generated result to build complex generation chains
+- ✏️ **Text-to-image (T2I)**: Generate from a prompt without a Photoshop capture — choose an aspect ratio and run
 - 🌐 **Works standalone**: WebHelper can also be used independently, without Photoshop
 
 ---
@@ -171,12 +174,12 @@ The helper is not intended to be exposed as a public server. Keep it on localhos
 
 ## 🛠️ Quick Start
 
-1. **Install the Plugin** into Adobe Photoshop 2024+
-2. **Launch PhotoshopHelper** (runs silently in the system tray)
-3. **Open the panel**: Photoshop → Plugins → FromPS / ToPS
-4. Start working! 🎉
+1. **Launch PhotoshopHelper** — Install and run the companion app (it starts silently in your system tray / menu bar).
+2. **Install the Photoshop Plugin (`plugin.ccx`)** — On first launch, the Setup Wizard opens. Click **"Open Plugin Folder"** and double-click **`plugin.ccx`** — Adobe Creative Cloud Desktop will automatically install it into **Adobe Photoshop 2024+**. *(If the window didn't appear, right-click the tray icon and choose **Settings…**)*.
+3. **Open the panel in Photoshop** — Go to `Plugins → FromPS / ToPS`. The companion app pairs with the plugin automatically in the background (no manual token setup required).
+4. **Start working!** 🎉 — Select any area, click **Capture**, drag or copy image & mask into your AI tool, and click **Place Back** when done.
 
-> For WebHelper API generations, you only need the API key for the specific provider you choose to use — just drop it in a `.env` file. The free browser workflow requires no keys at all.
+> **Note:** The free browser drag-and-drop workflow requires **no API keys**. API keys (configured in `.env` via Settings) are only needed if you choose to use WebHelper with direct API providers.
 
 ![PhotoshopHelper running silently in the system tray.](_screenshots/01/14.png)
 

@@ -13,9 +13,6 @@ const PAIRING_FILENAME = 'photoshop-helper.json';
 // Key used when the token has to be entered by hand from the plugin settings dialog.
 const TOKEN_STORAGE_KEY = 'helper-pairing-token';
 
-// Resolved once per panel session — the pairing file does not change while it runs.
-let cachedToken = null;
-
 /**
  * Read the shared secret needed by the Helper's plugin-only endpoints.
  *
@@ -27,15 +24,10 @@ let cachedToken = null;
  * @returns {Promise<string|null>} The token, or null when the plugin is not paired.
  */
 async function getHelperToken() {
-    if (cachedToken) {
-        return cachedToken;
-    }
-
     try {
         const manualToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
         if (manualToken) {
-            cachedToken = manualToken;
-            return cachedToken;
+            return manualToken;
         }
     } catch (error) {
         // localStorage being unavailable just means there is no manual override.
@@ -48,8 +40,7 @@ async function getHelperToken() {
         const parsed = JSON.parse(await pairingFile.read());
 
         if (parsed && parsed.token) {
-            cachedToken = parsed.token;
-            return cachedToken;
+            return parsed.token;
         }
     } catch (error) {
         // getEntry throws when the Helper has not paired this installation yet.
@@ -75,8 +66,6 @@ function setManualToken(token) {
     } catch (error) {
         console.error('Failed to persist the Helper token:', error);
     }
-
-    cachedToken = trimmed || null;
 }
 
 /**

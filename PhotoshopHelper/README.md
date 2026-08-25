@@ -29,6 +29,7 @@ XAI_API_KEY=
 FAL_API_KEY=
 REPLICATE_API_KEY=
 BFL_API_KEY=
+OPENAI_API_KEY=
 
 # Nebula integration (recommended for security).
 # Defines the mapping between .env keys and Nebula (i.e., your personal GSM — Google Secret Manager).
