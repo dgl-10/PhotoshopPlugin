@@ -22,6 +22,21 @@ let toPSState = STATES.TO_PS.IDLE;
 // Track current overlay blob URL for proper memory cleanup
 let currentOverlayUrl = null;
 
+/**
+ * Revoke the current overlay only when it is an object URL.
+ * PNG fallback overlays are data URLs and must not be passed to revokeObjectURL.
+ */
+function revokeCurrentOverlayUrl() {
+    if (currentOverlayUrl && currentOverlayUrl.startsWith('blob:')) {
+        try {
+            URL.revokeObjectURL(currentOverlayUrl);
+        } catch (error) {
+            console.warn('Failed to revoke overlay object URL:', error);
+        }
+    }
+    currentOverlayUrl = null;
+}
+
 // Timeout IDs for auto-clearing status
 const statusTimeouts = {
     fromps: null,
@@ -88,11 +103,8 @@ function showFromPSPreview(dataUrl, overlayUrl) {
     const img = document.getElementById('img-fromps');
     const overlay = document.getElementById('img-overlay-fromps');
 
-    // Revoke previous overlay blob URL to free memory
-    if (currentOverlayUrl) {
-        URL.revokeObjectURL(currentOverlayUrl);
-        currentOverlayUrl = null;
-    }
+    // Revoke the previous ImageBlob URL, if the legacy renderer created one.
+    revokeCurrentOverlayUrl();
 
     if (img) {
         img.src = dataUrl;
@@ -100,10 +112,39 @@ function showFromPSPreview(dataUrl, overlayUrl) {
     }
 
     if (overlay && overlayUrl) {
-        currentOverlayUrl = overlayUrl;
-        overlay.src = overlayUrl;
-        overlay.style.display = 'block';
+        // `src` assignment can throw synchronously for an invalid URL. Decode/render
+        // failures normally arrive through `error`. Photoshop's native
+        // droverbindings_error is outside both mechanisms, which is why production
+        // currently avoids ImageBlob before this point and supplies a PNG data URL.
+        try {
+            currentOverlayUrl = overlayUrl.startsWith('blob:') ? overlayUrl : null;
+
+            overlay.onload = () => {
+                overlay.onload = null;
+                overlay.onerror = null;
+            };
+            overlay.onerror = () => {
+                console.error('Overlay image could not be rendered; hiding overlay preview.');
+                overlay.onload = null;
+                overlay.onerror = null;
+                revokeCurrentOverlayUrl();
+                overlay.src = '';
+                overlay.style.display = 'none';
+            };
+
+            overlay.src = overlayUrl;
+            overlay.style.display = 'block';
+        } catch (error) {
+            console.error('Failed to assign overlay image source:', error);
+            overlay.onload = null;
+            overlay.onerror = null;
+            revokeCurrentOverlayUrl();
+            overlay.src = '';
+            overlay.style.display = 'none';
+        }
     } else if (overlay) {
+        overlay.onload = null;
+        overlay.onerror = null;
         overlay.style.display = 'none';
         overlay.src = '';
     }
@@ -119,10 +160,7 @@ function clearFromPSPreview() {
     const overlay = document.getElementById('img-overlay-fromps');
 
     // Revoke overlay blob URL to free memory
-    if (currentOverlayUrl) {
-        URL.revokeObjectURL(currentOverlayUrl);
-        currentOverlayUrl = null;
-    }
+    revokeCurrentOverlayUrl();
 
     if (img) {
         img.src = '';
@@ -130,6 +168,8 @@ function clearFromPSPreview() {
     }
 
     if (overlay) {
+        overlay.onload = null;
+        overlay.onerror = null;
         overlay.src = '';
         overlay.style.display = 'none';
     }

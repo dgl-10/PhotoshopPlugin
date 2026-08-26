@@ -353,7 +353,10 @@ async function handleCapture(viaTempDocCreation, fullDocMask = false) {
 
         // Get preview data URL and cache it in the payload for future switches
         const previewUrl = await fsModule.getPreviewDataUrl(capturedPayload);
-        const overlayUrl = await imageUtils.generateOverlayMask(capturedPayload.maskData);
+        // Overlay is preview-only. Keep it compact and use the release-safe renderer
+        // selected in image-utils; the full-resolution mask remains untouched for
+        // save, drag and Place Back operations.
+        const overlayUrl = await imageUtils.generateOverlayMaskForPreview(capturedPayload.maskData, true);
         capturedPayload.previewDataUrl = previewUrl; // Cache to avoid re-encoding on switch
         // Extract base64 string from data URL for copy/save/drag operations after switch
         capturedPayload.imageBase64 = previewUrl ? previewUrl.split(',')[1] : null;
@@ -436,7 +439,7 @@ async function handleSourceSelection(val) {
 
         // 4. Update preview using cached URL; regenerate overlay from restored maskData
         const previewUrl = capturedPayload.previewDataUrl || await fsModule.getPreviewDataUrl(capturedPayload);
-        const overlayUrl = await imageUtils.generateOverlayMask(capturedPayload.maskData);
+        const overlayUrl = await imageUtils.generateOverlayMaskForPreview(capturedPayload.maskData, true);
         if (previewUrl) {
             ui.showFromPSPreview(previewUrl, overlayUrl);
             const ratioInfo = capturedPayload.aspectRatio ? ` [${capturedPayload.aspectRatio}]` : '';
