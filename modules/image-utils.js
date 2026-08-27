@@ -20,7 +20,7 @@ const OVERLAY_OPACITY = 0.3;
 // standards-compliant PNG data URL and never enters the problematic ImageBlob path.
 // After the legacy renderer has been tested on more machines, changing this to
 // `false` restores ImageBlob as the primary renderer with PNG as its JS fallback.
-const USE_PNG_OVERLAY_AS_PRIMARY = true;
+const USE_PNG_OVERLAY_AS_PRIMARY = false;
 
 /**
  * Prepare mask data for encoding (fixes types, structure, components)
@@ -738,8 +738,8 @@ module.exports = {
     maskDataToBase64,
     imageDataToBase64,
     generateOverlayMask,
+    generateOverlayMaskForPreview,
     // Exported only for isolated renderer testing. Production code calls it
     // through generateOverlayMaskForPreview(), which owns primary/fallback selection.
-    generateOverlayMaskPng,
-    generateOverlayMaskForPreview
+    generateOverlayMaskPng
 };
