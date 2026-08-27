@@ -20,7 +20,7 @@ const OVERLAY_OPACITY = 0.3;
 // standards-compliant PNG data URL and never enters the problematic ImageBlob path.
 // After the legacy renderer has been tested on more machines, changing this to
 // `false` restores ImageBlob as the primary renderer with PNG as its JS fallback.
-const USE_PNG_OVERLAY_AS_PRIMARY = false;
+const USE_PNG_OVERLAY_AS_PRIMARY = true;
 
 /**
  * Prepare mask data for encoding (fixes types, structure, components)
