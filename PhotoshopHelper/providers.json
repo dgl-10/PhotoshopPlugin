@@ -171,6 +171,10 @@
                 "i2i"
             ],
             "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
+            "tags": {
+                "provider": "xai",
+                "family": "grok"
+            },
             "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
             "max_reference_images": 4,
@@ -322,6 +326,10 @@
                 "i2i"
             ],
             "name": "Seedream v4.5 via Replicate API Key ($0.04/per image)",
+            "tags": {
+                "provider": "replicate",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v4.5 (REPLICATE Key)",
             "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
@@ -457,6 +465,10 @@
                 "i2i"
             ],
             "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v4.5 (FAL Key)",
             "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
@@ -588,6 +600,10 @@
                 "i2i"
             ],
             "name": "Seedream v5.0 lite via Fal API Key ($0.35/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v5.0 Lite (FAL Key)",
             "filename_suffix": "seedream_v5_lite",
             "image_format": "data_uri",
@@ -721,6 +737,10 @@
                 "i2i"
             ],
             "name": "Seedream v5.0 Pro via Replicate API Key (from $0.045/per image)",
+            "tags": {
+                "provider": "replicate",
+                "family": "seedream"
+            },
             "nice_name": "Seedream 5.0 Pro (REPLICATE Key)",
             "filename_suffix": "seedream_v5_pro",
             "image_format": "data_uri",
@@ -811,6 +831,10 @@
                 "i2i"
             ],
             "name": "Seedream v5.0 Pro via Fal API Key (from $0.0675/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v5.0 Pro (FAL Key)",
             "filename_suffix": "seedream_v5_pro",
             "image_format": "data_uri",
@@ -917,6 +941,10 @@
                 "i2i"
             ],
             "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "alibaba"
+            },
             "nice_name": {
                 "depends_on": "model_alibaba",
                 "values": {
@@ -1150,6 +1178,10 @@
                 "i2i"
             ],
             "name": "Qwen Image Edit 2511 via Replicate API Key ($0.03/image)",
+            "tags": {
+                "provider": "replicate",
+                "family": "qwen"
+            },
             "nice_name": "Qwen Image Edit (Replicate Key)",
             "filename_suffix": "qwen_image_edit",
             "image_format": "data_uri",
@@ -1215,6 +1247,10 @@
                 "i2i"
             ],
             "name": "GPT-Image-1.5 via OpenAI API Key",
+            "tags": {
+                "provider": "openai",
+                "family": "gpt-image"
+            },
             "nice_name": "GPT-Image-1.5 (OpenAI Key)",
             "filename_suffix": "gpt_image_1.5",
             "image_format": "data_uri",
@@ -1357,6 +1393,10 @@
                 "i2i"
             ],
             "name": "GPT-Image-2 via OpenAI API Key (from ~$0.01)",
+            "tags": {
+                "provider": "openai",
+                "family": "gpt-image"
+            },
             "nice_name": "GPT-Image-2 (OpenAI Key)",
             "filename_suffix": "gpt_image_2",
             "image_format": "data_uri",
@@ -1562,6 +1602,10 @@
                 "i2i"
             ],
             "name": "FLUX.1 Fill inpaint via BFL API Key ($0.05/image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
             "nice_name": "FLUX.1 Fill (BFL Key)",
             "image_format": "base64_raw",
             "max_reference_images": 0,
@@ -1629,6 +1673,10 @@
                 "i2i"
             ],
             "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
             "nice_name": {
                 "default": "FLUX.2 {{model_flux2}} (BFL Key)",
                 "depends_on": "model_flux2",
@@ -1825,6 +1873,10 @@
                 "i2i"
             ],
             "name": "FLUX Kontext via BFL API Key ($0.04/$0.08 (FLUX Kontext Max) per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
             "nice_name": {
                 "default": "FLUX Kontext (BFL Key)",
                 "depends_on": "model_flux_kontext",
@@ -1895,6 +1947,10 @@
                 "i2i"
             ],
             "name": "P-Image via Replicate ($0.005 T2I / $0.01 I2I)",
+            "tags": {
+                "provider": "replicate",
+                "family": "p-image"
+            },
             "nice_name": "P-Image (Replicate)",
             "filename_suffix": "pruna_p_image",
             "image_format": "data_uri",

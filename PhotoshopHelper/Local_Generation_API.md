@@ -118,6 +118,7 @@ be forwarded to the paid provider. A `providerId` request must therefore include
 | `english_only` | Informational. If true, write the prompt in English. |
 | `single_image_per_request` | If true, the server already issues one provider call per output image; `force_separate_requests` is unnecessary. |
 | `remarks` | Optional HTML for humans (pricing, warnings). Do not parse it into `params`. |
+| `tags` | Optional grouping metadata (`provider` host slug, `family` model-line slug). Not a request field. |
 
 #### Fields to ignore when building the POST body
 
@@ -125,6 +126,7 @@ be forwarded to the paid provider. A `providerId` request must therefore include
 - `hidden` on a dropdown option — alias bridge for the UI.
 - `label` — display text, including prices. Never send it as a value.
 - `nice_name` — result-tab title.
+- `tags` — UI grouping labels. Do not send them in the generation request.
 - `mask_handling.type` and `mask_handling.field_name` — how the server places the
   mask in the outbound provider request. The one exception is the reference-slot
   rule under **References**.

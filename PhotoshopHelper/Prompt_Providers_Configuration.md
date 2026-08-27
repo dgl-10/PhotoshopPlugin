@@ -22,6 +22,7 @@ provider configuration for `MODEL_ID` through the specified provider's API.
 Treat the guide as the authoritative contract for:
 
 - provider fields and UI parameters;
+- `tags` grouping metadata (`provider` API host and `family` model line);
 - request templates and placeholders;
 - conditional template expressions;
 - template-facing image, mask, and reference values;
@@ -290,10 +291,27 @@ combination and verify:
 - any genuinely ambiguous, non-standard parameter was clarified via a decision table
   (and standard parameters were configured directly without asking);
 - the selected response handler can process each configured mode;
-- no secret, undocumented field, or executable JavaScript appears in the result.
+- no secret, undocumented field, or executable JavaScript appears in the result;
+- `tags.provider` and `tags.family` are present, use documented lowercase slugs, and
+  reuse an existing host or family slug when the new configuration belongs to one.
 
 Do not make a paid API request unless the user separately and explicitly asks for a
 live test.
+
+## Provider Tags
+
+Always include a `tags` object on the provider as documented in the guide.
+
+- `tags.provider`: slug of the API host from `PROVIDER_NAME` (for example `replicate`,
+  `fal`, `openai`, `xai`, `bfl`). This is the service that owns the key and endpoint,
+  not the model brand. Reuse an existing host slug when the same API family is used.
+- `tags.family`: slug of the model line from `MODEL_ID` (for example `seedream`,
+  `flux`, `grok`, `gpt-image`, `qwen`, `alibaba`, `p-image`). Reuse an existing family
+  slug when the configuration is another host or version of the same line.
+
+Use lowercase slugs with optional hyphens. One family slug per provider object — a
+bundled dropdown (Wan + Qwen in one entry) gets a single bundle slug such as
+`alibaba`. Do not add a favorites flag or any per-user state to `tags`.
 
 ## Output
 

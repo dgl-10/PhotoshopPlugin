@@ -179,6 +179,10 @@
             "id": "grok_imagine",
             "generation_modes": ["t2i", "i2i"],
             "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
+            "tags": {
+                "provider": "xai",
+                "family": "grok"
+            },
             "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
             "max_reference_images": 4,
@@ -327,6 +331,10 @@
             "id": "seedream_v4_5_replicate",
             "generation_modes": ["t2i", "i2i"],
             "name": "Seedream v4.5 via Replicate API Key ($0.04/per image)",
+            "tags": {
+                "provider": "replicate",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v4.5 (REPLICATE Key)",
             "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
@@ -459,6 +467,10 @@
             "id": "seedream_v4_5_fal",
             "generation_modes": ["t2i", "i2i"],
             "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v4.5 (FAL Key)",
             "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
@@ -587,6 +599,10 @@
             "id": "seedream_v5_0_lite_fal",
             "generation_modes": ["t2i", "i2i"],
             "name": "Seedream v5.0 lite via Fal API Key ($0.35/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v5.0 Lite (FAL Key)",
             "filename_suffix": "seedream_v5_lite",
             "image_format": "data_uri",
@@ -717,6 +733,10 @@
             "id": "seedream_v5_0_pro_replicate",
             "generation_modes": ["t2i", "i2i"],
             "name": "Seedream v5.0 Pro via Replicate API Key (from $0.045/per image)",
+            "tags": {
+                "provider": "replicate",
+                "family": "seedream"
+            },
             "nice_name": "Seedream 5.0 Pro (REPLICATE Key)",
             "filename_suffix": "seedream_v5_pro",
             "image_format": "data_uri",
@@ -804,6 +824,10 @@
             "id": "seedream_v5_0_pro_fal",
             "generation_modes": ["t2i", "i2i"],
             "name": "Seedream v5.0 Pro via Fal API Key (from $0.0675/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v5.0 Pro (FAL Key)",
             "filename_suffix": "seedream_v5_pro",
             "image_format": "data_uri",
@@ -907,6 +931,10 @@
             "id": "alibaba_fal",
             "generation_modes": ["t2i", "i2i"],
             "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "alibaba"
+            },
             "nice_name": {
                 "depends_on": "model_alibaba",
                 "values": {
@@ -1138,6 +1166,10 @@
             "id": "gpt_image_2_openai",
             "generation_modes": ["t2i", "i2i"],
             "name": "GPT-Image-2 via OpenAI API Key (from ~$0.01)",
+            "tags": {
+                "provider": "openai",
+                "family": "gpt-image"
+            },
             "nice_name": "GPT-Image-2 (OpenAI Key)",
             "filename_suffix": "gpt_image_2",
             "image_format": "data_uri",
@@ -1341,6 +1373,10 @@
             "id": "bfl_flux2",
             "generation_modes": ["t2i", "i2i"],
             "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
             "nice_name": {
                 "default": "FLUX.2 {{model_flux2}} (BFL Key)",
                 "depends_on": "model_flux2",

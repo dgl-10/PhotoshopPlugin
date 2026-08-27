@@ -19,6 +19,7 @@
    - 3.8 [Remarks (`remarks`)](#38-remarks-remarks)
    - 3.9 [Nice Name (`nice_name`)](#39-nice-name-nice_name)
    - 3.10 [Generation Modes (`generation_modes`)](#310-generation-modes-generation_modes)
+   - 3.11 [Tags (`tags`)](#311-tags-tags)
 4. [Request Configuration (`request_config`)](#4-request-configuration-request_config)
    - 4.1 [Basic Structure](#41-basic-structure)
    - 4.2 [Single Image Per Request](#42-single-image-per-request)
@@ -147,6 +148,7 @@ Each object in the `providers` array has the following structure. Fields marked 
 | `filename_suffix` | `string` or `object` | | Custom suffix for saved result files. See §3.7. |
 | `remarks` | `string` (HTML) | | Informational HTML block shown in the UI. See §3.8. |
 | `nice_name` | `string` or `object` | | Human-readable model label shown in the result tab header. See §3.9. |
+| `tags` | `object` | | Client-side grouping labels: API host (`provider`) and model family (`family`). See §3.11. |
 
 ### 3.1 Identity and Display
 
@@ -154,12 +156,17 @@ Each object in the `providers` array has the following structure. Fields marked 
 {
     "id": "seedream_v4_5_fal",
     "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
-    "generation_modes": ["t2i", "i2i"]
+    "generation_modes": ["t2i", "i2i"],
+    "tags": {
+        "provider": "fal",
+        "family": "seedream"
+    }
 }
 ```
 
 - `id`: Must be unique across all providers. Used in API calls (`/api/webhelper/generate`) and internally.
 - `name`: Displayed as-is in the provider `<select>` dropdown. Include pricing info for user convenience.
+- `tags`: Optional grouping metadata for the client UI. See §3.11.
 
 ### 3.2 Image Format (`image_format`)
 
@@ -435,6 +442,81 @@ T2I and I2I routes.
 
 This field is intentionally sent to the browser and returned by provider discovery so
 the WebHelper UI and Local API clients can avoid unsupported requests.
+
+### 3.11 Tags (`tags`)
+
+Optional client-side grouping metadata. The WebHelper UI can later group or filter the
+provider combobox along two independent axes: the API host and the model family.
+
+```jsonc
+"tags": {
+    "provider": "replicate",
+    "family": "seedream"
+}
+```
+
+| Sub-field | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `provider` | `string` | ★ when `tags` is present | Slug of the API host used to reach the model. |
+| `family` | `string` | ★ when `tags` is present | Slug of the model line, independent of which host serves it. |
+
+Both values are lowercase slugs (`[a-z0-9]+` with optional hyphens). They are labels
+for the client, not request-template inputs, and they are **not** stripped by
+`GET /api/webhelper/providers`.
+
+Do **not** store per-user state here. Favorites, recents, and similar preferences belong
+in user settings, not in the provider object.
+
+#### `provider` — API host
+
+This is the service that owns the API key and the HTTP endpoint, not the model brand.
+
+| Slug | Typical hosts |
+|------|----------------|
+| `"replicate"` | Replicate |
+| `"fal"` | FAL |
+| `"openai"` | OpenAI (direct) |
+| `"xai"` | xAI (direct) |
+| `"bfl"` | Black Forest Labs (direct) |
+
+A future combobox may collapse first-party hosts (`openai`, `xai`, `bfl`, …) into a
+single **Direct** group. Keep the specific host slug in configuration so that grouping
+can be coarse (Replicate / FAL / Direct) or fine (OpenAI vs BFL) without a data change.
+
+When adding a new host, invent a short stable slug rather than a display name. Reuse an
+existing slug when the same API key and endpoint family are used.
+
+#### `family` — model line
+
+This is the brand or architecture the user thinks of as "the same model", even when it
+is offered through several hosts.
+
+| Slug | Typical models |
+|------|----------------|
+| `"seedream"` | Seedream 4.5 / 5.0 (any host) |
+| `"flux"` | FLUX.1 Fill, FLUX.2, FLUX Kontext |
+| `"grok"` | Grok Imagine |
+| `"gpt-image"` | GPT-Image-1.5 / GPT-Image-2 |
+| `"alibaba"` | Bundled Wan / Qwen dropdown (`alibaba_fal`) |
+| `"qwen"` | Dedicated Qwen provider (not the Alibaba bundle) |
+| `"p-image"` | Pruna P-Image |
+
+A provider object is one dropdown entry. If one provider bundles several families
+(for example Wan and Qwen under `alibaba_fal`), use **one** family slug for that
+bundle. Do not use an array: the combobox groups provider entries, not inner models.
+
+Reuse an existing family slug whenever the new configuration is another host or
+version of the same line. Create a new slug only for a distinct line.
+
+#### Presence and unknown values
+
+- Omit `tags` entirely when grouping is unknown. Clients should treat a missing field
+  as ungrouped ("Other"), not as an error.
+- If `tags` is present, both `provider` and `family` must be non-empty strings.
+- Extra keys inside `tags` are reserved for future grouping axes. Current clients
+  must ignore them. Do not put favorites, pricing, or capability flags here.
+
+This field is intentionally sent to the browser and returned by provider discovery.
 
 ---
 
@@ -1453,7 +1535,7 @@ When the user clicks "Generate", this is the complete server-side sequence:
 |--------|---------------|
 | **API Keys** | Stored in `.env` file or injected via NebulaSecrets. Referenced via `{{env:VAR_NAME}}` in templates. Never exposed to the browser. |
 | **Request Config** | `request_config`, `response_config`, `image_format`, `filename_suffix`, and `preprocessor` are all stripped from provider data before sending to the browser (`GET /api/webhelper/providers`). |
-| **Browser Isolation** | The browser only sees client-safe metadata including `id`, `name`, `generation_modes`, `parameters`, `mask_handling`, `max_reference_images`, `supports_negative_prompt`, `english_only`, `allowed_aspect_ratios`, and `remarks`. |
+| **Browser Isolation** | The browser only sees client-safe metadata including `id`, `name`, `generation_modes`, `tags`, `parameters`, `mask_handling`, `max_reference_images`, `supports_negative_prompt`, `english_only`, `allowed_aspect_ratios`, `remarks`, and `nice_name`. |
 | **Dynamic Visibility**| Providers requiring API keys (via `{{env:VAR_NAME}}`) that are absent or empty in the server's `process.env` are entirely filtered out and never sent to the client. |
 | **Path Traversal** | File serving endpoints validate paths against the temp directory to prevent directory traversal attacks. |
 
@@ -1470,6 +1552,10 @@ A synchronous provider using xAI's Grok API. Supports reference images as object
             "id": "grok_imagine",
             "generation_modes": ["t2i", "i2i"],
             "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
+            "tags": {
+                "provider": "xai",
+                "family": "grok"
+            },
             "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
             "max_reference_images": 4,
@@ -1625,6 +1711,10 @@ An asynchronous provider using FAL's queue API. Features a preprocessor for dyna
             "id": "seedream_v4_5_fal",
             "generation_modes": ["t2i", "i2i"],
             "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "seedream"
+            },
             "nice_name": "Seedream v4.5 (FAL Key)",
             "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
@@ -1760,6 +1850,10 @@ A provider that strictly requires a mask for inpainting. Uses BFL's polling API.
             "id": "bfl_flux_fill_inpaint",
             "generation_modes": ["i2i"],
             "name": "FLUX.1 Fill inpaint via BFL API Key ($0.05/image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
             "nice_name": "FLUX.1 Fill (BFL Key)",
             "image_format": "base64_raw",
             "max_reference_images": 0,
@@ -1831,6 +1925,10 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
             "id": "bfl_flux2",
             "generation_modes": ["t2i", "i2i"],
             "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
             "nice_name": {
                 "default": "FLUX.2 {{model_flux2}} (BFL Key)",
                 "depends_on": "model_flux2",
@@ -2031,6 +2129,10 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
             "id": "alibaba_fal",
             "generation_modes": ["t2i", "i2i"],
             "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "alibaba"
+            },
             "nice_name": {
                 "depends_on": "model_alibaba",
                 "values": {
@@ -2269,6 +2371,10 @@ A straightforward BFL provider with a dynamic endpoint URL and the `english_only
             "id": "bfl_kontext",
             "generation_modes": ["t2i", "i2i"],
             "name": "FLUX Kontext via BFL API Key ($0.04/$0.08 (FLUX Kontext Max) per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
             "nice_name": {
                 "default": "FLUX Kontext (BFL Key)",
                 "depends_on": "model_flux_kontext",
@@ -2348,6 +2454,10 @@ Demonstrates several unique patterns:
             "id": "gpt_image_2_openai",
             "generation_modes": ["t2i", "i2i"],
             "name": "GPT-Image-2 via OpenAI API Key (from ~$0.01)",
+            "tags": {
+                "provider": "openai",
+                "family": "gpt-image"
+            },
             "nice_name": "GPT-Image-2 (OpenAI Key)",
             "filename_suffix": "gpt_image_2",
             "image_format": "data_uri",
