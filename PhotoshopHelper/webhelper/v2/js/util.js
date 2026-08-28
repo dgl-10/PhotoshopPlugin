@@ -13,6 +13,35 @@ export const TASK_COLORS = [
     '#e67e22', '#1abc9c', '#d35400', '#34495e', '#c0392b'
 ];
 
+/** Map a task-dot color onto one of the six soft SVG stage palettes. */
+export function stageBgIndexFromColor(hex) {
+    const hue = hexToHue(hex);
+    if (hue < 20 || hue >= 330) return 5;
+    if (hue < 55) return 0;
+    if (hue < 85) return 2;
+    if (hue < 180) return 3;
+    if (hue < 250) return 4;
+    return 1;
+}
+
+function hexToHue(hex) {
+    const raw = String(hex || '').replace('#', '');
+    if (raw.length < 6) return 0;
+    const r = parseInt(raw.slice(0, 2), 16) / 255;
+    const g = parseInt(raw.slice(2, 4), 16) / 255;
+    const b = parseInt(raw.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    if (d === 0) return 0;
+    let hue;
+    if (max === r) hue = ((g - b) / d) % 6;
+    else if (max === g) hue = (b - r) / d + 2;
+    else hue = (r - g) / d + 4;
+    hue = Math.round(hue * 60);
+    return hue < 0 ? hue + 360 : hue;
+}
+
 export const COOKIE_FAVS = 'wh_v2_favs';
 export const COOKIE_COMBO = 'wh_v2_combo';
 

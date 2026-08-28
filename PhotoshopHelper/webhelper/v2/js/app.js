@@ -19,6 +19,7 @@ import {
     readJsonCookie,
     resultImageUrl,
     shortTaskId,
+    stageBgIndexFromColor,
     urlToDataUrl,
     writeJsonCookie
 } from './util.js';
@@ -52,6 +53,8 @@ class App {
         this.stageStrip = document.getElementById('stage-strip');
         this.statusEl = document.getElementById('connection-status');
         this.taskSelect = document.getElementById('task-select');
+        this.taskPick = document.getElementById('task-pick');
+        this.taskDot = document.getElementById('task-dot');
         this.toastsEl = document.getElementById('toasts');
         this.fileTask = document.getElementById('file-task');
         this.fileRefs = document.getElementById('file-refs');
@@ -84,7 +87,9 @@ class App {
     }
 
     setConnection(ok, custom) {
-        this.statusEl.textContent = custom || (ok ? 'Connected' : 'Disconnected');
+        const text = custom || (ok ? 'Connected' : 'Disconnected');
+        this.statusEl.textContent = text;
+        this.statusEl.title = text;
         this.statusEl.classList.toggle('ok', ok);
         this.statusEl.classList.toggle('bad', !ok);
     }
@@ -137,9 +142,10 @@ class App {
             e.preventDefault();
         });
         document.body.addEventListener('drop', (e) => {
-            if (e.target.closest('#pane-source') || e.target.closest('#global-stage') || e.target.closest('#prompt-input')) {
-                return;
-            }
+            if (e.target.closest('#global-stage') || e.target.closest('#prompt-input')) return;
+            // An open source pane owns the drop (refs). Empty source should create a task,
+            // same as dropping on the results pane.
+            if (e.target.closest('#pane-source') && this.task()) return;
             e.preventDefault();
             if (e.dataTransfer?.files?.length) this.processExternalFiles(e.dataTransfer.files);
         });
@@ -353,18 +359,21 @@ class App {
 
     renderTopbar() {
         if (!this.taskOrder.length) {
-            this.taskSelect.classList.add('hidden');
+            this.taskPick.classList.add('hidden');
             this.taskSelect.innerHTML = '';
             return;
         }
-        this.taskSelect.classList.remove('hidden');
+        this.taskPick.classList.remove('hidden');
         this.taskSelect.innerHTML = this.taskOrder.map((id) => {
             const t = this.tasks.get(id);
             const t2i = t?.data?.sourceImage ? '' : '[T2I] ';
             const time = t?.createdAt ? t.createdAt.toLocaleTimeString() : '';
-            return `<option value="${escapeHtml(id)}" ${id === this.activeId ? 'selected' : ''} style="color:${t.color}">● ${t2i}[Task ${escapeHtml(shortTaskId(id))}] @ ${escapeHtml(time)}</option>`;
+            return `<option value="${escapeHtml(id)}" ${id === this.activeId ? 'selected' : ''} style="color:${t.color}">${t2i}[Task ${escapeHtml(shortTaskId(id))}] @ ${escapeHtml(time)}</option>`;
         }).join('');
-        this.appEl.style.borderTop = `3px solid ${this.task()?.color || 'transparent'}`;
+        const color = this.task()?.color || '#333';
+        this.taskDot.style.background = color;
+        this.taskSelect.style.color = color;
+        this.appEl.style.borderTop = `3px solid ${color}`;
     }
 
     renderStage() {
@@ -372,13 +381,13 @@ class App {
         const items = this.globalImages.map((img, i) => `
             <div class="thumb" draggable="true" data-index="${i}">
                 <div class="thumb-badge">@glb${i + 1}</div>
-                <img src="${img}" alt="">
+                <img src="${img}" alt="" draggable="false">
                 <button class="thumb-remove" type="button" data-remove-glb="${i}" aria-label="Remove">×</button>
             </div>
         `).join('');
         this.stageStrip.innerHTML = `
             ${items}
-            <label class="thumb-add" title="Add to Global Stage">+
+            <label class="thumb-add" title="Add to dump">+
                 <input type="file" accept="image/*" multiple data-stage-upload>
             </label>
             ${this.globalImages.length === 0
@@ -520,6 +529,21 @@ class App {
                 </div>`;
             this.paneSource.querySelector('[data-act="t2i"]').onclick = () => this.createTextTask();
             this.paneSource.querySelector('[data-act="image"]').onclick = () => this.fileTask.click();
+            this.paneSource.ondragover = (e) => {
+                if ([...(e.dataTransfer?.types || [])].includes('Files')) {
+                    e.preventDefault();
+                    this.paneSource.classList.add('drag-over');
+                }
+            };
+            this.paneSource.ondragleave = (e) => {
+                if (!this.paneSource.contains(e.relatedTarget)) this.paneSource.classList.remove('drag-over');
+            };
+            this.paneSource.ondrop = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.paneSource.classList.remove('drag-over');
+                if (e.dataTransfer?.files?.length) this.processExternalFiles(e.dataTransfer.files);
+            };
             return;
         }
 
@@ -536,22 +560,23 @@ class App {
         const hideOverlay = task.state.viewMode === 'source' || !mask.use;
 
         const preview = hasSource ? `
-            <div class="preview-wrap" id="source-preview">
+            <div class="preview-wrap ${this.sourceBgClass(task)}" id="source-preview">
                 <div class="preview-inner">
                     <img class="source" id="source-img" draggable="true"
                         src="${getPreviewUrl(task.data.sourceImage)}"
                         style="visibility:${task.state.viewMode === 'mask' ? 'hidden' : 'visible'}">
                     ${task.data.maskImage ? `<img class="mask ${task.state.viewMode === 'overlay' ? 'overlay-mode' : ''}" src="${task.data.maskImage}" style="display:${hideOverlay ? 'none' : 'block'}">` : ''}
                 </div>
-            </div>` : `
-            <div class="preview-wrap"><div class="t2i-ph"><strong>Text-to-image</strong>Prompt and settings only. No source required.</div></div>`;
+            </div>` : '';
 
-        const notes = [];
-        if (P.isPromptEmpty(task)) notes.push({ t: 'Prompt is empty.', error: false });
-        if (overRefs) notes.push({ t: `Too many references (${refs.length}/${maxRefs}). Server will only receive the first ${maxRefs}.`, error: false });
-        if (P.isMaskMissing(provider, task)) notes.push({ t: 'Provider requires a mask.', error: true });
-        if (provider && !P.providerSupportsMode(provider, mode)) notes.push({ t: `Provider does not support ${mode.toUpperCase()} generation.`, error: true });
-        if (P.isAspectRatioMissing(task)) notes.push({ t: 'Aspect ratio is required for Text-to-Image generation.', error: true });
+        const modeUnsupported = Boolean(provider) && !P.providerSupportsMode(provider, mode);
+        const notes = [
+            { id: 'note-prompt-empty', t: 'Prompt is empty.', error: false, hide: !P.isPromptEmpty(task) },
+            { id: 'note-ref-limit', t: `Too many references (${refs.length}/${maxRefs}). Server will only receive the first ${maxRefs}.`, error: false, hide: !overRefs },
+            { id: 'note-mask', t: 'Provider requires a mask.', error: true, hide: !P.isMaskMissing(provider, task) },
+            { id: 'note-mode', t: `Provider does not support ${mode.toUpperCase()} generation.`, error: true, hide: !modeUnsupported },
+            { id: 'note-ar', t: 'Aspect ratio is required for Text-to-Image generation.', error: true, hide: !P.isAspectRatioMissing(task) }
+        ];
 
         const forceSingle = provider ? provider.single_image_per_request === true : false;
         const separateOn = forceSingle || !!task.state.formState.force_separate_requests;
@@ -573,7 +598,11 @@ class App {
                 </div>
                 ${preview}
                 <div class="thumbs-box" id="ref-box" data-drop-target="refs">
-                    <div class="thumbs-head ${overRefs ? 'is-over' : ''}">Refs ${maxRefs > 0 ? `(${refs.length}/${maxRefs})` : `(${refs.length})`}</div>
+                    <div class="thumbs-head ${overRefs ? 'is-over' : ''}">
+                        <span id="refs-head">Refs ${maxRefs > 0 ? `(${refs.length}/${maxRefs})` : `(${refs.length})`}</span>
+                        <span class="mode-chip" id="refs-mode">${mode === 'i2i' ? 'I2I' : 'T2I'}</span>
+                    </div>
+                    <p class="refs-hint" id="refs-hint"${hasSource ? ' hidden' : ''}>${escapeHtml(this.refsHintText(task))}</p>
                     <div class="thumb-strip" id="ref-strip">
                         ${refs.map((ref, i) => `
                             <div class="thumb" draggable="true" data-index="${i}">
@@ -597,29 +626,102 @@ class App {
                     <label>Negative prompt</label>
                     <textarea id="neg-prompt-input" rows="2" placeholder="Avoid…">${escapeHtml(task.state.formState.negative_prompt || '')}</textarea>
                 </div>
-                <div class="notes" id="notes">${notes.map((n) => `<div class="note ${n.error ? 'error' : ''}">${escapeHtml(n.t)}</div>`).join('')}</div>
+                <div class="notes" id="notes">${notes.map((n) => `<div class="note ${n.error ? 'error' : ''}"${n.id ? ` id="${n.id}"` : ''}${n.hide ? ' hidden' : ''}>${escapeHtml(n.t)}</div>`).join('')}</div>
                 ${provider?.remarks ? `<div class="remarks">${provider.remarks}</div>` : ''}
             </div>
             <div class="generate-bar">
                 <div class="field">
-                    <label>Images</label>
-                    <input type="number" id="num-images-input" min="1" max="10" value="${escapeHtml(numImages)}">
-                </div>
-                <div class="field">
-                    <label>Aspect</label>
+                    <!-- <label>Aspect</label> -->
                     <select id="aspect-ratio-select" ${ar.allowed.length === 0 ? 'disabled' : ''}>
                         ${ar.isT2I ? '' : `<option value="" ${ar.effective === '' ? 'selected' : ''}>Match Input</option>`}
                         ${ar.allowed.map((r) => `<option value="${escapeHtml(r)}" ${ar.effective === r ? 'selected' : ''}>${escapeHtml(r)}</option>`).join('')}
                     </select>
                 </div>
-                <button class="btn btn-primary" id="btn-generate" ${blocked ? 'disabled' : ''}>Generate</button>
-            </div>
-            <div class="check" style="padding:0 8px 8px; display:${numImages > 1 ? 'flex' : 'none'}">
-                <input type="checkbox" id="force-separate" ${separateOn ? 'checked' : ''} ${forceSingle ? 'disabled' : ''}>
-                Each image in a separate request
+                <div class="gen-cluster ${numImages > 1 ? 'is-multi' : ''}" id="gen-cluster">
+                    <div class="gen-run">
+                        <input type="number" id="num-images-input" class="gen-count" min="1" max="10"
+                            value="${escapeHtml(numImages)}" title="Images to generate" aria-label="Number of images">
+                        <button class="btn btn-primary" id="btn-generate" ${blocked ? 'disabled' : ''}>${numImages > 1 ? `Generate ×${escapeHtml(numImages)}` : 'Generate'}</button>
+                    </div>
+                    <label class="check gen-split" id="force-separate-row" ${numImages > 1 ? '' : 'hidden'}>
+                        <input type="checkbox" id="force-separate" ${separateOn ? 'checked' : ''} ${forceSingle ? 'disabled' : ''}>
+                        Each image in a separate request
+                    </label>
+                </div>
             </div>
         `;
         this.bindSourceEvents(task);
+    }
+
+    syncSourceWarnings(task) {
+        const provider = this.provider(task);
+        const mode = P.effectiveGenerationMode(task);
+        const maxRefs = P.effectiveMaxRefs(provider, task);
+        const count = task.state.references?.length ?? 0;
+        const overRefs = P.isRefLimitExceeded(provider, task);
+        const modeUnsupported = Boolean(provider) && !P.providerSupportsMode(provider, mode);
+
+        const setNote = (id, hide, text) => {
+            const el = this.paneSource.querySelector(`#${id}`);
+            if (!el) return;
+            el.hidden = hide;
+            if (text != null) el.textContent = text;
+        };
+        setNote('note-prompt-empty', !P.isPromptEmpty(task));
+        setNote(
+            'note-ref-limit',
+            !overRefs,
+            `Too many references (${count}/${maxRefs}). Server will only receive the first ${maxRefs}.`
+        );
+        setNote('note-mask', !P.isMaskMissing(provider, task));
+        setNote(
+            'note-mode',
+            !modeUnsupported,
+            `Provider does not support ${mode.toUpperCase()} generation.`
+        );
+        setNote('note-ar', !P.isAspectRatioMissing(task));
+
+        const gen = this.paneSource.querySelector('#btn-generate');
+        if (gen) gen.disabled = P.isGenerateBlocked(provider, task);
+        this.syncGenerateCluster(task);
+
+        const head = this.paneSource.querySelector('#refs-head');
+        const headWrap = this.paneSource.querySelector('.thumbs-head');
+        if (head) {
+            if (headWrap) headWrap.classList.toggle('is-over', overRefs);
+            head.textContent = maxRefs > 0 ? `Refs (${count}/${maxRefs})` : `Refs (${count})`;
+        }
+        const chip = this.paneSource.querySelector('#refs-mode');
+        if (chip) chip.textContent = mode === 'i2i' ? 'I2I' : 'T2I';
+        const hint = this.paneSource.querySelector('#refs-hint');
+        if (hint) {
+            const text = this.refsHintText(task);
+            hint.hidden = !text;
+            if (text) hint.textContent = text;
+        }
+    }
+
+    refsHintText(task) {
+        if (task.data?.sourceImage) return '';
+        const n = task.state.references?.length ?? 0;
+        if (n === 0) return 'Add one ref to switch this task to image-to-image.';
+        return 'Image-to-image — the first ref is the source.';
+    }
+
+    syncGenerateCluster(task) {
+        const n = Math.min(10, Math.max(1, task.state.formState.num_images || 1));
+        const cluster = this.paneSource.querySelector('#gen-cluster');
+        if (cluster) cluster.classList.toggle('is-multi', n > 1);
+        const btn = this.paneSource.querySelector('#btn-generate');
+        if (btn) {
+            const blocked = btn.disabled;
+            btn.textContent = n > 1 ? `Generate ×${n}` : 'Generate';
+            btn.disabled = blocked;
+        }
+        const splitRow = this.paneSource.querySelector('#force-separate-row');
+        if (splitRow) splitRow.hidden = n <= 1;
+        const num = this.paneSource.querySelector('#num-images-input');
+        if (num && Number(num.value) !== n) num.value = n;
     }
 
     bindSourceEvents(task) {
@@ -642,6 +744,7 @@ class App {
         if (prompt) {
             prompt.oninput = () => {
                 task.state.formState.prompt = prompt.value;
+                this.syncSourceWarnings(task);
             };
         }
         const neg = this.paneSource.querySelector('#neg-prompt-input');
@@ -651,9 +754,11 @@ class App {
         const num = this.paneSource.querySelector('#num-images-input');
         if (num) {
             num.oninput = () => {
-                task.state.formState.num_images = parseInt(num.value, 10) || 1;
-                const extra = this.paneSource.querySelector('#force-separate')?.parentElement;
-                if (extra) extra.style.display = task.state.formState.num_images > 1 ? 'flex' : 'none';
+                let n = parseInt(num.value, 10) || 1;
+                if (n < 1) n = 1;
+                if (n > 10) n = 10;
+                task.state.formState.num_images = n;
+                this.syncGenerateCluster(task);
             };
         }
         const arSel = this.paneSource.querySelector('#aspect-ratio-select');
@@ -661,6 +766,7 @@ class App {
             arSel.onchange = () => {
                 task.state.formState.aspect_ratio = arSel.value;
                 this.aliasState.aspect_ratio = arSel.value;
+                this.syncSourceWarnings(task);
             };
         }
         const sep = this.paneSource.querySelector('#force-separate');
@@ -696,18 +802,19 @@ class App {
                 if (lab) lab.textContent = val;
             }
             const provider = this.provider(task);
-            if (provider && typeof provider.max_reference_images === 'object' && provider.max_reference_images) {
-                const dep = provider.max_reference_images.depends_on;
-                if (dep === alias || dep === t.dataset.paramName) {
-                    this.renderSource();
-                    this.bindDnd();
-                }
+            const hitsDepends = (config) => config && typeof config === 'object'
+                && (config.depends_on === alias || config.depends_on === t.dataset.paramName);
+            if (hitsDepends(provider?.max_reference_images) || hitsDepends(provider?.allowed_aspect_ratios)) {
+                this.renderSource();
+                this.bindDnd();
+                return;
             }
+            this.syncSourceWarnings(task);
         };
 
         const srcImg = this.paneSource.querySelector('#source-img');
         if (srcImg) {
-            srcImg.addEventListener('mousedown', () => { this.ensureSourceData(task).catch(() => {}); });
+            srcImg.addEventListener('mousedown', () => { this.ensureSourceData(task).catch(() => { }); });
             srcImg.addEventListener('dragstart', (e) => {
                 e.dataTransfer.setData('text/plain', `src:${task.id}`);
                 e.dataTransfer.effectAllowed = 'copy';
@@ -721,6 +828,8 @@ class App {
 
         this.bindCombo(task);
 
+        this.paneSource.classList.remove('drag-over');
+        this.paneSource.ondragleave = null;
         this.paneSource.ondragover = (e) => {
             const types = [...(e.dataTransfer?.types || [])];
             if (types.includes('Files') || types.includes('wh/ref-image')) {
@@ -882,6 +991,12 @@ class App {
             this.handleNewTaskFromResult(task.results[parseInt(neu.dataset.newtask, 10)], neu);
             return;
         }
+        const paramsToggle = e.target.closest('[data-params-toggle]');
+        if (paramsToggle) {
+            const card = paramsToggle.closest('[data-card]');
+            if (card) card.classList.toggle('params-open');
+            return;
+        }
         const card = e.target.closest('[data-card]');
         if (card && !e.target.closest('a, button')) {
             this.selectResult(parseInt(card.dataset.card, 10));
@@ -999,17 +1114,37 @@ class App {
         return `stage-bg-${Math.abs(Number(index) || 0) % 6}`;
     }
 
+    sourceBgClass(task) {
+        const bg = stageBgIndexFromColor(task.color);
+        const pos = Math.abs(String(task.id || '').length + bg) % 6;
+        return `stage-bg-${bg} stage-pos-${pos}`;
+    }
+
+    resultTitle(res) {
+        const providerLabel = res.nice_name || res.providerId || 'Unknown';
+        return res.params
+            ? `${providerLabel} | Aspect: ${res.aspect_ratio || 'Match Input'}`
+            : providerLabel;
+    }
+
+    resultParamsPre(res) {
+        if (!res.params) return '';
+        return `<pre class="card-params-json">${escapeHtml(JSON.stringify(res.params, null, 2))}</pre>`;
+    }
+
     resultCard(res, index, active, isLocal) {
         if (res.status === 'generating') {
             return `<article class="card ${active ? 'is-active' : ''}" data-card="${index}"><div class="card-stage ${this.stageBgClass(index)}"><div class="spinner"></div></div><div class="card-meta"><div class="info">Generating…</div></div></article>`;
         }
-        const title = `${res.nice_name || res.providerId || 'Unknown'} · ${res.aspect_ratio || 'Match Input'}`;
+        const title = this.resultTitle(res);
+        const paramsBlock = this.resultParamsPre(res);
         if (res.status === 'error') {
             return `<article class="card ${active ? 'is-active' : ''}" data-card="${index}">
                 <div class="card-error">
                     <strong>Error</strong>
                     <p>${escapeHtml(res.error || 'Unknown error')}</p>
                     ${res.fallback_url ? `<p><a href="${escapeHtml(res.fallback_url)}" target="_blank" rel="noopener">Download manually</a></p>` : ''}
+                    ${paramsBlock ? `<button type="button" class="info params-hit" data-params-toggle="${index}">${escapeHtml(title)}</button>${paramsBlock}` : ''}
                 </div>
             </article>`;
         }
@@ -1017,8 +1152,9 @@ class App {
         const dlLabel = isLocal ? 'Download' : 'Download full res';
         return `<article class="card ${active ? 'is-active' : ''}" data-card="${index}">
             <div class="card-stage ${this.stageBgClass(index)}"><img src="${src}" alt=""></div>
+            ${paramsBlock ? `<div class="card-params-pop">${paramsBlock}</div>` : ''}
             <div class="card-meta">
-                <div class="info" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                <button type="button" class="info params-hit" data-params-toggle="${index}" title="${escapeHtml(title)}">${escapeHtml(title)}</button>
                 ${isLocal ? `<button class="btn" type="button" data-copy="${index}">Copy</button>` : ''}
                 <a class="btn btn-download" href="${escapeHtml(res.image)}" download>${dlLabel}</a>
                 <button class="btn btn-ghost" type="button" data-regen="${index}">Again</button>

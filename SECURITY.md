@@ -35,7 +35,8 @@ reaching it. Every route on the local server therefore requires one of the follo
 
 | Access level | Routes | Requirement |
 |---|---|---|
-| Plugin-only | Clipboard, drag-and-drop, file save | A dedicated token, always required. |
+| Plugin-only | Clipboard, file save | A dedicated token, always required. |
+| Plugin or local WebHelper | Drag-and-drop start | Plugin token, or a same-origin request that is actually local (not a tunnel). |
 | WebHelper | The WebHelper page and its API | A same-origin browser request, or the plugin token. |
 | Local service API | `/api/local/v1/*` | A separate dedicated token, always required. |
 | Open | `/api/status`, `/api/is-local` | None — needed before a client can pair. |

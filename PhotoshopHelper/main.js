@@ -76,7 +76,7 @@ const { spawnSync } = require('node:child_process');
 const JSON5 = require('json5');
 const { generate } = require('./apiGenerator');
 const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
-const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate } = require('./auth');
+const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
 const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment } = require('./user-settings');
 const { getConfigPaths } = require('./setup/config-paths');
@@ -615,7 +615,16 @@ function startHttpServer() {
     });
 
     expressApp.use('/api/clipboard', requirePluginToken);
-    expressApp.use('/api/drag', requirePluginToken);
+    // OS-drag is used both by the plugin and by WebHelper's local Alt+Drag.
+    // Same-origin is accepted only on a real loopback request — a tunneled
+    // WebHelper page is same-origin from the browser's point of view but must
+    // not be able to start a drag on this machine.
+    expressApp.use('/api/drag', (req, res, next) => {
+        if (checkIsLocal(req) && isSameOriginRequest(req)) {
+            return next();
+        }
+        return requirePluginToken(req, res, next);
+    });
     expressApp.use('/api/file', requirePluginToken);
     expressApp.use('/webhelper', webHelperPasswordGate);
     expressApp.use('/api/webhelper', webHelperPasswordGate, requireWebHelperAccess);

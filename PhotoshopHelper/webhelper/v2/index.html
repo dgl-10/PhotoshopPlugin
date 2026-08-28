@@ -20,24 +20,26 @@
 
     <div class="app no-results" id="app">
         <header class="topbar">
-            <a class="brand" href="./" title="WebHelper">
-                <img src="./assets/plugin-icon.png" alt="">
-                <span class="brand-name">Web<span class="brand-slash">Helper</span></span>
-            </a>
-            <a class="classic-link" href="/webhelper" title="Classic UI">classic</a>
-
+            <div class="topbar-left">
+                <a class="brand" href="./" title="WebHelper">
+                    <img src="./assets/plugin-icon.png" alt="">
+                    <span class="brand-name">Web<span class="brand-slash">Helper</span></span>
+                </a>
+                <span class="status bad" id="connection-status" title="Disconnected">Disconnected</span>
+            </div>
             <div class="stage-slot">
-                <div class="stage" id="global-stage" data-drop-target="stage">
-                    <div class="stage-label">Stage</div>
+                <div class="stage" id="global-stage" data-drop-target="stage" title="Dump — leftover images for any task">
+                    <div class="stage-label">Dump</div>
                     <div class="stage-strip" id="stage-strip"></div>
                 </div>
             </div>
-
-            <div class="topbar-actions">
-                <span class="status bad" id="connection-status">Disconnected</span>
+            <div class="topbar-right">
                 <button class="btn btn-primary" id="btn-t2i" type="button" title="New text-to-image task">New T2I</button>
                 <button class="btn" id="btn-image" type="button" title="New task from image">+ Image</button>
-                <select class="task-select hidden" id="task-select" title="Active task"></select>
+                <label class="task-pick hidden" id="task-pick">
+                    <span class="task-dot" id="task-dot" aria-hidden="true"></span>
+                    <select class="task-select" id="task-select" title="Active task"></select>
+                </label>
             </div>
         </header>
 

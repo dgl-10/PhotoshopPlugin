@@ -2,9 +2,31 @@
 
 const TOUCH_MOVE_THRESHOLD = 8;
 
+let altHeld = false;
+let altTracking = false;
+
+function ensureAltTracking() {
+    if (altTracking) return;
+    altTracking = true;
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Alt') altHeld = true;
+    });
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'Alt') altHeld = false;
+    });
+    window.addEventListener('blur', () => {
+        altHeld = false;
+    });
+}
+
+export function isAltHeld(event) {
+    return Boolean((event && event.altKey) || altHeld);
+}
+
 export function tryElectronDrag(event, images) {
     try {
-        if (window.WHConfig?.tryElectronDrag?.(event, images)) return true;
+        const ev = event && event.altKey ? event : { altKey: isAltHeld(event) };
+        if (window.WHConfig?.tryElectronDrag?.(ev, images)) return true;
     } catch {
         /* fall through to in-app drag */
     }
@@ -72,14 +94,29 @@ export function bindStrip(container, options) {
         dropInsertIdx = insertIdx;
     };
 
+    ensureAltTracking();
+
     const items = [...container.querySelectorAll(itemSelector)];
     items.forEach((item) => {
         const idx = parseInt(item.dataset.index, 10);
+        const img = item.querySelector('img');
+        if (img) img.draggable = false;
+
+        const onPointerDown = (e) => {
+            if (payloadPrefix !== 'glb' || e.button !== 0) return;
+            if (e.target.closest('.thumb-remove')) return;
+            if (!isAltHeld(e)) return;
+            const value = getItems()[idx];
+            if (!value) return;
+            if (tryElectronDrag(e, value)) {
+                e.preventDefault();
+            }
+        };
 
         const onDragStart = (e) => {
             const list = getItems();
             const value = list[idx];
-            if (payloadPrefix === 'glb' && tryElectronDrag(e, value)) {
+            if (payloadPrefix === 'glb' && isAltHeld(e) && tryElectronDrag(e, value)) {
                 e.preventDefault();
                 return;
             }
@@ -105,18 +142,19 @@ export function bindStrip(container, options) {
 
         const onTouchStart = (e) => {
             if (e.target.closest('.thumb-remove')) return;
-            e.preventDefault();
             const touch = e.touches[0];
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
             touchDragFromIdx = idx;
         };
 
+        item.addEventListener('pointerdown', onPointerDown);
         item.addEventListener('dragstart', onDragStart);
         item.addEventListener('dragend', onDragEnd);
-        item.addEventListener('touchstart', onTouchStart, { passive: false });
+        item.addEventListener('touchstart', onTouchStart, { passive: true });
         item.addEventListener('contextmenu', (e) => e.preventDefault());
         cleanups.push(() => {
+            item.removeEventListener('pointerdown', onPointerDown);
             item.removeEventListener('dragstart', onDragStart);
             item.removeEventListener('dragend', onDragEnd);
             item.removeEventListener('touchstart', onTouchStart);

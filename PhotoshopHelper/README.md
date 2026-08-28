@@ -76,7 +76,7 @@ WebHelper works from its own page without any setup.
 - 🔌 `GET /api/clipboard/paste` — Retrieve the current clipboard image as base64.
 
 ### 🖱 Drag & Drop
-- 🔌 `POST /api/drag/start` — Initiate a drag operation. Creates a floating preview window.
+- 🌐 `POST /api/drag/start` — Initiate a drag operation. Creates a floating preview window. Same-origin WebHelper may call this only when the request is local (not via a tunnel); otherwise the plugin token is required.
   - Accepts `image` (single file) or `images` (array).
 
 ### 💾 File System
