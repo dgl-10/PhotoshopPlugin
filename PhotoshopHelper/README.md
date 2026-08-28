@@ -107,9 +107,10 @@ WebHelper works from its own page without any setup.
 ```text
 PhotoshopHelper/
 ├── webhelper/                        # Frontend application (SPA)
-│   ├── webhelper.html                # Main generator interface
-│   ├── webhelper.js                  # Task management, forms, and API polling
-│   └── theme.css                     # Design system based on Spectre.css
+│   ├── index.html                    # Current generator UI (`/webhelper`)
+│   ├── app.css
+│   ├── js/
+│   └── v0/                           # Previous Spectre UI (`/webhelper/v0`)
 ├── setup/                            # Initial configuration and setup wizard
 │   ├── config-paths.js               # Logic for locating configuration files
 │   ├── first-run-wizard.html         # First run configuration UI

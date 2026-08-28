@@ -1175,7 +1175,10 @@ class App {
         const carousel = document.getElementById('carousel');
         const card = carousel && carousel.querySelector(`[data-card="${index}"]`);
         if (!carousel || !card) return null;
-        return Math.max(0, card.offsetLeft - (carousel.clientWidth - card.clientWidth) / 2);
+        const cardRect = card.getBoundingClientRect();
+        const carouselRect = carousel.getBoundingClientRect();
+        const cardLeft = cardRect.left - carouselRect.left + carousel.scrollLeft;
+        return Math.max(0, cardLeft - (carousel.clientWidth - card.clientWidth) / 2);
     }
 
     isCardCentered(index) {

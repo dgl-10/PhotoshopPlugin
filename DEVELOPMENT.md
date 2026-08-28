@@ -161,9 +161,10 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     │   ├── license-activation.js         # License activation logic
     │   └── license-activation-preload.js # Secure bridge for license activation window
     └── webhelper/                        # Local web application directory for generation
-        ├── webhelper.html                # Interface accessible at http://localhost:18345/webhelper
-        ├── webhelper.js                  # Task queue handler and AI API interaction logic
-        └── theme.css                     # WebHelper interface styling
+        ├── index.html                    # Current UI at http://localhost:18345/webhelper
+        ├── v0/                           # Previous UI at http://localhost:18345/webhelper/v0
+        ├── js/
+        └── app.css
 ```
 
 ## 🔧 Development

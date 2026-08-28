@@ -894,9 +894,19 @@ function startHttpServer() {
     });
 
 
-    // GET /webhelper - Serve static HTML UI
+    // GET /webhelper/v0 — previous Spectre UI
+    expressApp.get('/webhelper/v0', (req, res) => {
+        res.sendFile(path.join(__dirname, 'webhelper', 'v0', 'index.html'));
+    });
+
+    // // Bookmarks to the redesign folder land on the current UI.
+    // expressApp.get(['/webhelper/v2', '/webhelper/v2/'], (req, res) => {
+    //     res.redirect('/webhelper');
+    // });
+
+    // GET /webhelper — current generator UI
     expressApp.get('/webhelper', (req, res) => {
-        res.sendFile(path.join(__dirname, 'webhelper', 'webhelper.html'));
+        res.sendFile(path.join(__dirname, 'webhelper', 'index.html'));
     });
 
     // GET /api/webhelper/providers - Get list of models/providers

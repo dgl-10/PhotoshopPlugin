@@ -733,6 +733,7 @@ a.btn-download:visited {
 
 /* ===== Results ===== */
 .carousel {
+  position: relative;
   min-height: 0;
   display: flex;
   gap: 10px;
