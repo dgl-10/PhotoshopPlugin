@@ -24,6 +24,19 @@ import {
     writeJsonCookie
 } from './util.js';
 
+/** Viewer display options for error/pending generation slots. */
+export const VIEWER_CONFIG = {
+    includeErrors: false,
+    includeGenerating: false
+};
+
+function isViewableResult(res, config = VIEWER_CONFIG) {
+    if (!res) return false;
+    if (res.status === 'error') return Boolean(config.includeErrors);
+    if (res.status === 'generating') return Boolean(config.includeGenerating);
+    return Boolean(res.image);
+}
+
 class App {
     constructor() {
         this.env = window.envInfo;
@@ -59,6 +72,20 @@ class App {
         this.fileTask = document.getElementById('file-task');
         this.fileRefs = document.getElementById('file-refs');
         this.fileStage = document.getElementById('file-stage');
+        this.viewerState = {
+            open: false,
+            index: 0,
+            scale: 'fit',
+            isDragging: false,
+            panX: 0,
+            panY: 0,
+            startX: 0,
+            startY: 0,
+            touchStartX: 0,
+            touchStartY: 0,
+            lastTap: 0,
+            token: 0
+        };
     }
 
     task() {
@@ -117,7 +144,14 @@ class App {
     }
 
     bindShell() {
+        this.mountViewer();
         this.paneResults.addEventListener('click', (e) => this.onResultsClick(e));
+        this.paneResults.addEventListener('dblclick', (e) => {
+            const card = e.target.closest('[data-card]');
+            if (card && e.target.closest('.card-stage')) {
+                this.openViewer(parseInt(card.dataset.card, 10));
+            }
+        });
         document.addEventListener('keydown', (e) => this.onResultsKey(e));
         document.getElementById('btn-t2i').addEventListener('click', () => this.createTextTask());
         document.getElementById('btn-image').addEventListener('click', () => this.fileTask.click());
@@ -258,6 +292,7 @@ class App {
     activate(id) {
         this.activeId = id;
         this.comboOpen = false;
+        this.closeViewer();
         this.render();
     }
 
@@ -971,6 +1006,11 @@ class App {
     onResultsClick(e) {
         const task = this.task();
         if (!task) return;
+        const zoom = e.target.closest('[data-zoom]');
+        if (zoom) {
+            this.openViewer(parseInt(zoom.dataset.zoom, 10));
+            return;
+        }
         const go = e.target.closest('[data-go]');
         if (go) {
             this.selectResult(parseInt(go.dataset.go, 10));
@@ -1004,6 +1044,29 @@ class App {
     }
 
     onResultsKey(e) {
+        if (this.viewerState?.open) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                this.closeViewer();
+                return;
+            }
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                this.viewerNav(-1);
+                return;
+            }
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                this.viewerNav(1);
+                return;
+            }
+            if (e.key.toLowerCase() === 'f' || e.key === '1') {
+                e.preventDefault();
+                this.toggleViewerScale();
+                return;
+            }
+            return;
+        }
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
         if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
         if (this.comboOpen) return;
@@ -1071,6 +1134,9 @@ class App {
         if (reveal) card.classList.add('is-enter');
         carousel.appendChild(card);
         film.appendChild(thumb);
+        if (this.viewerState?.open && this.activeId === task.id) {
+            this.updateViewerUI();
+        }
     }
 
     patchResultSlot(task, index) {
@@ -1099,6 +1165,9 @@ class App {
         } else {
             film.appendChild(nextThumb);
         }
+        if (this.viewerState?.open && this.activeId === task.id) {
+            this.updateViewerUI();
+        }
     }
 
     highlightResult(index) {
@@ -1122,9 +1191,51 @@ class App {
 
     resultTitle(res) {
         const providerLabel = res.nice_name || res.providerId || 'Unknown';
-        return res.params
-            ? `${providerLabel} | Aspect: ${res.aspect_ratio || 'Match Input'}`
-            : providerLabel;
+        const aspect = res.aspect_ratio || (res.params ? 'Match Input' : '');
+        const dims = (res.width && res.height) ? `${res.width}×${res.height}` : '';
+
+        let aspectPart = '';
+        if (aspect && dims) {
+            aspectPart = `Aspect: ${aspect} (${dims})`;
+        } else if (aspect) {
+            aspectPart = `Aspect: ${aspect}`;
+        } else if (dims) {
+            aspectPart = `${dims}`;
+        }
+
+        return aspectPart ? `${providerLabel} | ${aspectPart}` : providerLabel;
+    }
+
+    ensureResultDimensions(res) {
+        if (!res || !res.image || (res.width && res.height)) return;
+        const img = new Image();
+        img.onload = () => {
+            if (img.naturalWidth && img.naturalHeight) {
+                res.width = img.naturalWidth;
+                res.height = img.naturalHeight;
+                this.syncResultTitleUI(res);
+            }
+        };
+        img.src = res.image;
+    }
+
+    syncResultTitleUI(res) {
+        const task = this.task();
+        if (!task) return;
+        const index = task.results.indexOf(res);
+        if (index !== -1) {
+            const title = this.resultTitle(res);
+            const card = this.paneResults?.querySelector(`[data-card="${index}"]`);
+            const btn = card?.querySelector('.params-hit');
+            if (btn) {
+                btn.textContent = title;
+                btn.title = title;
+            }
+            if (this.viewerState?.open && this.viewerState.index === index && this.viewerInfo) {
+                this.viewerInfo.textContent = title;
+                this.viewerInfo.title = title;
+            }
+        }
     }
 
     resultParamsPre(res) {
@@ -1136,6 +1247,7 @@ class App {
         if (res.status === 'generating') {
             return `<article class="card ${active ? 'is-active' : ''}" data-card="${index}"><div class="card-stage ${this.stageBgClass(index)}"><div class="spinner"></div></div><div class="card-meta"><div class="info">Generating…</div></div></article>`;
         }
+        this.ensureResultDimensions(res);
         const title = this.resultTitle(res);
         const paramsBlock = this.resultParamsPre(res);
         if (res.status === 'error') {
@@ -1145,6 +1257,9 @@ class App {
                     <p>${escapeHtml(res.error || 'Unknown error')}</p>
                     ${res.fallback_url ? `<p><a href="${escapeHtml(res.fallback_url)}" target="_blank" rel="noopener">Download manually</a></p>` : ''}
                     ${paramsBlock ? `<button type="button" class="info params-hit" data-params-toggle="${index}">${escapeHtml(title)}</button>${paramsBlock}` : ''}
+                    <div class="card-error-bar">
+                        <button class="btn btn-ghost" type="button" data-regen="${index}">Again</button>
+                    </div>
                 </div>
             </article>`;
         }
@@ -1155,10 +1270,29 @@ class App {
             ${paramsBlock ? `<div class="card-params-pop">${paramsBlock}</div>` : ''}
             <div class="card-meta">
                 <button type="button" class="info params-hit" data-params-toggle="${index}" title="${escapeHtml(title)}">${escapeHtml(title)}</button>
-                ${isLocal ? `<button class="btn" type="button" data-copy="${index}">Copy</button>` : ''}
-                <a class="btn btn-download" href="${escapeHtml(res.image)}" download>${dlLabel}</a>
-                <button class="btn btn-ghost" type="button" data-regen="${index}">Again</button>
-                <button class="btn" type="button" data-newtask="${index}">New task</button>
+                <div class="card-actions">
+                    <div class="card-btn-grp">
+                        <button class="btn btn-fullsize" type="button" data-zoom="${index}" title="Open full size">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <polyline points="9 21 3 21 3 15"></polyline>
+                                <line x1="21" y1="3" x2="14" y2="10"></line>
+                                <line x1="3" y1="21" x2="10" y2="14"></line>
+                            </svg>
+                            <span>Full Size</span>
+                        </button>
+                    </div>
+                    <span class="card-btn-sep" aria-hidden="true"></span>
+                    <div class="card-btn-grp">
+                        ${isLocal ? `<button class="btn" type="button" data-copy="${index}">Copy</button>` : ''}
+                        <a class="btn btn-download" href="${escapeHtml(res.image)}" download>${dlLabel}</a>
+                    </div>
+                    <span class="card-btn-sep" aria-hidden="true"></span>
+                    <div class="card-btn-grp">
+                        <button class="btn btn-ghost" type="button" data-regen="${index}">Again</button>
+                        <button class="btn" type="button" data-newtask="${index}">New task</button>
+                    </div>
+                </div>
             </div>
         </article>`;
     }
@@ -1429,6 +1563,313 @@ class App {
         } catch (err) {
             btn.disabled = false;
             this.toast(err.message);
+        }
+    }
+
+    mountViewer() {
+        if (document.getElementById('viewer-modal')) return;
+        const html = `
+            <div class="viewer-modal" id="viewer-modal" aria-hidden="true" data-scale="fit">
+                <div class="viewer-toolbar">
+                    <div class="viewer-toolbar-left">
+                        <span class="viewer-counter" id="viewer-counter"></span>
+                        <span class="viewer-info" id="viewer-info"></span>
+                    </div>
+                    <div class="viewer-toolbar-right">
+                        <div class="viewer-zoom-grp">
+                            <button class="viewer-zoom-btn is-active" id="viewer-btn-fit" type="button" title="Fit to screen (F)">Fit</button>
+                            <button class="viewer-zoom-btn" id="viewer-btn-100" type="button" title="Original 100% size (1)">100%</button>
+                        </div>
+                        <button class="btn btn-sm" id="viewer-btn-copy" type="button">Copy</button>
+                        <a class="btn btn-sm btn-download" id="viewer-btn-download" href="#" download>Download</a>
+                        <button class="viewer-close-btn" id="viewer-btn-close" type="button" title="Close (Esc)">✕</button>
+                    </div>
+                </div>
+                <button class="viewer-nav-btn viewer-prev" id="viewer-btn-prev" type="button" title="Previous (Left Arrow)" aria-label="Previous image">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <button class="viewer-nav-btn viewer-next" id="viewer-btn-next" type="button" title="Next (Right Arrow)" aria-label="Next image">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+                <div class="viewer-body" id="viewer-body">
+                    <div class="viewer-stage" id="viewer-stage">
+                        <img class="viewer-img" id="viewer-img" src="" alt="">
+                        <div class="viewer-spinner" id="viewer-spinner"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', html);
+
+        this.viewerModal = document.getElementById('viewer-modal');
+        this.viewerImg = document.getElementById('viewer-img');
+        this.viewerSpinner = document.getElementById('viewer-spinner');
+        this.viewerCounter = document.getElementById('viewer-counter');
+        this.viewerInfo = document.getElementById('viewer-info');
+        this.viewerBtnFit = document.getElementById('viewer-btn-fit');
+        this.viewerBtn100 = document.getElementById('viewer-btn-100');
+        this.viewerBtnCopy = document.getElementById('viewer-btn-copy');
+        this.viewerBtnDownload = document.getElementById('viewer-btn-download');
+        this.viewerBtnPrev = document.getElementById('viewer-btn-prev');
+        this.viewerBtnNext = document.getElementById('viewer-btn-next');
+        this.viewerBtnClose = document.getElementById('viewer-btn-close');
+        this.viewerStage = document.getElementById('viewer-stage');
+        this.viewerBody = document.getElementById('viewer-body');
+
+        this.bindViewerEvents();
+    }
+
+    bindViewerEvents() {
+        this.viewerBtnFit.onclick = () => this.setViewerScale('fit');
+        this.viewerBtn100.onclick = () => this.setViewerScale('100');
+        this.viewerBtnClose.onclick = () => this.closeViewer();
+        this.viewerBtnPrev.onclick = () => this.viewerNav(-1);
+        this.viewerBtnNext.onclick = () => this.viewerNav(1);
+        this.viewerBtnCopy.onclick = (e) => {
+            const task = this.task();
+            if (task?.results[this.viewerState.index]) {
+                this.handleCopy(task.results[this.viewerState.index], e.currentTarget);
+            }
+        };
+
+        this.viewerStage.onclick = (e) => {
+            if (e.target === this.viewerStage || e.target === this.viewerBody) {
+                this.closeViewer();
+            }
+        };
+
+        this.viewerImg.onclick = (e) => {
+            e.stopPropagation();
+            if (this.viewerState.scale === 'fit') {
+                this.setViewerScale('100');
+            }
+        };
+
+        this.viewerBody.onmousedown = (e) => {
+            if (this.viewerState.scale !== '100') return;
+            if (e.button !== 0) return;
+            e.preventDefault();
+            this.viewerState.isDragging = true;
+            this.viewerState.startX = e.clientX - this.viewerState.panX;
+            this.viewerState.startY = e.clientY - this.viewerState.panY;
+            this.viewerModal.classList.add('is-panning');
+        };
+
+        window.addEventListener('mousemove', (e) => {
+            if (!this.viewerState.open || !this.viewerState.isDragging) return;
+            this.viewerState.panX = e.clientX - this.viewerState.startX;
+            this.viewerState.panY = e.clientY - this.viewerState.startY;
+            this.applyViewerTransform();
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (!this.viewerState.open || !this.viewerState.isDragging) return;
+            this.viewerState.isDragging = false;
+            this.viewerModal.classList.remove('is-panning');
+        });
+
+        this.viewerBody.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            this.viewerState.touchStartX = touch.clientX;
+            this.viewerState.touchStartY = touch.clientY;
+
+            const now = Date.now();
+            if (now - this.viewerState.lastTap < 300) {
+                this.toggleViewerScale();
+                this.viewerState.lastTap = 0;
+                e.preventDefault();
+                return;
+            }
+            this.viewerState.lastTap = now;
+
+            if (this.viewerState.scale === '100') {
+                this.viewerState.isDragging = true;
+                this.viewerState.startX = touch.clientX - this.viewerState.panX;
+                this.viewerState.startY = touch.clientY - this.viewerState.panY;
+                this.viewerModal.classList.add('is-panning');
+            }
+        }, { passive: false });
+
+        this.viewerBody.addEventListener('touchmove', (e) => {
+            if (!this.viewerState.open || e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            if (this.viewerState.scale === '100' && this.viewerState.isDragging) {
+                this.viewerState.panX = touch.clientX - this.viewerState.startX;
+                this.viewerState.panY = touch.clientY - this.viewerState.startY;
+                this.applyViewerTransform();
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        this.viewerBody.addEventListener('touchend', (e) => {
+            if (!this.viewerState.open) return;
+            if (this.viewerState.isDragging) {
+                this.viewerState.isDragging = false;
+                this.viewerModal.classList.remove('is-panning');
+            }
+            if (this.viewerState.scale === 'fit' && e.changedTouches.length === 1) {
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - this.viewerState.touchStartX;
+                const dy = touch.clientY - this.viewerState.touchStartY;
+                if (Math.abs(dx) > 40 && Math.abs(dy) < 60) {
+                    if (dx < 0) this.viewerNav(1);
+                    else this.viewerNav(-1);
+                } else if (dy > 70 && Math.abs(dx) < 50) {
+                    this.closeViewer();
+                }
+            }
+        }, { passive: true });
+    }
+
+    getNextViewableIndex(currentIndex, delta) {
+        const task = this.task();
+        if (!task || !task.results.length) return -1;
+        let idx = currentIndex + delta;
+        while (idx >= 0 && idx < task.results.length) {
+            if (isViewableResult(task.results[idx])) {
+                return idx;
+            }
+            idx += delta;
+        }
+        return -1;
+    }
+
+    openViewer(index) {
+        const task = this.task();
+        if (!task || !task.results.length) return;
+        let targetIndex = index;
+        if (!isViewableResult(task.results[targetIndex])) {
+            targetIndex = this.getNextViewableIndex(index, 1);
+            if (targetIndex === -1) targetIndex = this.getNextViewableIndex(index, -1);
+        }
+        if (targetIndex === -1 || !task.results[targetIndex]) return;
+        this.viewerState.open = true;
+        this.viewerState.index = targetIndex;
+        this.viewerState.scale = 'fit';
+        this.viewerState.panX = 0;
+        this.viewerState.panY = 0;
+        this.viewerModal.classList.add('is-open');
+        this.viewerModal.setAttribute('aria-hidden', 'false');
+        this.viewerModal.dataset.scale = 'fit';
+        this.updateViewerUI();
+    }
+
+    closeViewer() {
+        if (!this.viewerState.open) return;
+        this.viewerState.open = false;
+        this.viewerModal.classList.remove('is-open');
+        this.viewerModal.setAttribute('aria-hidden', 'true');
+        this.viewerImg.src = '';
+        this.viewerImg.style.transform = '';
+    }
+
+    updateViewerUI() {
+        const task = this.task();
+        if (!task || !this.viewerState.open) return;
+        let idx = this.viewerState.index;
+        if (!isViewableResult(task.results[idx])) {
+            const nextValid = this.getNextViewableIndex(idx, 1);
+            const prevValid = nextValid !== -1 ? nextValid : this.getNextViewableIndex(idx, -1);
+            if (prevValid === -1) {
+                this.closeViewer();
+                return;
+            }
+            idx = prevValid;
+            this.viewerState.index = idx;
+        }
+        const res = task.results[idx];
+        if (!res) { this.closeViewer(); return; }
+
+        const viewableList = task.results.map((r, i) => ({ r, i })).filter(({ r }) => isViewableResult(r));
+        const total = viewableList.length;
+        const currentPos = viewableList.findIndex(({ i }) => i === idx) + 1;
+
+        this.viewerCounter.textContent = `${currentPos || 1} / ${total || 1}`;
+        this.viewerInfo.textContent = this.resultTitle(res);
+        this.viewerInfo.title = this.viewerInfo.textContent;
+
+        const hasPrev = this.getNextViewableIndex(idx, -1) !== -1;
+        const hasNext = this.getNextViewableIndex(idx, 1) !== -1;
+
+        this.viewerBtnPrev.disabled = !hasPrev;
+        this.viewerBtnNext.disabled = !hasNext;
+        this.viewerBtnPrev.style.display = total > 1 ? '' : 'none';
+        this.viewerBtnNext.style.display = total > 1 ? '' : 'none';
+
+        const isLocal = this.env.isLocal;
+        this.viewerBtnCopy.style.display = isLocal && res.image ? '' : 'none';
+        this.viewerBtnDownload.href = res.image || '#';
+        this.viewerBtnDownload.download = filenameFromUrl(res.image);
+
+        this.viewerBtnFit.classList.toggle('is-active', this.viewerState.scale === 'fit');
+        this.viewerBtn100.classList.toggle('is-active', this.viewerState.scale === '100');
+        this.viewerModal.dataset.scale = this.viewerState.scale;
+        this.applyViewerTransform();
+
+        const token = ++this.viewerState.token;
+        const previewSrc = getPreviewUrl(res.image);
+        const fullSrc = res.image;
+
+        this.viewerImg.src = previewSrc || fullSrc;
+
+        if (!isLocal && fullSrc && fullSrc !== previewSrc) {
+            this.viewerSpinner.classList.add('loading');
+            const preload = new Image();
+            preload.onload = () => {
+                if (preload.naturalWidth && preload.naturalHeight) {
+                    res.width = preload.naturalWidth;
+                    res.height = preload.naturalHeight;
+                    this.syncResultTitleUI(res);
+                }
+                if (this.viewerState.token === token && this.viewerState.open) {
+                    this.viewerImg.src = fullSrc;
+                    this.viewerSpinner.classList.remove('loading');
+                }
+            };
+            preload.onerror = () => {
+                if (this.viewerState.token === token) {
+                    this.viewerSpinner.classList.remove('loading');
+                }
+            };
+            preload.src = fullSrc;
+        } else {
+            this.viewerSpinner.classList.remove('loading');
+            this.ensureResultDimensions(res);
+        }
+
+        this.selectResult(idx);
+    }
+
+    setViewerScale(scale) {
+        this.viewerState.scale = scale;
+        this.viewerState.panX = 0;
+        this.viewerState.panY = 0;
+        this.viewerModal.dataset.scale = scale;
+        this.viewerBtnFit.classList.toggle('is-active', scale === 'fit');
+        this.viewerBtn100.classList.toggle('is-active', scale === '100');
+        this.applyViewerTransform();
+    }
+
+    toggleViewerScale() {
+        this.setViewerScale(this.viewerState.scale === 'fit' ? '100' : 'fit');
+    }
+
+    applyViewerTransform() {
+        if (this.viewerState.scale === '100') {
+            this.viewerImg.style.transform = `translate3d(${this.viewerState.panX}px, ${this.viewerState.panY}px, 0)`;
+        } else {
+            this.viewerImg.style.transform = '';
+        }
+    }
+
+    viewerNav(delta) {
+        const next = this.getNextViewableIndex(this.viewerState.index, delta);
+        if (next !== -1) {
+            this.viewerState.index = next;
+            this.viewerState.panX = 0;
+            this.viewerState.panY = 0;
+            this.updateViewerUI();
         }
     }
 }
