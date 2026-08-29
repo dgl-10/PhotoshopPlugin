@@ -177,8 +177,11 @@
     "providers": [
         {
             "id": "grok_imagine",
-            "generation_modes": ["t2i", "i2i"],
-            "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Grok Imagine - via XAI API Key (from $0.02/per image)", // Grok Imagine on FAL applies strong moderation filters
             "tags": {
                 "provider": "xai",
                 "family": "grok"
@@ -192,11 +195,8 @@
                 //"supported": true,
                 //"type": "separate_field",
                 //"field_name": "mask"
-                //"supported": false,
-                //"required": false
-                "supported": true,
-                "type": "first_referential",
-                "field_name": "images"
+                "supported": false,
+                "required": false
             },
             "allowed_aspect_ratios": [ // works only when at least one referential image provided
                 "2:1",
@@ -329,7 +329,10 @@
         },
         {
             "id": "seedream_v4_5_replicate",
-            "generation_modes": ["t2i", "i2i"],
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v4.5 via Replicate API Key ($0.04/per image)",
             "tags": {
                 "provider": "replicate",
@@ -465,7 +468,10 @@
         },
         {
             "id": "seedream_v4_5_fal",
-            "generation_modes": ["t2i", "i2i"],
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v4.5 via Fal API Key ($0.04/per image)",
             "tags": {
                 "provider": "fal",
@@ -597,7 +603,10 @@
         },
         {
             "id": "seedream_v5_0_lite_fal",
-            "generation_modes": ["t2i", "i2i"],
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v5.0 lite via Fal API Key ($0.35/per image)",
             "tags": {
                 "provider": "fal",
@@ -731,7 +740,10 @@
         },
         {
             "id": "seedream_v5_0_pro_replicate",
-            "generation_modes": ["t2i", "i2i"],
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v5.0 Pro via Replicate API Key (from $0.045/per image)",
             "tags": {
                 "provider": "replicate",
@@ -822,7 +834,10 @@
         },
         {
             "id": "seedream_v5_0_pro_fal",
-            "generation_modes": ["t2i", "i2i"],
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Seedream v5.0 Pro via Fal API Key (from $0.0675/per image)",
             "tags": {
                 "provider": "fal",
@@ -929,7 +944,10 @@
         },
         {
             "id": "alibaba_fal",
-            "generation_modes": ["t2i", "i2i"],
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "Wan/Qwen via Fal API Key (from $0.03/per image)",
             "tags": {
                 "provider": "fal",
@@ -1164,14 +1182,35 @@
         },
         {
             "id": "gpt_image_2_openai",
-            "generation_modes": ["t2i", "i2i"],
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
             "name": "GPT-Image-2 via OpenAI API Key (from ~$0.01)",
             "tags": {
                 "provider": "openai",
                 "family": "gpt-image"
             },
-            "nice_name": "GPT-Image-2 (OpenAI Key)",
-            "filename_suffix": "gpt_image_2",
+            "nice_name": {
+                "default": "GPT-Image-2 (OpenAI Key)",
+                "depends_on": "quality",
+                "values": {
+                    "auto": "GPT-Image-2 Auto (OpenAI Key)",
+                    "low": "GPT-Image-2 Low (OpenAI Key)",
+                    "medium": "GPT-Image-2 Medium (OpenAI Key)",
+                    "high": "GPT-Image-2 High (OpenAI Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "gpt_image_2",
+                "depends_on": "quality",
+                "values": {
+                    "auto": "gpt_image_2_auto",
+                    "low": "gpt_image_2_low",
+                    "medium": "gpt_image_2_medium",
+                    "high": "gpt_image_2_high"
+                }
+            },
             "image_format": "data_uri",
             "max_reference_images": 15,
             "supports_negative_prompt": false,
@@ -1371,8 +1410,11 @@
         },
         {
             "id": "bfl_flux2",
-            "generation_modes": ["t2i", "i2i"],
-            "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "FLUX.2 via BFL API Key (from $0.014 per image)",
             "tags": {
                 "provider": "bfl",
                 "family": "flux"
@@ -1476,19 +1518,19 @@
                     "options": [
                         {
                             "value": "pro",
-                            "label": "Flux 2 Pro (from $0.045 per image)"
+                            "label": "Flux 2 Pro (from $0.03 per image)"
                         },
                         {
                             "value": "max",
-                            "label": "Flux 2 Max (from $0.1 per image)"
+                            "label": "Flux 2 Max (from $0.07 per image)"
                         },
                         {
                             "value": "klein-9b",
-                            "label": "Flux 2 Klein 9B (from $0.017 per image)"
+                            "label": "Flux 2 Klein 9B (from $0.015 per image)"
                         },
                         {
                             "value": "klein-4b",
-                            "label": "Flux 2 Klein 4B (from $0.015 per image)"
+                            "label": "Flux 2 Klein 4B (from $0.014 per image)"
                         }
                     ],
                     "default": "pro"
@@ -1562,6 +1604,369 @@
                     "name": "transparent_bg",
                     "type": "boolean",
                     "label": "Transparent Background",
+                    "default": false
+                }
+            ]
+        },
+        {
+            "id": "pruna_p_image_replicate",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "P-Image via Replicate ($0.005 T2I / $0.01 I2I)",
+            "tags": {
+                "provider": "replicate",
+                "family": "p-image"
+            },
+            "nice_name": "P-Image (Replicate)",
+            "filename_suffix": "pruna_p_image",
+            "image_format": "data_uri",
+            "max_reference_images": 4,
+            "supports_negative_prompt": false,
+            "english_only": "recommended",
+            // "mask_handling": {
+            //     "supported": false,
+            //     "required": false
+            // },
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image"
+            },
+            "allowed_aspect_ratios": [
+                "1:1",
+                "16:9",
+                "9:16",
+                "4:3",
+                "3:4",
+                "3:2",
+                "2:3"
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                "{{?!source_image}}endpoint_url": "https://api.replicate.com/v1/models/prunaai/p-image/predictions",
+                "{{?source_image}}endpoint_url": "https://api.replicate.com/v1/models/prunaai/p-image-edit/predictions",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:REPLICATE_API_KEY}}"
+                },
+                "body_template": {
+                    "input": {
+                        "prompt": "{{prompt}}",
+                        "prompt_upsampling": false,
+                        "disable_safety_checker": true,
+                        // T2I
+                        "{{?!source_image}}aspect_ratio": "{{aspect_ratio}}",
+                        // I2I
+                        "{{?source_image}}images": [
+                            "{{source_image}}",
+                            "{{resolved_image_array}}"
+                        ],
+                        "{{?source_image && aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                        "{{?source_image && !aspect_ratio}}aspect_ratio": "match_input_image",
+                        "{{?source_image}}turbo": "{{turbo}}"
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "replicate"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "turbo",
+                    "type": "boolean",
+                    "label": "Turbo (I2I only). Disable for complex edits",
+                    "default": false
+                }
+            ]
+        },
+        {
+            "id": "pruna_p_image_ideogram_replicate",
+            "generation_modes": [
+                "t2i"
+            ],
+            "name": "P-Image Ideogram via Replicate (from $0.003/image)",
+            "tags": {
+                "provider": "replicate",
+                "family": "p-image"
+            },
+            "nice_name": {
+                "default": "P-Image Ideogram (Replicate)",
+                "depends_on": "thinking",
+                "values": {
+                    "very low": "P-Image Ideogram Very Low (Replicate)",
+                    "low": "P-Image Ideogram Low (Replicate)",
+                    "medium": "P-Image Ideogram Medium (Replicate)",
+                    "high": "P-Image Ideogram High (Replicate)",
+                    "very high": "P-Image Ideogram Very High (Replicate)"
+                }
+            },
+            "filename_suffix": {
+                "default": "p_image_ideogram",
+                "depends_on": "thinking",
+                "values": {
+                    "very low": "p_image_ideogram_very_low",
+                    "low": "p_image_ideogram_low",
+                    "medium": "p_image_ideogram_medium",
+                    "high": "p_image_ideogram_high",
+                    "very high": "p_image_ideogram_very_high"
+                }
+            },
+            "image_format": "data_uri",
+            "max_reference_images": 0,
+            "supports_negative_prompt": false,
+            "english_only": "recommended",
+            "mask_handling": {
+                "supported": false,
+                "required": false
+            },
+            "allowed_aspect_ratios": [
+                "1:1",
+                "16:9",
+                "9:16",
+                "4:3",
+                "3:4",
+                "3:2",
+                "2:3"
+            ],
+            "remarks": "<b>P-Image Ideogram Pricing:</b><br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Thinking Level</b></td><td><b>1K Output</b></td><td><b>2K Output</b></td></tr><tr><td>Very Low</td><td>$0.003 (333 / $1)</td><td>$0.006 (166 / $1)</td></tr><tr><td>Low</td><td>$0.0075 (133 / $1)</td><td>$0.015 (66 / $1)</td></tr><tr><td>Medium</td><td>$0.010 (100 / $1)</td><td>$0.020 (50 / $1)</td></tr><tr><td>High (Default)</td><td>$0.015 (66 / $1)</td><td>$0.030 (33 / $1)</td></tr><tr><td>Very High</td><td>$0.02475 (~40 / $1)</td><td>$0.0495 (~20 / $1)</td></tr></table><br><i>Text-to-Image model by Pruna AI optimized for excellent text typography and creative rendering. Pure T2I model (does not accept input images).</i>",
+            "request_config": {
+                "single_image_per_request": true,
+                // Gated endpoint: strictly resolves only for pure T2I (no source_image)
+                "{{?!source_image}}endpoint_url": "https://api.replicate.com/v1/models/prunaai/p-image-ideogram/predictions",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:REPLICATE_API_KEY}}"
+                },
+                "body_template": {
+                    "input": {
+                        "prompt": "{{prompt}}",
+                        "aspect_ratio": "{{aspect_ratio}}",
+                        "thinking": "{{thinking}}",
+                        "image_size": "{{image_size}}",
+                        "prompt_upsampling": false,
+                        "output_format": "png"
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "replicate"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "thinking",
+                    "type": "dropdown",
+                    "label": "Thinking Level",
+                    "options": [
+                        {
+                            "value": "very low",
+                            "label": "Very Low (Fastest, from $0.003)"
+                        },
+                        {
+                            "value": "low",
+                            "label": "Low (from $0.0075)"
+                        },
+                        {
+                            "value": "medium",
+                            "label": "Medium (from $0.01)"
+                        },
+                        {
+                            "value": "high",
+                            "label": "High (Default, from $0.015)"
+                        },
+                        {
+                            "value": "very high",
+                            "label": "Very High (Best Quality, from $0.025)"
+                        }
+                    ],
+                    "default": "high"
+                },
+                {
+                    "name": "image_size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Image Resolution",
+                    "options": [
+                        {
+                            "value": "1K",
+                            "label": "1K (~1024px)",
+                            "alias": "std"
+                        },
+                        {
+                            "value": "2K",
+                            "label": "2K (~2048px, 2x cost)",
+                            "alias": "high"
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "ultra",
+                            "hidden": true
+                        }
+                    ],
+                    "default": "1K"
+                }
+            ]
+        },
+        {
+            "id": "pruna_p_image_upscale_replicate",
+            "generation_modes": [
+                "i2i"
+            ],
+            "name": "P-Image Upscale via Replicate (from $0.005/image)",
+            "tags": {
+                "provider": "replicate",
+                "family": "p-image"
+            },
+            "nice_name": "P-Image Upscale (Replicate)",
+            "filename_suffix": "p_image_upscale",
+            "image_format": "data_uri",
+            "max_reference_images": 0,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": false,
+                "required": false
+            },
+            // Aspect ratio changes are not applicable for upscaling; locked to source aspect ratio
+            "allowed_aspect_ratios": [],
+            "remarks": "<b>P-Image Upscale Pricing Tiers:</b><br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Output Resolution</b></td><td><b>Price / Image</b></td></tr><tr><td>1–4 MP (e.g. 2048×2048)</td><td>$0.005 (200 imgs / $1)</td></tr><tr><td>4–8 MP (e.g. 2880×2880)</td><td>$0.010 (100 imgs / $1)</td></tr><tr><td>8–16 MP (e.g. 4096×4096)</td><td>$0.020 (50 imgs / $1)</td></tr><tr><td>16–32 MP</td><td>$0.040 (25 imgs / $1)</td></tr><tr><td>32–64 MP</td><td>$0.060 (~16 imgs / $1)</td></tr><tr><td>64–128 MP</td><td>$0.120 (~83 imgs / $10)</td></tr></table><br><i>Sub-second ultra-fast neural upscaler by Pruna AI. Requires an input image (I2I mode).<br><b>Note:</b> The text prompt is ignored and has no effect on upscaling (you can leave it as-is or type anything).</i>",
+            "request_config": {
+                "single_image_per_request": true,
+                // Gated endpoint: strictly resolves only when source_image is present (I2I mode)
+                "{{?source_image}}endpoint_url": "https://api.replicate.com/v1/models/prunaai/p-image-upscale/predictions",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:REPLICATE_API_KEY}}"
+                },
+                "body_template": {
+                    "input": {
+                        "image": "{{source_image}}",
+                        "upscale_mode": "{{upscale_mode}}",
+                        "{{?upscale_mode == 'target'}}target": "{{target}}",
+                        "{{?upscale_mode == 'factor'}}factor": "{{factor}}",
+                        "enhance_details": "{{enhance_details}}",
+                        "enhance_realism": "{{enhance_realism}}",
+                        "output_format": "png",
+                        "disable_safety_checker": true
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "replicate"
+            },
+            "parameters": [
+                {
+                    "name": "upscale_mode",
+                    "type": "dropdown",
+                    "label": "Upscale Mode",
+                    "options": [
+                        {
+                            "value": "target",
+                            "label": "Target (Megapixel Resolution)"
+                        },
+                        {
+                            "value": "factor",
+                            "label": "Factor (Side Multiplier)"
+                        }
+                    ],
+                    "default": "target"
+                },
+                {
+                    "name": "target",
+                    "type": "dropdown",
+                    "label": "Target Megapixels (Target Mode)",
+                    "options": [
+                        {
+                            "value": 2,
+                            "label": "2 MP ($0.005)"
+                        },
+                        {
+                            "value": 4,
+                            "label": "4 MP (Default, $0.005)"
+                        },
+                        {
+                            "value": 8,
+                            "label": "8 MP ($0.01)"
+                        },
+                        {
+                            "value": 16,
+                            "label": "16 MP ($0.02)"
+                        },
+                        {
+                            "value": 32,
+                            "label": "32 MP ($0.04)"
+                        },
+                        {
+                            "value": 64,
+                            "label": "64 MP ($0.06)"
+                        },
+                        {
+                            "value": 128,
+                            "label": "128 MP ($0.12)"
+                        }
+                    ],
+                    "default": 4
+                },
+                {
+                    "name": "factor",
+                    "type": "dropdown",
+                    "label": "Scale Factor (Factor Mode)",
+                    "options": [
+                        {
+                            "value": 1.5,
+                            "label": "1.5x"
+                        },
+                        {
+                            "value": 2.0,
+                            "label": "2.0x (Default)"
+                        },
+                        {
+                            "value": 3.0,
+                            "label": "3.0x"
+                        },
+                        {
+                            "value": 4.0,
+                            "label": "4.0x"
+                        },
+                        {
+                            "value": 6.0,
+                            "label": "6.0x"
+                        },
+                        {
+                            "value": 8.0,
+                            "label": "8.0x"
+                        }
+                    ],
+                    "default": 2.0
+                },
+                {
+                    "name": "enhance_details",
+                    "type": "boolean",
+                    "label": "Enhance Details (Texture & Contrast)",
+                    "default": false
+                },
+                {
+                    "name": "enhance_realism",
+                    "type": "boolean",
+                    "label": "Enhance Realism (AI Artifact Cleanup)",
                     "default": false
                 }
             ]

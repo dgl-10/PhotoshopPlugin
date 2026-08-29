@@ -64,13 +64,11 @@
 11. [Server-Side Processing Flow](#11-server-side-processing-flow)
 12. [Security Model](#12-security-model)
 13. [Complete Examples with Annotations](#13-complete-examples-with-annotations)
-    - 13.1 [Grok Imagine (Sync, xAI Direct API)](#131-grok-imagine-sync-xai-direct-api)
-    - 13.2 [Seedream v4.5 via FAL (Async Poll+GET, Preprocessor)](#132-seedream-v45-via-fal-async-pollget-preprocessor)
-    - 13.3 [FLUX.1 Fill (Async Poll, BFL, Inpainting Required)](#133-flux1-fill-async-poll-bfl-inpainting-required)
-    - 13.4 [FLUX.2 (BFL, Multiple Models, Megapixel Preprocessors)](#134-flux2-bfl-multiple-models-megapixel-preprocessors)
-    - 13.5 [Alibaba / Wan / Qwen (Multi-Model with Conditional Preprocessors)](#135-alibaba--wan--qwen-multi-model-with-conditional-preprocessors)
-    - 13.6 [FLUX Kontext (BFL, English-Only, Simple)](#136-flux-kontext-bfl-english-only-simple)
-    - 13.7 [GPT-Image-2 (OpenAI, Megapixel Preprocessors, Mask Alpha Conversion)](#137-gpt-image-2-openai-megapixel-preprocessors-mask-alpha-conversion)
+    - 13.1 [Seedream v4.5 via FAL (Async Poll+GET, Preprocessor)](#131-seedream-v45-via-fal-async-pollget-preprocessor)
+    - 13.2 [FLUX.1 Fill (Async Poll, BFL, Inpainting Required)](#132-flux1-fill-async-poll-bfl-inpainting-required)
+    - 13.3 [FLUX.2 (BFL, Multiple Models, Megapixel Preprocessors)](#133-flux2-bfl-multiple-models-megapixel-preprocessors)
+    - 13.4 [Alibaba / Wan / Qwen (Multi-Model with Conditional Preprocessors)](#134-alibaba--wan--qwen-multi-model-with-conditional-preprocessors)
+    - 13.5 [GPT-Image-2 (Sync, OpenAI, Megapixel Preprocessors, Mask Alpha Conversion)](#135-gpt-image-2-sync-openai-megapixel-preprocessors-mask-alpha-conversion)
 
 ---
 
@@ -112,7 +110,7 @@ The file uses **JSON5** format (comments and trailing commas are allowed).
     },
     "providers": [
         // Array of provider configuration objects (see §3)
-        { "id": "grok_imagine", ... },
+        { "id": "gpt_image_2_openai", ... },
         { "id": "seedream_v4_5_fal", ... },
         ...
     ]
@@ -132,14 +130,14 @@ Each object in the `providers` array has the following structure. Fields marked 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | `string` | ★ | Unique identifier for this provider (e.g., `"grok_imagine"`). Used internally for routing. |
-| `name` | `string` | ★ | Human-readable name shown in the provider dropdown (e.g., `"Grok Imagine - via XAI API Key ($0.02/image)"`). |
+| `id` | `string` | ★ | Unique identifier for this provider (e.g., `"gpt_image_2_openai"`). Used internally for routing. |
+| `name` | `string` | ★ | Human-readable name shown in the provider dropdown (e.g., `"GPT-Image-2 via OpenAI API Key (from ~$0.01)"`). |
 | `generation_modes` | `array` | ★ | Explicit non-empty list of supported generation modes. Currently limited to `"t2i"` and `"i2i"`. See §3.10. |
 | `image_format` | `string` | ★ | Format for encoding images sent TO the API. See §3.2. |
 | `mask_handling` | `object` | ★ | How this provider handles inpainting masks. See §3.3. |
 | `max_reference_images` | `number` or `object` | ★ | Maximum additional reference images. See §3.4. |
 | `supports_negative_prompt` | `boolean` | ★ | Whether to show a "Negative Prompt" text field in the UI. |
-| `english_only` | `boolean` | ★ | Informational flag — provider only accepts English prompts. |
+| `english_only` | `boolean` or `string` | ★ | Prompt language requirement: `false` (multilingual), `true` (English only), or `"recommended"` (English recommended for optimal quality). See §3.5. |
 | `request_config` | `object` | ★ | Server-side HTTP request configuration. See §4. |
 | `response_config` | `object` | ★ | Reference to a response handler + provider-specific params. See §7. |
 | `parameters` | `array` | ★ | UI parameter definitions (inputs rendered in the browser). See §6. |
@@ -264,7 +262,7 @@ Setting `max_reference_images: 0` means the provider does not accept any referen
 | Field | Type | Description |
 |-------|------|-------------|
 | `supports_negative_prompt` | `boolean` | If `true`, a "Negative Prompt" text area appears in the UI below the main prompt. |
-| `english_only` | `boolean` | Informational flag. Currently displayed as a visual indicator only. |
+| `english_only` | `boolean` or `string` | Prompt language requirement / recommendation flag: <br>• `false` (default) — Multilingual prompts supported.<br>• `true` — Strictly English only (e.g. FLUX.1 Fill).<br>• `"recommended"` — English is strongly recommended for optimal quality / typography (e.g. Pruna P-Image / Ideogram). |
 
 ### 3.6 Aspect Ratios (`allowed_aspect_ratios`)
 
@@ -317,9 +315,9 @@ generated_image_YYYY-MM-DD_N.wh.SUFFIX_MODE.EXT
 
 **Form 1 — Static string (with placeholders):**
 ```jsonc
-"filename_suffix": "flux_kontext_{{model_flux_kontext}}"
-// Result (i2i): generated_image_2026-04-15_1.wh.flux_kontext_pro_i2i.png
-// Result (t2i): generated_image_2026-04-15_1.wh.flux_kontext_pro_t2i.png
+"filename_suffix": "gpt_image_2_{{quality}}"
+// Result (i2i): generated_image_2026-04-15_1.wh.gpt_image_2_medium_i2i.png
+// Result (t2i): generated_image_2026-04-15_1.wh.gpt_image_2_medium_t2i.png
 ```
 
 **Form 2 — Plain string (no placeholders):**
@@ -371,8 +369,8 @@ The configuration schema is identical to `filename_suffix` (string with optional
 
 **Form 2 — Static string with placeholder:**
 ```jsonc
-"nice_name": "FLUX Kontext {{model_flux_kontext}}"
-// Result header: "FLUX Kontext pro | Aspect: Match Input"
+"nice_name": "FLUX.2 {{model_flux2}}"
+// Result header: "FLUX.2 pro | Aspect: Match Input"
 ```
 
 **Form 3 — Dynamic object (depends on a UI parameter):**
@@ -494,8 +492,7 @@ is offered through several hosts.
 | Slug | Typical models |
 |------|----------------|
 | `"seedream"` | Seedream 4.5 / 5.0 (any host) |
-| `"flux"` | FLUX.1 Fill, FLUX.2, FLUX Kontext |
-| `"grok"` | Grok Imagine |
+| `"flux"` | FLUX.1 Fill, FLUX.2 |
 | `"gpt-image"` | GPT-Image-1.5 / GPT-Image-2 |
 | `"alibaba"` | Bundled Wan / Qwen dropdown (`alibaba_fal`) |
 | `"qwen"` | Dedicated Qwen provider (not the Alibaba bundle) |
@@ -606,7 +603,7 @@ When `true` and the user requests `num_images = 3`, the server makes 3 separate 
 
 ### 4.3 Reference Item Template
 
-Some APIs (like xAI Grok) require reference images to be wrapped in specific object structures instead of being plain strings.
+Some APIs (like OpenAI GPT-Image) require reference images to be wrapped in specific object structures instead of being plain strings.
 
 ```jsonc
 "request_config": {
@@ -670,7 +667,7 @@ Replaced with the value of `key` from the context. The context includes:
 
 ```jsonc
 "prompt": "{{prompt}}"           // → "a beautiful landscape"
-"model": "{{model_xai}}"        // → "grok-imagine-image-pro"
+"model": "{{model_flux2}}"        // → "pro"
 ```
 
 **Inline usage (part of a larger string):**
@@ -824,7 +821,7 @@ Each reference image is wrapped through the `reference_item_template` and the re
 // Result: [{ "url": "src...", "type": "image_url" }, { "url": "ref1...", "type": "image_url" }, ...]
 ```
 
-**Used by:** xAI Grok
+**Used by:** OpenAI GPT-Image
 
 #### Method 3: Flat Fields (`{{reference_1}}`, `{{reference_2}}`, ...)
 Each reference image is placed into a separate named field using conditional syntax to omit empty ones.
@@ -840,7 +837,7 @@ Each reference image is placed into a separate named field using conditional syn
 // If 0 refs: { "input_image": "src..." }
 ```
 
-**Used by:** BFL providers (FLUX.2, Kontext)
+**Used by:** BFL providers (FLUX.2)
 
 ---
 
@@ -929,14 +926,16 @@ This creates seamless value mapping between providers with different capability 
 **Object options with labels (no aliases):**
 ```jsonc
 {
-    "name": "model_xai",
+    "name": "quality",
     "type": "dropdown",
-    "label": "Model",
+    "label": "Quality",
     "options": [
-        { "value": "grok-imagine-image", "label": "Standard ($0.02/per output image + $0.002/per input image)" },
-        { "value": "grok-imagine-image-pro", "label": "Pro ($0.07/per output image + $0.002/per input image)" }
+        { "value": "auto", "label": "Auto" },
+        { "value": "low", "label": "Low" },
+        { "value": "medium", "label": "Medium" },
+        { "value": "high", "label": "High" }
     ],
-    "default": "grok-imagine-image"
+    "default": "medium"
 }
 ```
 
@@ -1021,7 +1020,7 @@ Response handlers are defined at the top level of `providers.json` to avoid dupl
 
 | Type | Description | Use Case |
 |------|-------------|----------|
-| `"sync"` | Result is immediately available in the response to the initial POST request. | xAI Grok, OpenRouter |
+| `"sync"` | Result is immediately available in the response to the initial POST request. | OpenAI, OpenRouter |
 | `"async_poll"` | Server polls a status URL until completion. The result data is in the poll response itself. | BFL FLUX, Replicate |
 | `"async_poll_and_get"` | Server polls for status, then makes a **separate GET request** to fetch the actual result. | FAL |
 
@@ -1543,168 +1542,9 @@ When the user clicks "Generate", this is the complete server-side sequence:
 
 ## 13. Complete Examples with Annotations
 
-### 13.1 Grok Imagine (Sync, xAI Direct API)
+### 13.1 Seedream v4.5 via FAL (Async Poll+GET, Preprocessor)
 
-A synchronous provider using xAI's Grok API. Supports reference images as objects and optional mask via referential mode.
-
-```jsonc
-{
-            "id": "grok_imagine",
-            "generation_modes": ["t2i", "i2i"],
-            "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
-            "tags": {
-                "provider": "xai",
-                "family": "grok"
-            },
-            "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
-            "image_format": "data_uri",
-            "max_reference_images": 4,
-            "supports_negative_prompt": false,
-            "english_only": false,
-            "mask_handling": {
-                //"supported": true,
-                //"type": "separate_field",
-                //"field_name": "mask"
-                //"supported": false,
-                //"required": false
-                "supported": true,
-                "type": "first_referential",
-                "field_name": "images"
-            },
-            "allowed_aspect_ratios": [ // works only when at least one referential image provided
-                "2:1",
-                "16:9",
-                "3:2",
-                "4:3",
-                "1:1",
-                "3:4",
-                "2:3",
-                "9:16",
-                "1:2"
-            ],
-            "nice_name": {
-                "default": "Grok Imagine Standard (XAI Key)",
-                "depends_on": "model_xai",
-                "values": {
-                    "grok-imagine-image": "Grok Imagine Standard (XAI Key)",
-                    "grok-imagine-image-quality": "Grok Imagine Quality (XAI Key)"
-                }
-            },
-            "filename_suffix": {
-                "default": "grok_imagine",
-                "depends_on": "model_xai",
-                "values": {
-                    "grok-imagine-image": "grok_imagine",
-                    "grok-imagine-image-quality": "grok_imagine_quality"
-                }
-            },
-            "request_config": {
-                "{{?!source_image}}endpoint_url": "https://api.x.ai/v1/images/generations",
-                "{{?source_image}}endpoint_url": "https://api.x.ai/v1/images/edits",
-                "method": "POST",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Authorization": "Bearer {{env:XAI_API_KEY}}"
-                },
-                "reference_item_template": {
-                    "url": "{{item}}",
-                    "type": "image_url"
-                },
-                "body_template": {
-                    "model": "{{model_xai}}",
-                    "prompt": "{{prompt}}",
-                    "n": "{{num_images}}",
-                    "resolution": "{{resolution}}",
-                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
-                    "{{?source_image}}images": [
-                        {
-                            "url": "{{source_image}}",
-                            "type": "image_url"
-                        },
-                        "{{resolved_references}}"
-                    ] //,
-                    //"{{?mask_image}}mask": {
-                    //    "url": "{{mask_image}}",
-                    //    "type": "image_url"
-                    //}
-                }
-            },
-            "response_config": {
-                "$ref": "sync",
-                "params": {
-                    "format": "url",
-                    "extract": [
-                        {
-                            "path": "data",
-                            "mode": "array",
-                            "item_path": "url"
-                        }
-                    ]
-                }
-            },
-            "parameters": [
-                {
-                    "name": "prompt",
-                    "type": "string",
-                    "alias": "prompt",
-                    "label": "Text Prompt",
-                    "default": ""
-                },
-                {
-                    "name": "model_xai",
-                    "type": "dropdown",
-                    "label": "Model",
-                    "options": [
-                        {
-                            "value": "grok-imagine-image",
-                            "label": "Standard ($0.02/per output image + $0.002/per input image)"
-                        },
-                        {
-                            "value": "grok-imagine-image-quality",
-                            "label": "Quality ($0.05(1K)/$0.07(2K)/per output image + $0.01/per input image)"
-                        }
-                    ],
-                    "default": "grok-imagine-image"
-                },
-                //{
-                //    "name": "n",
-                //    "type": "slider",
-                //    "alias": "num_images",
-                //    "label": "Number of images",
-                //    "min": 1,
-                //    "max": 4,
-                //    "step": 1,
-                //    "default": 2
-                //},
-                {
-                    "name": "resolution",
-                    "type": "dropdown",
-                    "alias": "output_resolution",
-                    "label": "Resolution",
-                    "options": [
-                        {
-                            "value": "1k",
-                            "alias": "std"
-                        },
-                        {
-                            "value": "2k",
-                            "alias": "high"
-                        },
-                        {
-                            "value": "2k",
-                            "alias": "ultra",
-                            "hidden": true
-                        }
-                    ],
-                    "default": "1k"
-                }
-            ]
-        }
-```
-
-### 13.2 Seedream v4.5 via FAL (Async Poll+GET, Preprocessor)
-
-An asynchronous provider using FAL's queue API. Features a preprocessor for dynamic image sizing.
+An asynchronous provider using FAL's queue API. Supports reference images as objects and optional mask via referential mode. Features a preprocessor for dynamic image sizing.
 
 ```jsonc
 {
@@ -1841,9 +1681,9 @@ An asynchronous provider using FAL's queue API. Features a preprocessor for dyna
         }
 ```
 
-### 13.3 FLUX.1 Fill (Async Poll, BFL, Inpainting Required)
+### 13.2 FLUX.1 Fill (Async Poll, BFL, Inpainting Required)
 
-A provider that strictly requires a mask for inpainting. Uses BFL's polling API.
+A provider that strictly requires a mask for inpainting. Uses BFL's polling API and specifies `"english_only": true`.
 
 ```jsonc
 {
@@ -1858,7 +1698,7 @@ A provider that strictly requires a mask for inpainting. Uses BFL's polling API.
             "image_format": "base64_raw",
             "max_reference_images": 0,
             "supports_negative_prompt": false,
-            "english_only": false,
+            "english_only": true,
             "mask_handling": {
                 "supported": true,
                 "required": true,
@@ -1916,7 +1756,7 @@ A provider that strictly requires a mask for inpainting. Uses BFL's polling API.
         }
 ```
 
-### 13.4 FLUX.2 (BFL, Multiple Models, Megapixel Preprocessors)
+### 13.3 FLUX.2 (BFL, Multiple Models, Megapixel Preprocessors)
 
 A complex provider featuring multiple model variants, megapixel-based pricing optimization, and two chained preprocessors.
 
@@ -1924,7 +1764,7 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
 {
             "id": "bfl_flux2",
             "generation_modes": ["t2i", "i2i"],
-            "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
+            "name": "FLUX.2 via BFL API Key (from $0.014 per image)",
             "tags": {
                 "provider": "bfl",
                 "family": "flux"
@@ -2028,19 +1868,19 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
                     "options": [
                         {
                             "value": "pro",
-                            "label": "Flux 2 Pro (from $0.045 per image)"
+                            "label": "Flux 2 Pro (from $0.03 per image)"
                         },
                         {
                             "value": "max",
-                            "label": "Flux 2 Max (from $0.1 per image)"
+                            "label": "Flux 2 Max (from $0.07 per image)"
                         },
                         {
                             "value": "klein-9b",
-                            "label": "Flux 2 Klein 9B (from $0.017 per image)"
+                            "label": "Flux 2 Klein 9B (from $0.015 per image)"
                         },
                         {
                             "value": "klein-4b",
-                            "label": "Flux 2 Klein 4B (from $0.015 per image)"
+                            "label": "Flux 2 Klein 4B (from $0.014 per image)"
                         }
                     ],
                     "default": "pro"
@@ -2120,7 +1960,7 @@ A complex provider featuring multiple model variants, megapixel-based pricing op
         }
 ```
 
-### 13.5 Alibaba / Wan / Qwen (Multi-Model with Conditional Preprocessors)
+### 13.4 Alibaba / Wan / Qwen (Multi-Model with Conditional Preprocessors)
 
 A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2) under one dropdown, with model-specific preprocessor filters.
 
@@ -2362,92 +2202,15 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
         }
 ```
 
-### 13.6 FLUX Kontext (BFL, English-Only, Simple)
+### 13.5 GPT-Image-2 (Sync, OpenAI, Megapixel Preprocessors, Mask Alpha Conversion)
 
-A straightforward BFL provider with a dynamic endpoint URL and the `english_only` flag.
-
-```jsonc
-{
-            "id": "bfl_kontext",
-            "generation_modes": ["t2i", "i2i"],
-            "name": "FLUX Kontext via BFL API Key ($0.04/$0.08 (FLUX Kontext Max) per image)",
-            "tags": {
-                "provider": "bfl",
-                "family": "flux"
-            },
-            "nice_name": {
-                "default": "FLUX Kontext (BFL Key)",
-                "depends_on": "model_flux_kontext",
-                "values": {
-                    "pro": "FLUX Kontext Pro (BFL Key)",
-                    "max": "FLUX Kontext Max (BFL Key)"
-                }
-            },
-            "filename_suffix": "flux_kontext_{{model_flux_kontext}}",
-            "image_format": "base64_raw",
-            "max_reference_images": 3,
-            "supports_negative_prompt": false,
-            "english_only": true,
-            "mask_handling": {
-                "supported": false,
-                "required": false
-            },
-            "request_config": {
-                "single_image_per_request": true,
-                "endpoint_url": "https://api.bfl.ai/v1/flux-kontext-{{model_flux_kontext}}",
-                "method": "POST",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "x-key": "{{env:BFL_API_KEY}}"
-                },
-                "body_template": {
-                    "prompt": "{{prompt}}",
-                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
-                    "{{?source_image}}input_image": "{{source_image}}",
-                    "{{?reference_1}}input_image_2": "{{reference_1}}",
-                    "{{?reference_2}}input_image_3": "{{reference_2}}",
-                    "{{?reference_3}}input_image_4": "{{reference_3}}",
-                    "output_format": "png",
-                    "safety_tolerance": 6
-                }
-            },
-            "response_config": {
-                "$ref": "bfl"
-            },
-            "parameters": [
-                {
-                    "name": "prompt",
-                    "type": "string",
-                    "alias": "prompt",
-                    "label": "Text Prompt",
-                    "default": ""
-                },
-                {
-                    "name": "model_flux_kontext",
-                    "type": "dropdown",
-                    "label": "Model Variant",
-                    "options": [
-                        {
-                            "value": "pro"
-                        },
-                        {
-                            "value": "max"
-                        }
-                    ],
-                    "default": "pro"
-                }
-            ]
-        }
-```
-
-### 13.7 GPT-Image-2 (OpenAI, Megapixel Preprocessors, Mask Alpha Conversion)
-
-Demonstrates several unique patterns:
+A **synchronous provider** using OpenAI's Direct Image API (returns results immediately in the response to the initial request, without polling). Demonstrates several unique patterns:
+- **Synchronous Response (`sync`)** — extracts image data (`b64_json` or `url`) directly from the submit response
 - **Megapixel Preprocessors** — `image_optimizer_mp` and `image_get_size_mp` chain for complex price optimization
 - **Mask alpha conversion** — `convert_mask_to_alpha` preprocessor to convert white/black masks to alpha transparency
 - **Optional mask** — `separate_field` mask with conditional `{{?mask_image}}` inclusion
+- **Dynamic nice_name and filename_suffix** — depends on `quality` parameter
 - **Hardcoded values** — `moderation` and `output_format` baked into `body_template` (not exposed as UI parameters)
-- **Sync response** — with `b64_json`/`url` extraction fallback
 
 ```jsonc
 {
@@ -2458,8 +2221,26 @@ Demonstrates several unique patterns:
                 "provider": "openai",
                 "family": "gpt-image"
             },
-            "nice_name": "GPT-Image-2 (OpenAI Key)",
-            "filename_suffix": "gpt_image_2",
+            "nice_name": {
+                "default": "GPT-Image-2 (OpenAI Key)",
+                "depends_on": "quality",
+                "values": {
+                    "auto": "GPT-Image-2 Auto (OpenAI Key)",
+                    "low": "GPT-Image-2 Low (OpenAI Key)",
+                    "medium": "GPT-Image-2 Medium (OpenAI Key)",
+                    "high": "GPT-Image-2 High (OpenAI Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "gpt_image_2",
+                "depends_on": "quality",
+                "values": {
+                    "auto": "gpt_image_2_auto",
+                    "low": "gpt_image_2_low",
+                    "medium": "gpt_image_2_medium",
+                    "high": "gpt_image_2_high"
+                }
+            },
             "image_format": "data_uri",
             "max_reference_images": 15,
             "supports_negative_prompt": false,

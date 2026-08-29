@@ -170,7 +170,7 @@
                 "t2i",
                 "i2i"
             ],
-            "name": "Grok Imagine - via XAI API Key (from $0.022/$0.06 (quality) per image)", // Grok Imagine on FAL applies strong moderation filters
+            "name": "Grok Imagine - via XAI API Key (from $0.02/per image)", // Grok Imagine on FAL applies strong moderation filters
             "tags": {
                 "provider": "xai",
                 "family": "grok"
@@ -184,11 +184,11 @@
                 //"supported": true,
                 //"type": "separate_field",
                 //"field_name": "mask"
-                //"supported": false,
-                //"required": false
-                "supported": true,
-                "type": "first_referential",
-                "field_name": "images"
+                "supported": false,
+                "required": false
+                //"supported": true,
+                //"type": "first_referential",
+                //"field_name": "images"
             },
             "allowed_aspect_ratios": [ // works only when at least one referential image provided
                 "2:1",
@@ -295,6 +295,149 @@
                 //    "step": 1,
                 //    "default": 2
                 //},
+                {
+                    "name": "resolution",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Resolution",
+                    "options": [
+                        {
+                            "value": "1k",
+                            "alias": "std"
+                        },
+                        {
+                            "value": "2k",
+                            "alias": "high"
+                        },
+                        {
+                            "value": "2k",
+                            "alias": "ultra",
+                            "hidden": true
+                        }
+                    ],
+                    "default": "1k"
+                }
+            ]
+        },
+        {
+            "id": "grok_imagine_2_0",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Grok Imagine 2.0 - via XAI API Key (from $0.04/per image)",
+            "tags": {
+                "provider": "xai",
+                "family": "grok"
+            },
+            "remarks": "<b>Image 2.0</b> is a single model with a Quality field (low / medium). Mask / Magic Wand / segmentation are UI-only and not wired in the API.<br>Official multi-ref limit is <b>3 source images total</b> (1 source + 2 extra refs).<br><br><b>Pricing</b> (output + $0.01 per input image):<br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Resolution</b></td><td><b>Low</b></td><td><b>Medium</b></td></tr><tr><td>1K</td><td>$0.04</td><td>$0.06</td></tr><tr><td>2K</td><td>$0.06</td><td>$0.08</td></tr></table><br>Note that all generations that do not pass moderation are charged at full cost.",
+            "image_format": "data_uri",
+            "max_reference_images": 4,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                // "supported": true,
+                // "type": "separate_field",
+                // "field_name": "mask"
+                "supported": false,
+                "required": false
+            },
+            "allowed_aspect_ratios": [
+                "2:1",
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "3:4",
+                "2:3",
+                "9:16",
+                "1:2"
+            ],
+            "nice_name": {
+                "default": "Grok Imagine 2.0 (XAI Key)",
+                "depends_on": "quality",
+                "values": {
+                    "low": "Grok Imagine 2.0 Low (XAI Key)",
+                    "medium": "Grok Imagine 2.0 Medium (XAI Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "grok_imagine_2_0",
+                "depends_on": "quality",
+                "values": {
+                    "low": "grok_imagine_2_0_low",
+                    "medium": "grok_imagine_2_0_medium"
+                }
+            },
+            "request_config": {
+                "{{?!source_image}}endpoint_url": "https://api.x.ai/v1/images/generations",
+                "{{?source_image}}endpoint_url": "https://api.x.ai/v1/images/edits",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:XAI_API_KEY}}"
+                },
+                "reference_item_template": {
+                    "url": "{{item}}",
+                    "type": "image_url"
+                },
+                "body_template": {
+                    "model": "grok-imagine-image-2.0",
+                    "prompt": "{{prompt}}",
+                    "n": "{{num_images}}",
+                    "quality": "{{quality}}",
+                    "resolution": "{{resolution}}",
+                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                    "{{?source_image}}images": [
+                        {
+                            "url": "{{source_image}}",
+                            "type": "image_url"
+                        },
+                        "{{resolved_references}}"
+                    ],
+                    "{{?mask_image}}mask": {
+                        "url": "{{mask_image}}",
+                        "type": "image_url"
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "sync",
+                "params": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "data",
+                            "mode": "array",
+                            "item_path": "url"
+                        }
+                    ]
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "quality",
+                    "type": "dropdown",
+                    "label": "Quality",
+                    "options": [
+                        {
+                            "value": "low",
+                            "label": "Low — $0.04 (1K) / $0.06 (2K) + $0.01/input"
+                        },
+                        {
+                            "value": "medium",
+                            "label": "Medium — $0.06 (1K) / $0.08 (2K) + $0.01/input"
+                        }
+                    ],
+                    "default": "medium"
+                },
                 {
                     "name": "resolution",
                     "type": "dropdown",
@@ -1397,8 +1540,26 @@
                 "provider": "openai",
                 "family": "gpt-image"
             },
-            "nice_name": "GPT-Image-2 (OpenAI Key)",
-            "filename_suffix": "gpt_image_2",
+            "nice_name": {
+                "default": "GPT-Image-2 (OpenAI Key)",
+                "depends_on": "quality",
+                "values": {
+                    "auto": "GPT-Image-2 Auto (OpenAI Key)",
+                    "low": "GPT-Image-2 Low (OpenAI Key)",
+                    "medium": "GPT-Image-2 Medium (OpenAI Key)",
+                    "high": "GPT-Image-2 High (OpenAI Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "gpt_image_2",
+                "depends_on": "quality",
+                "values": {
+                    "auto": "gpt_image_2_auto",
+                    "low": "gpt_image_2_low",
+                    "medium": "gpt_image_2_medium",
+                    "high": "gpt_image_2_high"
+                }
+            },
             "image_format": "data_uri",
             "max_reference_images": 15,
             "supports_negative_prompt": false,
@@ -1610,7 +1771,7 @@
             "image_format": "base64_raw",
             "max_reference_images": 0,
             "supports_negative_prompt": false,
-            "english_only": false,
+            "english_only": true,
             "mask_handling": {
                 "supported": true,
                 "required": true,
@@ -1672,7 +1833,7 @@
                 "t2i",
                 "i2i"
             ],
-            "name": "FLUX.2 via BFL API Key (from $0.015 per image)",
+            "name": "FLUX.2 via BFL API Key (from $0.014 per image)",
             "tags": {
                 "provider": "bfl",
                 "family": "flux"
@@ -1776,19 +1937,19 @@
                     "options": [
                         {
                             "value": "pro",
-                            "label": "Flux 2 Pro (from $0.045 per image)"
+                            "label": "Flux 2 Pro (from $0.03 per image)"
                         },
                         {
                             "value": "max",
-                            "label": "Flux 2 Max (from $0.1 per image)"
+                            "label": "Flux 2 Max (from $0.07 per image)"
                         },
                         {
                             "value": "klein-9b",
-                            "label": "Flux 2 Klein 9B (from $0.017 per image)"
+                            "label": "Flux 2 Klein 9B (from $0.015 per image)"
                         },
                         {
                             "value": "klein-4b",
-                            "label": "Flux 2 Klein 4B (from $0.015 per image)"
+                            "label": "Flux 2 Klein 4B (from $0.014 per image)"
                         }
                     ],
                     "default": "pro"
@@ -1872,7 +2033,7 @@
                 "t2i",
                 "i2i"
             ],
-            "name": "FLUX Kontext via BFL API Key ($0.04/$0.08 (FLUX Kontext Max) per image)",
+            "name": "FLUX Kontext via BFL API Key (from $0.04 per image)",
             "tags": {
                 "provider": "bfl",
                 "family": "flux"
@@ -1930,10 +2091,12 @@
                     "label": "Model Variant",
                     "options": [
                         {
-                            "value": "pro"
+                            "value": "pro",
+                            "label": "FLUX Kontext Pro ($0.04 per image)"
                         },
                         {
-                            "value": "max"
+                            "value": "max",
+                            "label": "FLUX Kontext Max ($0.08 per image)"
                         }
                     ],
                     "default": "pro"
@@ -1956,7 +2119,7 @@
             "image_format": "data_uri",
             "max_reference_images": 4,
             "supports_negative_prompt": false,
-            "english_only": false,
+            "english_only": "recommended",
             // "mask_handling": {
             //     "supported": false,
             //     "required": false
@@ -2031,12 +2194,32 @@
                 "provider": "replicate",
                 "family": "p-image"
             },
-            "nice_name": "P-Image Ideogram (Replicate)",
-            "filename_suffix": "p_image_ideogram",
+            "nice_name": {
+                "default": "P-Image Ideogram (Replicate)",
+                "depends_on": "thinking",
+                "values": {
+                    "very low": "P-Image Ideogram Very Low (Replicate)",
+                    "low": "P-Image Ideogram Low (Replicate)",
+                    "medium": "P-Image Ideogram Medium (Replicate)",
+                    "high": "P-Image Ideogram High (Replicate)",
+                    "very high": "P-Image Ideogram Very High (Replicate)"
+                }
+            },
+            "filename_suffix": {
+                "default": "p_image_ideogram",
+                "depends_on": "thinking",
+                "values": {
+                    "very low": "p_image_ideogram_very_low",
+                    "low": "p_image_ideogram_low",
+                    "medium": "p_image_ideogram_medium",
+                    "high": "p_image_ideogram_high",
+                    "very high": "p_image_ideogram_very_high"
+                }
+            },
             "image_format": "data_uri",
             "max_reference_images": 0,
             "supports_negative_prompt": false,
-            "english_only": false,
+            "english_only": "recommended",
             "mask_handling": {
                 "supported": false,
                 "required": false
@@ -2158,7 +2341,7 @@
             },
             // Aspect ratio changes are not applicable for upscaling; locked to source aspect ratio
             "allowed_aspect_ratios": [],
-            "remarks": "<b>P-Image Upscale Pricing Tiers:</b><br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Output Resolution</b></td><td><b>Price / Image</b></td></tr><tr><td>1–4 MP (e.g. 2048×2048)</td><td>$0.005 (200 imgs / $1)</td></tr><tr><td>4–8 MP (e.g. 2880×2880)</td><td>$0.010 (100 imgs / $1)</td></tr><tr><td>8–16 MP (e.g. 4096×4096)</td><td>$0.020 (50 imgs / $1)</td></tr><tr><td>16–32 MP</td><td>$0.040 (25 imgs / $1)</td></tr><tr><td>32–64 MP</td><td>$0.060 (~16 imgs / $1)</td></tr><tr><td>64–128 MP</td><td>$0.120 (~83 imgs / $10)</td></tr></table><br><i>Sub-second ultra-fast neural upscaler by Pruna AI. Requires an input image (I2I mode).</i>",
+            "remarks": "<b>P-Image Upscale Pricing Tiers:</b><br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Output Resolution</b></td><td><b>Price / Image</b></td></tr><tr><td>1–4 MP (e.g. 2048×2048)</td><td>$0.005 (200 imgs / $1)</td></tr><tr><td>4–8 MP (e.g. 2880×2880)</td><td>$0.010 (100 imgs / $1)</td></tr><tr><td>8–16 MP (e.g. 4096×4096)</td><td>$0.020 (50 imgs / $1)</td></tr><tr><td>16–32 MP</td><td>$0.040 (25 imgs / $1)</td></tr><tr><td>32–64 MP</td><td>$0.060 (~16 imgs / $1)</td></tr><tr><td>64–128 MP</td><td>$0.120 (~83 imgs / $10)</td></tr></table><br><i>Sub-second ultra-fast neural upscaler by Pruna AI. Requires an input image (I2I mode).<br><b>Note:</b> The text prompt is ignored and has no effect on upscaling (you can leave it as-is or type anything).</i>",
             "request_config": {
                 "single_image_per_request": true,
                 // Gated endpoint: strictly resolves only when source_image is present (I2I mode)

@@ -115,7 +115,7 @@ be forwarded to the paid provider. A `providerId` request must therefore include
 | `max_reference_images` | Cap on remaining references after normalization. Number or `depends_on` object. |
 | `allowed_aspect_ratios` | Constraint on root `aspect_ratio`. Absent, array, `[]`, or `depends_on` object. |
 | `supports_negative_prompt` | If true, send the negative-prompt parameter (empty string is allowed). |
-| `english_only` | Informational. If true, write the prompt in English. |
+| `english_only` | Informational: `false` (multilingual), `true` (English only), or `"recommended"` (English recommended). |
 | `single_image_per_request` | If true, the server already issues one provider call per output image; `force_separate_requests` is unnecessary. |
 | `remarks` | Optional HTML for humans (pricing, warnings). Do not parse it into `params`. |
 | `tags` | Optional grouping metadata (`provider` host slug, `family` model-line slug). Not a request field. |
