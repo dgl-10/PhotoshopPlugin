@@ -7,8 +7,9 @@ import * as api from './api.js';
 import { bindStrip, tryElectronDrag } from './dnd.js';
 import * as P from './providers.js';
 import {
-    COOKIE_COMBO,
-    COOKIE_FAVS,
+    STORAGE_COMBO,
+    STORAGE_FAVS,
+    STORAGE_PREVIEW_H,
     TASK_COLORS,
     clipboardImageFiles,
     escapeHtml,
@@ -16,12 +17,12 @@ import {
     filesToDataUrls,
     fileToDataUrl,
     getPreviewUrl,
-    readJsonCookie,
+    readStorageJson,
     resultImageUrl,
     shortTaskId,
     stageBgIndexFromColor,
     urlToDataUrl,
-    writeJsonCookie
+    writeStorageJson
 } from './util.js';
 
 /** Viewer display options for error/pending generation slots. */
@@ -47,14 +48,14 @@ class App {
         this.globalImages = [];
         this.aliasState = {};
         this.colorIndex = 0;
-        this.favs = new Set(readJsonCookie(COOKIE_FAVS, []));
+        this.favs = new Set(readStorageJson(STORAGE_FAVS, []));
         this.combo = {
             query: '',
             tags: [],
             favOnly: false,
             sort: 'name',
             providerId: '',
-            ...readJsonCookie(COOKIE_COMBO, {})
+            ...readStorageJson(STORAGE_COMBO, {})
         };
         this.comboOpen = false;
         this.pollTimer = null;
@@ -86,6 +87,8 @@ class App {
             lastTap: 0,
             token: 0
         };
+        this.previewMaxH = readStorageJson(STORAGE_PREVIEW_H, 380);
+        document.documentElement.style.setProperty('--preview-max-h', `${this.previewMaxH}px`);
     }
 
     task() {
@@ -98,11 +101,11 @@ class App {
     }
 
     persistCombo() {
-        writeJsonCookie(COOKIE_COMBO, this.combo);
+        writeStorageJson(STORAGE_COMBO, this.combo);
     }
 
     persistFavs() {
-        writeJsonCookie(COOKIE_FAVS, [...this.favs]);
+        writeStorageJson(STORAGE_FAVS, [...this.favs]);
     }
 
     toast(msg, type = 'error') {
@@ -458,7 +461,7 @@ class App {
             list = list.filter((p) => (`${p.name} ${p.id} ${P.providerTags(p).join(' ')}`).toLowerCase().includes(q));
         }
         if (tags.length) {
-            list = list.filter((p) => tags.every((t) => P.providerTags(p).includes(t)));
+            list = list.filter((p) => tags.some((t) => P.providerTags(p).includes(t)));
         }
         const favRank = (p) => (this.favs.has(p.id) ? 0 : 1);
         if (this.combo.sort === 'tag') {
@@ -584,6 +587,7 @@ class App {
 
         const provider = this.provider(task);
         P.seedForceSeparate(task, this.aliasState);
+        const paramsHtml = this.renderDynamicParams(task, provider);
         const mode = P.effectiveGenerationMode(task);
         const ar = P.resolveAspectRatio(task, provider, this.aliasState);
         const mask = P.maskCheckboxState(provider, task);
@@ -602,6 +606,9 @@ class App {
                         style="visibility:${task.state.viewMode === 'mask' ? 'hidden' : 'visible'}">
                     ${task.data.maskImage ? `<img class="mask ${task.state.viewMode === 'overlay' ? 'overlay-mode' : ''}" src="${task.data.maskImage}" style="display:${hideOverlay ? 'none' : 'block'}">` : ''}
                 </div>
+            </div>
+            <div class="preview-resizer" id="preview-resizer" title="Drag up/down to adjust height">
+                <span class="resizer-bar"></span>
             </div>` : '';
 
         const modeUnsupported = Boolean(provider) && !P.providerSupportsMode(provider, mode);
@@ -617,7 +624,6 @@ class App {
         const separateOn = forceSingle || !!task.state.formState.force_separate_requests;
         const numImages = task.state.formState.num_images || 1;
         const blocked = P.isGenerateBlocked(provider, task);
-        const paramsHtml = this.renderDynamicParams(task, provider);
 
         this.paneSource.innerHTML = `
             <div class="source-scroll">
@@ -649,7 +655,7 @@ class App {
                     </div>
                 </div>
                 <div class="field">
-                    <label>Model</label>
+                    <label>Model - Provider</label>
                     ${this.renderCombo(task, provider)}
                 </div>
                 <div class="params ${paramsHtml ? '' : 'is-empty'}" id="dynamic-params">${paramsHtml}</div>
@@ -859,6 +865,40 @@ class App {
                     }
                 }
             });
+        }
+
+        const resizer = this.paneSource.querySelector('#preview-resizer');
+        if (resizer) {
+            resizer.onpointerdown = (e) => {
+                e.preventDefault();
+                resizer.setPointerCapture(e.pointerId);
+                resizer.classList.add('is-dragging');
+                const startY = e.clientY;
+                const img = this.paneSource.querySelector('#source-img');
+                const startH = img ? img.offsetHeight : (this.previewMaxH || 380);
+
+                const onPointerMove = (moveEvt) => {
+                    const delta = moveEvt.clientY - startY;
+                    const newH = Math.max(160, Math.min(560, Math.round(startH + delta)));
+                    this.previewMaxH = newH;
+                    document.documentElement.style.setProperty('--preview-max-h', `${newH}px`);
+                };
+
+                const onPointerUp = (upEvt) => {
+                    try {
+                        resizer.releasePointerCapture(upEvt.pointerId);
+                    } catch (_) {}
+                    resizer.classList.remove('is-dragging');
+                    window.removeEventListener('pointermove', onPointerMove);
+                    window.removeEventListener('pointerup', onPointerUp);
+                    window.removeEventListener('pointercancel', onPointerUp);
+                    writeStorageJson(STORAGE_PREVIEW_H, this.previewMaxH);
+                };
+
+                window.addEventListener('pointermove', onPointerMove);
+                window.addEventListener('pointerup', onPointerUp);
+                window.addEventListener('pointercancel', onPointerUp);
+            };
         }
 
         this.bindCombo(task);

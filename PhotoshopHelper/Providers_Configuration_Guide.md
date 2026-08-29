@@ -232,30 +232,33 @@ Controls whether the provider supports inpainting masks and how they are transmi
 
 ### 3.4 Reference Images (`max_reference_images`)
 
-Defines the maximum number of additional reference images (beyond the source and mask) that the provider accepts.
+Defines the total maximum number of input/reference images that the provider API accepts.
 
 **Simple form — fixed number:**
 ```jsonc
-"max_reference_images": 4
+"max_reference_images": 5
 ```
 
 **Dynamic form — depends on a UI parameter:**
 ```jsonc
 "max_reference_images": {
-    "default": 7,
+    "default": 8,
     "depends_on": "model_flux2",
     "values": {
-        "klein-9b": 3,
-        "klein-4b": 3
+        "klein-9b": 4,
+        "klein-4b": 4
     }
 }
 ```
 
-When `model_flux2` is `"klein-9b"`, the limit is 3. For `"pro"` or `"max"` (not listed in `values`), the `default` of 7 applies.
+When `model_flux2` is `"klein-9b"`, the API limit is 4 images total. For `"pro"` or `"max"` (not listed in `values`), the `default` of 8 applies.
 
-> **Note:** If the mask uses a referential type (`first_referential` / `last_referential`), it consumes one reference slot. The UI automatically accounts for this — the effective limit shown to the user is `max_reference_images - 1` when mask is active.
+> **Note on Track Calculations:** 
+> - In pure **Text-to-Image (T2I)** with references, the full budget (e.g. 8) is available in the UI references strip. The server automatically promotes the 1st reference to `source_image`.
+> - In **Image-to-Image (I2I)** when an explicit source image is present on canvas, it consumes 1 slot (`max_reference_images - 1`).
+> - If a referential mask (`first_referential` / `last_referential`) is active, it consumes 1 additional slot.
 
-Setting `max_reference_images: 0` means the provider does not accept any reference images.
+Setting `max_reference_images: 0` means the provider does not accept any reference images (e.g. pure T2I or pure inpaint).
 
 ### 3.5 Prompt Configuration
 

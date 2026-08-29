@@ -42,8 +42,13 @@ function hexToHue(hex) {
     return hue < 0 ? hue + 360 : hue;
 }
 
-export const COOKIE_FAVS = 'wh_v2_favs';
-export const COOKIE_COMBO = 'wh_v2_combo';
+export const STORAGE_FAVS = 'wh_v2_favs';
+export const STORAGE_COMBO = 'wh_v2_combo';
+export const STORAGE_PREVIEW_H = 'wh_v2_preview_h';
+
+// Backwards compatibility aliases
+export const COOKIE_FAVS = STORAGE_FAVS;
+export const COOKIE_COMBO = STORAGE_COMBO;
 
 export function escapeHtml(value) {
     return String(value ?? '')
@@ -96,21 +101,37 @@ export function fixAspectRatio(aspectRatio, allowedList) {
     return aspectRatio;
 }
 
-export function readJsonCookie(name, fallback) {
-    const prefix = `${name}=`;
-    const row = document.cookie.split('; ').find((r) => r.startsWith(prefix));
-    if (!row) return fallback;
+export function readStorageJson(key, fallback) {
     try {
-        return JSON.parse(decodeURIComponent(row.slice(prefix.length)));
-    } catch {
-        return fallback;
-    }
+        const val = localStorage.getItem(key);
+        if (val !== null) {
+            return JSON.parse(val);
+        }
+    } catch (_) {}
+    // Seamless migration from legacy cookies if present
+    try {
+        const prefix = `${key}=`;
+        const row = document.cookie.split('; ').find((r) => r.startsWith(prefix));
+        if (row) {
+            const parsed = JSON.parse(decodeURIComponent(row.slice(prefix.length)));
+            writeStorageJson(key, parsed);
+            // Clear legacy cookie
+            document.cookie = `${key}=; path=/; max-age=0; SameSite=Lax`;
+            return parsed;
+        }
+    } catch (_) {}
+    return fallback;
 }
 
-export function writeJsonCookie(name, value, days = 365) {
-    const maxAge = Math.max(1, Math.floor(days * 86400));
-    document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))}; path=/; max-age=${maxAge}; SameSite=Lax`;
+export function writeStorageJson(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (_) {}
 }
+
+// Aliases for any legacy references
+export const readJsonCookie = readStorageJson;
+export const writeJsonCookie = writeStorageJson;
 
 export function fileToDataUrl(file) {
     return new Promise((resolve, reject) => {

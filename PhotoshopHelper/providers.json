@@ -177,7 +177,7 @@
             },
             "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
-            "max_reference_images": 4,
+            "max_reference_images": 5,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -332,7 +332,7 @@
             },
             "remarks": "<b>Image 2.0</b> is a single model with a Quality field (low / medium). Mask / Magic Wand / segmentation are UI-only and not wired in the API.<br>Official multi-ref limit is <b>3 source images total</b> (1 source + 2 extra refs).<br><br><b>Pricing</b> (output + $0.01 per input image):<br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Resolution</b></td><td><b>Low</b></td><td><b>Medium</b></td></tr><tr><td>1K</td><td>$0.04</td><td>$0.06</td></tr><tr><td>2K</td><td>$0.06</td><td>$0.08</td></tr></table><br>Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
-            "max_reference_images": 4,
+            "max_reference_images": 5,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -476,7 +476,7 @@
             "nice_name": "Seedream v4.5 (REPLICATE Key)",
             "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
-            "max_reference_images": 13,
+            "max_reference_images": 14,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -615,7 +615,7 @@
             "nice_name": "Seedream v4.5 (FAL Key)",
             "filename_suffix": "seedream_v4_5",
             "image_format": "data_uri",
-            "max_reference_images": 9,
+            "max_reference_images": 10,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -750,7 +750,7 @@
             "nice_name": "Seedream v5.0 Lite (FAL Key)",
             "filename_suffix": "seedream_v5_lite",
             "image_format": "data_uri",
-            "max_reference_images": 9,
+            "max_reference_images": 10,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -887,7 +887,7 @@
             "nice_name": "Seedream 5.0 Pro (REPLICATE Key)",
             "filename_suffix": "seedream_v5_pro",
             "image_format": "data_uri",
-            "max_reference_images": 9,
+            "max_reference_images": 10,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -982,7 +982,7 @@
             "filename_suffix": "seedream_v5_pro",
             "image_format": "data_uri",
             "remarks": "Main input image is included into the base price. For additional images from 2nd to 9th will be charged $0.0045 each.",
-            "max_reference_images": 9,
+            "max_reference_images": 10,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -1125,15 +1125,15 @@
                 }
             },
             "max_reference_images": {
-                "default": 2,
+                "default": 3,
                 "depends_on": "model_alibaba",
                 "values": {
-                    "fal-ai/qwen-image-2/edit": 2,
-                    "fal-ai/qwen-image-2/pro/edit": 2,
-                    "fal-ai/wan-25-preview/image-to-image": 1,
-                    "wan/v2.6/image-to-image": 2,
-                    "fal-ai/wan/v2.7/edit": 3,
-                    "fal-ai/wan/v2.7/pro/edit": 3
+                    "fal-ai/qwen-image-2/edit": 3,
+                    "fal-ai/qwen-image-2/pro/edit": 3,
+                    "fal-ai/wan-25-preview/image-to-image": 2,
+                    "wan/v2.6/image-to-image": 3,
+                    "fal-ai/wan/v2.7/edit": 4,
+                    "fal-ai/wan/v2.7/pro/edit": 4
                 }
             },
             "supports_negative_prompt": true,
@@ -1328,7 +1328,7 @@
             "nice_name": "Qwen Image Edit (Replicate Key)",
             "filename_suffix": "qwen_image_edit",
             "image_format": "data_uri",
-            "max_reference_images": 2,
+            "max_reference_images": 3,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -1397,7 +1397,7 @@
             "nice_name": "GPT-Image-1.5 (OpenAI Key)",
             "filename_suffix": "gpt_image_1.5",
             "image_format": "data_uri",
-            "max_reference_images": 15,
+            "max_reference_images": 16,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
@@ -1561,7 +1561,7 @@
                 }
             },
             "image_format": "data_uri",
-            "max_reference_images": 15,
+            "max_reference_images": 16,
             "supports_negative_prompt": false,
             "english_only": false,
             "remarks": "<b>Empirical price guide (Medium quality):</b><br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Resolution</b></td><td><b>Square</b></td><td><b>Landscape / Portrait (2:3)</b></td></tr><tr><td>0.63 MP</td><td>$0.052 (816×816)</td><td>$0.035 (656×1008)</td></tr><tr><td>1.0 MP</td><td>$0.061 (1024×1024)</td><td>$0.043 (832×1248)</td></tr><tr><td>1.5 MP</td><td>$0.071 (1248×1248)</td><td>$0.051 (1024×1536)</td></tr><tr><td>2.0 MP</td><td>$0.080 (1440×1440)</td><td>$0.056 (1168×1760)</td></tr><tr><td>3.0 MP</td><td>$0.098 (1760×1760)</td><td>$0.068 (1440×2160)</td></tr><tr><td>3.5 MP</td><td>$0.107 (1904×1904)</td><td>$0.074 (1552×2336)</td></tr></table><br><i>Note: Table prices are approximate empirical estimates for Medium quality. Low quality is ~3–5× cheaper, while High quality is ~4× more expensive.</i><br><br>Billed by tokens ($30 / 1M output + $8 / 1M image input).<br><b>Quality</b> is the main cost driver. Input images also cost money.<br><b>Tip:</b> Use Low/Medium + Input Optimization to save money.",
@@ -1859,11 +1859,11 @@
             "remarks": "<b>Pricing:</b> based on megapixels (1 MP = 1024x1024). Each image (input and output) is rounded up to the next MP. Each reference photo counts as at least 1 MP. Max 4 MP.<br><table style='width:100%; font-size: 0.8em; border-top: 1px solid #555; margin-top: 4px;'><tr><td>Model</td><td>1st MP</td><td>Next</td><td>Refs</td></tr><tr><td><b>Pro</b></td><td>$0.03</td><td>$0.015</td><td>$0.015</td></tr><tr><td><b>Max</b></td><td>$0.07</td><td>$0.03</td><td>$0.03</td></tr><tr><td><b>9B (K)</b></td><td>$0.015</td><td>$0.002</td><td>$0.002</td></tr><tr><td><b>4B (K)</b></td><td>$0.014</td><td>$0.001</td><td>$0.001</td></tr></table><br>Note: all generations that do not pass moderation are charged at full cost.",
             "image_format": "base64_raw",
             "max_reference_images": {
-                "default": 7,
+                "default": 8,
                 "depends_on": "model_flux2",
                 "values": {
-                    "klein-9b": 3,
-                    "klein-4b": 3
+                    "klein-9b": 4,
+                    "klein-4b": 4
                 }
             },
             "supports_negative_prompt": false,
@@ -2048,7 +2048,7 @@
             },
             "filename_suffix": "flux_kontext_{{model_flux_kontext}}",
             "image_format": "base64_raw",
-            "max_reference_images": 3,
+            "max_reference_images": 4,
             "supports_negative_prompt": false,
             "english_only": true,
             "mask_handling": {
@@ -2117,7 +2117,7 @@
             "nice_name": "P-Image (Replicate)",
             "filename_suffix": "pruna_p_image",
             "image_format": "data_uri",
-            "max_reference_images": 4,
+            "max_reference_images": 5,
             "supports_negative_prompt": false,
             "english_only": "recommended",
             // "mask_handling": {

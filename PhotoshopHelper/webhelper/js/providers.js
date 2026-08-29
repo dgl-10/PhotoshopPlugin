@@ -51,10 +51,16 @@ export function effectivelyUseMask(provider, task) {
 }
 
 export function effectiveMaxRefs(provider, task) {
+    if (!provider) return 0;
     const base = maxReferenceImages(provider, task?.state?.formState);
+    if (base <= 0) return 0;
+
     const maskType = provider?.mask_handling?.type || '';
-    if (!maskType.includes('referential')) return base;
-    return effectivelyUseMask(provider, task) ? base - 1 : base;
+    const maskPenalty = (maskType.includes('referential') && effectivelyUseMask(provider, task)) ? 1 : 0;
+    const hasExplicitSource = Boolean(task?.data?.sourceImage);
+    const sourcePenalty = hasExplicitSource ? 1 : 0;
+
+    return Math.max(0, base - sourcePenalty - maskPenalty);
 }
 
 export function maskCheckboxState(provider, task) {
@@ -143,7 +149,8 @@ const VENDOR_RULES = [
     { tag: 'openai', test: /openai|gpt/ },
     { tag: 'bfl', test: /\bbfl\b|flux/ },
     { tag: 'seedream', test: /seedream/ },
-    { tag: 'qwen', test: /qwen|wan|alibaba/ },
+    { tag: 'qwen', test: /qwen|alibaba/ },
+    { tag: 'wan', test: /wan/ },
     { tag: 'pruna', test: /pruna/ }
 ];
 
@@ -154,6 +161,8 @@ export function providerTags(provider) {
     for (const rule of VENDOR_RULES) {
         if (rule.test.test(blob)) tags.push(rule.tag);
     }
+    // Temporary user decision: disabled automatic capability and mode tags (mask, refs, t2i, i2i)
+    /*
     if (Array.isArray(provider.generation_modes)) {
         for (const mode of provider.generation_modes) {
             if (IMPLEMENTED_GENERATION_MODES.includes(mode) && !tags.includes(mode)) tags.push(mode);
@@ -162,6 +171,7 @@ export function providerTags(provider) {
     if (provider.mask_handling && provider.mask_handling.supported !== false) tags.push('mask');
     const maxRefs = maxReferenceImages(provider, {});
     if (maxRefs > 0) tags.push('refs');
+    */
     if (Array.isArray(provider.tags)) {
         for (const extra of provider.tags) {
             const t = String(extra).trim();

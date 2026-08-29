@@ -23,6 +23,7 @@
   --font: "Outfit", "Segoe UI", system-ui, sans-serif;
   --source-w: 352px;
   --topbar-h: 46px;
+  --preview-max-h: 380px;
 }
 
 *,
@@ -418,19 +419,25 @@ a.btn-download:visited {
   background-position: center;
   background-repeat: no-repeat;
   border-radius: var(--radius);
-  overflow: hidden;
-  min-height: 120px;
-  max-height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 8px;
 }
-.preview-inner { position: relative; display: inline-block; max-width: 100%; }
+.preview-inner {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+}
 .preview-wrap img.source {
   max-width: 100%;
-  max-height: 200px;
+  max-height: var(--preview-max-h, 380px);
+  height: auto;
   display: block;
   cursor: grab;
+  border-radius: 6px;
 }
 .preview-wrap img.mask {
   position: absolute;
@@ -440,8 +447,32 @@ a.btn-download:visited {
   height: 100%;
   object-fit: fill;
   pointer-events: none;
+  border-radius: 6px;
 }
 .preview-wrap img.mask.overlay-mode { mix-blend-mode: multiply; opacity: 0.7; }
+.preview-resizer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 12px;
+  margin: -2px 0 2px;
+  cursor: ns-resize;
+  user-select: none;
+  touch-action: none;
+}
+.preview-resizer .resizer-bar {
+  width: 34px;
+  height: 4px;
+  background: var(--line-strong);
+  border-radius: 999px;
+  transition: background 0.15s ease, width 0.15s ease, transform 0.15s ease;
+}
+.preview-resizer:hover .resizer-bar,
+.preview-resizer.is-dragging .resizer-bar {
+  background: var(--violet);
+  width: 48px;
+  transform: scaleY(1.2);
+}
 .mode-chip {
   font-size: 9px;
   font-weight: 800;
@@ -1297,7 +1328,6 @@ button.info.params-hit:hover { color: var(--violet); }
   .card-params-pop {
     bottom: 74px;
   }
-  .preview-wrap, .preview-wrap img.source { max-height: 140px; }
   .brand-name { display: none; }
 
   /* Mobile viewer adjustments */
