@@ -894,9 +894,14 @@ function startHttpServer() {
     });
 
 
-    // GET /webhelper/v0 — previous Spectre UI
+    // GET /webhelper/v0 — previous Spectre UI (fallback to /webhelper if excluded in packaged build)
     expressApp.get('/webhelper/v0', (req, res) => {
-        res.sendFile(path.join(__dirname, 'webhelper', 'v0', 'index.html'));
+        const v0Path = path.join(__dirname, 'webhelper', 'v0', 'index.html');
+        if (fs.existsSync(v0Path)) {
+            res.sendFile(v0Path);
+        } else {
+            res.redirect('/webhelper');
+        }
     });
 
     // // Bookmarks to the redesign folder land on the current UI.

@@ -2,6 +2,11 @@
 
 All notable changes to **FromPS / ToPS** and **PhotoshopHelper** are documented in this file.
 
+## [1.2.0]
+
+### 🌐 WebHelper Redesign
+- **Redesigned WebHelper UI**: Brand new modern interface featuring an improved workspace layout, global Dump stage for reusable images, streamlined task selector, and enhanced parameter controls.
+
 ## [1.1.0]
 
 ### 🎨 Photoshop Plugin & Placement Workflow

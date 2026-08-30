@@ -1,5 +1,5 @@
 (() => {
-  const APP_VERSION = "1.1.1";
+  const APP_VERSION = "1.2.0";
 
   // Update dynamic version links and text elements
   document.querySelectorAll("[data-version-href]").forEach((el) => {
