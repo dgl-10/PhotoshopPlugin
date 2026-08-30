@@ -1225,9 +1225,17 @@ a:hover {
   font-weight: 600;
 }
 
+.footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem 1.2rem;
+}
+
 .footer-links {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.8rem 1.1rem;
 }
 
@@ -1239,6 +1247,63 @@ a:hover {
 }
 
 .footer-links a:hover {
+  color: var(--coral);
+}
+
+.footer-socials {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.footer-social-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 6px rgba(80, 40, 120, 0.05);
+  transition: all 0.18s ease;
+  text-decoration: none;
+}
+
+.footer-social-btn:hover {
+  color: var(--ink);
+  background: #ffffff;
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  box-shadow: 0 4px 12px rgba(80, 40, 120, 0.12);
+}
+
+.footer-social-btn.footer-social-yt:hover {
+  color: #ff0000;
+  border-color: rgba(255, 0, 0, 0.35);
+}
+
+.footer-social-btn.footer-social-x:hover {
+  color: #000000;
+  border-color: rgba(0, 0, 0, 0.35);
+}
+
+.inline-icon-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.inline-icon-link svg {
+  display: inline-block;
+  vertical-align: -0.12em;
+  flex-shrink: 0;
+}
+
+.inline-icon-link:hover {
   color: var(--coral);
 }
 

@@ -1,5 +1,7 @@
 # ✨ FromPS / ToPS — Free Photoshop bridge for AI inpainting workflows
 
+[![Follow on X](https://img.shields.io/badge/Follow_on_X-%23000000.svg?style=flat&logo=X&logoColor=white)](https://x.com/DGLpixels) [![YouTube Channel](https://img.shields.io/badge/YouTube_Channel-FF0000.svg?style=flat&logo=youtube&logoColor=white)](https://www.youtube.com/@FromPSToPS)
+
 **Move Photoshop selections, masks, and AI-generated results between Photoshop and the image tools you already use.**
 
 Photoshop's built-in AI is convenient, but many artists also use external tools. FromPS / ToPS is a workflow bridge. It turns browser-based tools, free tiers, or subscriptions (like Midjourney/Leonardo/ChatGPT), as well as high-end APIs, into a seamless Photoshop workflow, handling all the tedious manual work for you. Avoid paying for another per-generation wrapper and choose the provider/model that fits your project.
