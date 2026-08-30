@@ -109,6 +109,7 @@ PhotoshopHelper/
 ├── webhelper/                        # Frontend application (SPA)
 │   ├── index.html                    # Current generator UI (`/webhelper`)
 │   ├── app.css
+│   ├── assets/                       # UI assets and graphics
 │   ├── js/
 │   └── v0/                           # Previous Spectre UI (`/webhelper/v0`)
 ├── setup/                            # Initial configuration and setup wizard
@@ -119,7 +120,7 @@ PhotoshopHelper/
 │   ├── license-activation.html       # License activation UI
 │   ├── license-activation.js         # License activation logic
 │   └── license-activation-preload.js # Secure bridge for license activation window
-├── package.json                      # Dependencies (Electron, Express, Sharp)
+├── package.json                      # Dependencies (Electron, Express, electron-store)
 ├── main.js                           # Main process: HTTP/REST API and system tray
 ├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware
 ├── plugin-pairing.js                 # Delivers the plugin token into the Photoshop plugin's UXP data folder

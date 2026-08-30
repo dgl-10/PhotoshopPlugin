@@ -129,7 +129,7 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
 │   ├── settings.js                       # Settings management and UI rendering
 │   └── image-utils.js                    # Image processing utilities (crop, masks, resize)
 └── PhotoshopHelper/                      # Companion Electron application (UXP sandbox bypass)
-    ├── package.json                      # Dependency manifest (Electron, Express, Sharp)
+    ├── package.json                      # Dependency manifest (Electron, Express, electron-store)
     ├── main.js                           # Main process: HTTP/REST API implementation and system tray
     ├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware for the local HTTP server
     ├── plugin-pairing.js                 # Delivers the plugin token into the Photoshop plugin's UXP data folder for automatic pairing
@@ -163,6 +163,7 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     └── webhelper/                        # Local web application directory for generation
         ├── index.html                    # Current UI at http://localhost:18345/webhelper
         ├── v0/                           # Previous UI at http://localhost:18345/webhelper/v0
+        ├── assets/                       # UI assets and graphics
         ├── js/
         └── app.css
 ```
