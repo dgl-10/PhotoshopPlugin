@@ -161,9 +161,658 @@
                     ]
                 }
             }
+        },
+        // Civitai async poll: poll workflow status until succeeded, extract generated images
+        "civitai": {
+            "type": "async_poll",
+            "polling": {
+                "url_template": "https://orchestration.civitai.com/v2/consumer/workflows/{{workflow_id}}",
+                "variables_from_submit": {
+                    "workflow_id": "id"
+                },
+                "method": "GET",
+                "use_request_headers": true,
+                "interval_ms": 2000,
+                "timeout_ms": 180000,
+                "status": {
+                    "path": "status",
+                    "in_progress": [
+                        "pending",
+                        "processing",
+                        "unassigned",
+                        "preparing",
+                        "running"
+                    ],
+                    "completed": [
+                        "succeeded"
+                    ],
+                    "failed": [
+                        "failed",
+                        "canceled",
+                        "expired"
+                    ]
+                },
+                "error_path": "steps.0.jobs.0.reason"
+            },
+            "result": {
+                "source": "poll_response",
+                "images": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "steps.0.output.images",
+                            "mode": "array",
+                            "item_path": "url"
+                        },
+                        {
+                            "path": "steps.0.output.blobs",
+                            "mode": "array",
+                            "item_path": "url"
+                        },
+                        {
+                            "path": "output.images",
+                            "mode": "array",
+                            "item_path": "url"
+                        }
+                    ]
+                }
+            }
         }
     },
     "providers": [
+        {
+            "id": "civitai_qwen",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Qwen 2/3 - via Civitai API Key (Yellow Buzz, from ~$0.05/img)",
+            "tags": {
+                "provider": "civitai",
+                "family": "alibaba"
+            },
+            "remarks": "• <b>Pricing:</b> Billed in Yellow Buzz (1,000 Buzz ≈ $1.00 + ~15% crypto fee overhead, ~$0.00115/Buzz):<br>&nbsp;&nbsp;- Qwen 2.0: ~45.5 Buzz (~$0.05)<br>&nbsp;&nbsp;- Qwen 2.0 Pro / 3.0 Pro: ~97.5 Buzz (~$0.11)",
+            "image_format": "data_uri",
+            "max_reference_images": 3,
+            "supports_negative_prompt": true,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "images"
+            },
+            "allowed_aspect_ratios": [
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "3:4",
+                "2:3",
+                "9:16"
+            ],
+            "nice_name": {
+                "default": "Qwen 2 (Civitai Key)",
+                "depends_on": "model",
+                "values": {
+                    "2.0": "Qwen 2 (Civitai Key)",
+                    "2.0-pro": "Qwen 2 Pro (Civitai Key)",
+                    "3.0-pro": "Qwen 3 Pro (Civitai Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "qwen_v2",
+                "depends_on": "model",
+                "values": {
+                    "2.0": "qwen_v2",
+                    "2.0-pro": "qwen_v2_pro",
+                    "3.0-pro": "qwen_v3_pro"
+                }
+            },
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 2048,
+                        "min_size": 512,
+                        "step": 16,
+                        "auto_resize_2_max": "{{auto_resize_2_max}}"
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": false,
+                "endpoint_url": "https://orchestration.civitai.com/v2/consumer/workflows?whatif=false&wait=0",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:CIVITAI_API_KEY}}"
+                },
+                "body_template": {
+                    // Strictly enforce settlement via Yellow Buzz
+                    "currencies": [
+                        "yellow"
+                    ],
+                    // Permit uncensored / mature generations
+                    "allowMatureContent": true,
+                    "steps": [
+                        {
+                            "$type": "imageGen",
+                            "input": {
+                                "engine": "qwen",
+                                "model": "{{model}}",
+                                "{{?!source_image}}operation": "createImage",
+                                "{{?source_image}}operation": "editImage",
+                                "prompt": "{{prompt}}",
+                                "{{?negative_prompt}}negativePrompt": "{{negative_prompt}}",
+                                // Desired output dimensions calculated by image_get_size preprocessor
+                                "width": "{{calculated_output_size_width}}",
+                                "height": "{{calculated_output_size_height}}",
+                                // Prompt expansion disabled so model follows user prompt strictly
+                                "promptExtend": false,
+                                "watermark": false,
+                                "quantity": "{{num_images}}",
+                                // Reference images for I2I (1 source image + up to 2 reference images)
+                                "{{?source_image}}images": [
+                                    "{{source_image}}",
+                                    "{{resolved_image_array}}"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "civitai"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "negative_prompt",
+                    "type": "string",
+                    "alias": "negative_prompt",
+                    "label": "Negative Prompt (Max 500 chars)",
+                    "default": "censored, nsfw censored"
+                },
+                {
+                    "name": "model",
+                    "type": "dropdown",
+                    "label": "Model Tier",
+                    "options": [
+                        {
+                            "value": "2.0",
+                            "label": "Qwen 2.0 (Fast / Balanced - 45.5 Buzz ≈ ~$0.05)"
+                        },
+                        {
+                            "value": "2.0-pro",
+                            "label": "Qwen 2.0 Pro (High Quality - 97.5 Buzz ≈ ~$0.11)"
+                        },
+                        {
+                            "value": "3.0-pro",
+                            "label": "Qwen 3.0 Pro (Hero Shots / Flagship - 97.5 Buzz ≈ ~$0.11)"
+                        }
+                    ],
+                    "default": "2.0"
+                },
+                {
+                    "name": "auto_resize_2_max",
+                    "type": "boolean",
+                    "label": "Auto resize to max size — the model will resize the output image to its maximum size",
+                    "default": true
+                }
+            ]
+        },
+        {
+            "id": "civitai_wan",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Wan 2.7 - via Civitai API Key (Yellow Buzz, from ~$0.045/img)",
+            "tags": {
+                "provider": "civitai",
+                "family": "alibaba"
+            },
+            "remarks": "• <b>Pricing:</b> Flat per image in Yellow Buzz (1,000 Buzz ≈ $1.00 + ~15% crypto fee overhead, ~$0.00115/Buzz):<br>&nbsp;&nbsp;- Standard: ~39 Buzz (~$0.045)<br>&nbsp;&nbsp;- Pro: ~97.5 Buzz (~$0.11)",
+            "image_format": "data_uri",
+            "max_reference_images": 4,
+            "supports_negative_prompt": true,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "images"
+            },
+            "allowed_aspect_ratios": [
+                "16:9",
+                "4:3",
+                "1:1",
+                "3:4",
+                "9:16"
+            ],
+            "nice_name": {
+                "default": "Wan 2.7 (Civitai Key)",
+                "depends_on": "tier",
+                "values": {
+                    "standard": "Wan 2.7 (Civitai Key)",
+                    "pro": "Wan 2.7 Pro (Civitai Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "wan_v2_7",
+                "depends_on": "tier",
+                "values": {
+                    "standard": "wan_v2_7",
+                    "pro": "wan_v2_7_pro"
+                }
+            },
+            "request_config": {
+                "single_image_per_request": false,
+                "endpoint_url": "https://orchestration.civitai.com/v2/consumer/workflows?whatif=false&wait=0",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:CIVITAI_API_KEY}}"
+                },
+                "body_template": {
+                    // Strictly enforce settlement via Yellow Buzz
+                    "currencies": [
+                        "yellow"
+                    ],
+                    // Permit uncensored / mature generations
+                    "allowMatureContent": true,
+                    "steps": [
+                        {
+                            "$type": "imageGen",
+                            "input": {
+                                "engine": "wan",
+                                "provider": "fal",
+                                "version": "v2.7",
+                                "{{?!source_image}}operation": "createImage",
+                                "{{?source_image}}operation": "editImage",
+                                "{{?tier == 'pro'}}usePro": true,
+                                "{{?tier == 'standard'}}usePro": false,
+                                "prompt": "{{prompt}}",
+                                "{{?negative_prompt}}negativePrompt": "{{negative_prompt}}",
+                                //"guidanceScale": 3.5,
+                                "quantity": "{{num_images}}",
+                                // Map aspect ratio to Wan FAL enum for T2I
+                                "{{?aspect_ratio == '16:9' || !aspect_ratio}}imageSize": "landscape_16_9",
+                                "{{?aspect_ratio == '9:16'}}imageSize": "portrait_16_9",
+                                "{{?aspect_ratio == '4:3'}}imageSize": "landscape_4_3",
+                                "{{?aspect_ratio == '3:4'}}imageSize": "portrait_4_3",
+                                "{{?aspect_ratio == '1:1'}}imageSize": "square_hd",
+                                "{{?!source_image && !aspect_ratio}}imageSize": "square_hd",
+                                // Input images for edit mode (1 to 4 images supported)
+                                "{{?source_image}}images": [
+                                    "{{source_image}}",
+                                    "{{resolved_image_array}}"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "civitai"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "negative_prompt",
+                    "type": "string",
+                    "alias": "negative_prompt",
+                    "label": "Negative Prompt",
+                    "default": "censored, nsfw censored"
+                },
+                {
+                    "name": "tier",
+                    "type": "dropdown",
+                    "label": "Model Tier",
+                    "options": [
+                        {
+                            "value": "standard",
+                            "label": "Wan 2.7 Standard (Fast - ~39 Buzz ≈ ~$0.045)"
+                        },
+                        {
+                            "value": "pro",
+                            "label": "Wan 2.7 Pro (Hero Shots / High Fidelity - ~97.5 Buzz ≈ ~$0.11)"
+                        }
+                    ],
+                    "default": "standard"
+                }
+            ]
+        },
+        {
+            "id": "civitai_seedream",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Seedream - via Civitai API Key (Yellow Buzz, from ~$0.045/img)",
+            "tags": {
+                "provider": "civitai",
+                "family": "seedream"
+            },
+            "remarks": "• <b>Pricing:</b> Flat per image in Yellow Buzz (1,000 Buzz ≈ $1.00 + ~15% crypto fee overhead, ~$0.00115/Buzz):<br>&nbsp;&nbsp;- v4: ~40 Buzz (~$0.045)<br>&nbsp;&nbsp;- v4.5: ~60 Buzz (~$0.070)<br>&nbsp;&nbsp;- v5.0 Lite: ~52 Buzz (~$0.060)",
+            "image_format": "data_uri",
+            "max_reference_images": 10,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "images"
+            },
+            "allowed_aspect_ratios": [
+                "21:9",
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "3:4",
+                "2:3",
+                "9:16"
+            ],
+            "nice_name": {
+                "default": "Seedream 4.5 (Civitai Key)",
+                "depends_on": "version",
+                "values": {
+                    "v4.5": "Seedream 4.5 (Civitai Key)",
+                    "v5.0-lite": "Seedream 5.0 Lite (Civitai Key)",
+                    "v4": "Seedream 4 (Civitai Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "seedream_v4_5",
+                "depends_on": "version",
+                "values": {
+                    "v4.5": "seedream_v4_5",
+                    "v5.0-lite": "seedream_v5_lite",
+                    "v4": "seedream_v4"
+                }
+            },
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        // Clamp 4K to 3K if v5.0-lite is selected (3K is native ceiling for 5 Lite)
+                        "{{?version == 'v5.0-lite' && image_size == '4K'}}max_size": "3K",
+                        // Keep full requested size for v4, v4.5, and standard resolutions
+                        "{{?version != 'v5.0-lite' || image_size != '4K'}}max_size": "{{image_size}}",
+                        "min_size": 256,
+                        "step": 16,
+                        "auto_resize_2_max": true
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": false,
+                "endpoint_url": "https://orchestration.civitai.com/v2/consumer/workflows?whatif=false&wait=0",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:CIVITAI_API_KEY}}"
+                },
+                "body_template": {
+                    // Strictly enforce settlement via Yellow Buzz
+                    "currencies": [
+                        "yellow"
+                    ],
+                    // Permit uncensored / mature generations
+                    "allowMatureContent": true,
+                    "steps": [
+                        {
+                            "$type": "imageGen",
+                            "input": {
+                                "engine": "seedream",
+                                "version": "{{version}}",
+                                "prompt": "{{prompt}}",
+                                "width": "{{calculated_output_size_width}}",
+                                "height": "{{calculated_output_size_height}}",
+                                //"guidanceScale": 2.5,
+                                "quantity": "{{num_images}}",
+                                // Input images for edit mode (up to 10 images supported)
+                                "{{?source_image}}images": [
+                                    "{{source_image}}",
+                                    "{{resolved_image_array}}"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "civitai"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "version",
+                    "type": "dropdown",
+                    "label": "Model Version",
+                    "options": [
+                        {
+                            "value": "v4",
+                            "label": "Seedream v4 (40 Buzz ≈ ~$0.045 - Budget)"
+                        },
+                        {
+                            "value": "v4.5",
+                            "label": "Seedream v4.5 (60 Buzz ≈ ~$0.070 - Best Detail)"
+                        },
+                        {
+                            "value": "v5.0-lite",
+                            "label": "Seedream v5.0 Lite (52 Buzz ≈ ~$0.060 - Latest Fast Tier)"
+                        }
+                    ],
+                    "default": "v4.5"
+                },
+                {
+                    "name": "image_size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Output Size",
+                    "options": [
+                        {
+                            "value": "2K",
+                            "alias": "std",
+                            "hidden": true
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "high",
+                            "label": "2K"
+                        },
+                        {
+                            "value": "4K",
+                            "alias": "ultra",
+                            "label": "4K (v5-lite: 3K)"
+                        }
+                    ],
+                    "default": "2K"
+                }
+            ]
+        },
+        {
+            "id": "civitai_krea2",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Krea 2 - via Civitai API Key (Yellow Buzz, from ~$0.045/img)",
+            "tags": {
+                "provider": "civitai",
+                "family": "krea"
+            },
+            "remarks": "• <b>Pricing:</b> Flat per image in Yellow Buzz (1,000 Buzz ≈ $1.00 + ~15% crypto fee overhead, ~$0.00115/Buzz):<br>&nbsp;&nbsp;- Medium: ~39 Buzz (~$0.045)<br>&nbsp;&nbsp;- Large: ~78 Buzz (~$0.090)<br>&nbsp;&nbsp;- Style References: +6.5 Buzz (~$0.0075) surcharge when reference images are attached",
+            "image_format": "data_uri",
+            "max_reference_images": 10,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": false,
+                "required": false
+            },
+            "allowed_aspect_ratios": [
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "4:5",
+                "2:3",
+                "9:16"
+            ],
+            "nice_name": {
+                "default": "Krea 2 (Civitai Key)",
+                "depends_on": "size",
+                "values": {
+                    "medium": "Krea 2 Medium (Civitai Key)",
+                    "large": "Krea 2 Large (Civitai Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "krea2",
+                "depends_on": "size",
+                "values": {
+                    "medium": "krea2_medium",
+                    "large": "krea2_large"
+                }
+            },
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 2048,
+                        "min_size": 256,
+                        "step": 16,
+                        "auto_resize_2_max": true
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": false,
+                "endpoint_url": "https://orchestration.civitai.com/v2/consumer/workflows?whatif=false&wait=0",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:CIVITAI_API_KEY}}"
+                },
+                "reference_item_template": {
+                    "imageUrl": "{{item}}",
+                    "strength": 1.0
+                },
+                "body_template": {
+                    // Strictly enforce settlement via Yellow Buzz
+                    "currencies": [
+                        "yellow"
+                    ],
+                    // Permit uncensored / mature generations
+                    "allowMatureContent": true,
+                    "steps": [
+                        {
+                            "$type": "imageGen",
+                            "input": {
+                                "engine": "fal",
+                                "model": "krea2",
+                                "operation": "createImage",
+                                "size": "{{size}}",
+                                "prompt": "{{prompt}}",
+                                "{{?calculated_output_aspect_ratio}}aspectRatio": "{{calculated_output_aspect_ratio}}",
+                                "{{?!calculated_output_aspect_ratio && aspect_ratio}}aspectRatio": "{{aspect_ratio}}",
+                                "{{?!calculated_output_aspect_ratio && !aspect_ratio}}aspectRatio": "1:1",
+                                "creativity": "{{creativity}}",
+                                "quantity": "{{num_images}}",
+                                // Style reference images (up to 10 supported, incurs +6.5 Buzz surcharge)
+                                "{{?source_image}}imageStyleReferences": [
+                                    {
+                                        "imageUrl": "{{source_image}}",
+                                        "strength": 1.0
+                                    },
+                                    "{{resolved_references}}"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "civitai"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Model Tier / Size",
+                    "options": [
+                        {
+                            "value": "medium",
+                            "alias": "std",
+                            "label": "Medium (Fast - 39 Buzz ≈ ~$0.045)"
+                        },
+                        {
+                            "value": "medium",
+                            "alias": "high",
+                            "hidden": true
+                        },
+                        {
+                            "value": "large",
+                            "alias": "ultra",
+                            "label": "Large (Hero Quality - 78 Buzz ≈ ~$0.090)"
+                        }
+                    ],
+                    "default": "medium"
+                },
+                {
+                    "name": "creativity",
+                    "type": "dropdown",
+                    "label": "Creativity Level",
+                    "options": [
+                        {
+                            "value": "raw",
+                            "label": "Raw (Strict Prompt Adherence)"
+                        },
+                        {
+                            "value": "low",
+                            "label": "Low"
+                        },
+                        {
+                            "value": "medium",
+                            "label": "Medium (Balanced)"
+                        },
+                        {
+                            "value": "high",
+                            "label": "High (Artistic Freedom / Richer Details)"
+                        }
+                    ],
+                    "default": "medium"
+                }
+            ]
+        },
         {
             "id": "grok_imagine",
             "generation_modes": [
@@ -1323,7 +1972,7 @@
             "name": "Qwen Image Edit 2511 via Replicate API Key ($0.03/image)",
             "tags": {
                 "provider": "replicate",
-                "family": "qwen"
+                "family": "alibaba"
             },
             "nice_name": "Qwen Image Edit (Replicate Key)",
             "filename_suffix": "qwen_image_edit",

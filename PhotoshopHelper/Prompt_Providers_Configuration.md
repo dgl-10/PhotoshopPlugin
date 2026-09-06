@@ -303,7 +303,7 @@ live test.
 Always include a `tags` object on the provider as documented in the guide.
 
 - `tags.provider`: slug of the API host from `PROVIDER_NAME` (for example `replicate`,
-  `fal`, `openai`, `xai`, `bfl`). This is the service that owns the key and endpoint,
+  `fal`, `openai`, `xai`, `bfl`, `civitai`). This is the service that owns the key and endpoint,
   not the model brand. Reuse an existing host slug when the same API family is used.
 - `tags.family`: slug of the model line from `MODEL_ID` (for example `seedream`,
   `flux`, `grok`, `gpt-image`, `qwen`, `alibaba`, `p-image`). Reuse an existing family

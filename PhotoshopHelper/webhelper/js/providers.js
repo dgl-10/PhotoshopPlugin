@@ -151,7 +151,8 @@ const VENDOR_RULES = [
     { tag: 'seedream', test: /seedream/ },
     { tag: 'qwen', test: /qwen|alibaba/ },
     { tag: 'wan', test: /wan/ },
-    { tag: 'pruna', test: /pruna/ }
+    { tag: 'pruna', test: /pruna/ },
+    { tag: 'civitai', test: /civitai/ }
 ];
 
 export function providerTags(provider) {
@@ -172,9 +173,13 @@ export function providerTags(provider) {
     const maxRefs = maxReferenceImages(provider, {});
     if (maxRefs > 0) tags.push('refs');
     */
-    if (Array.isArray(provider.tags)) {
-        for (const extra of provider.tags) {
-            const t = String(extra).trim();
+    if (provider.tags && typeof provider.tags === 'object') {
+        const extraTags = Array.isArray(provider.tags)
+            ? provider.tags
+            : Object.values(provider.tags);
+
+        for (const extra of extraTags) {
+            const t = typeof extra === 'string' ? extra.trim() : '';
             if (t && !tags.includes(t)) tags.push(t);
         }
     }

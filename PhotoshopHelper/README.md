@@ -8,7 +8,7 @@
 
 - **Clipboard Harmony:** Copy and paste full PNG images (UXP natively supports text only).
 - **Pro Drag & Drop:** Drag a single file or a group of files from Photoshop directly into a browser or file explorer.
-- **WebHelper UI:** A local SPA (`http://localhost:18345/webhelper`) for working with neural networks (Grok, FLUX, Seedream).
+- **WebHelper UI:** A local SPA (`http://localhost:18345/webhelper`) for working with neural networks (Grok, FLUX, Seedream, Civitai).
 - **Nebula Integration:** Dynamic API key injection via the Nebula Broker.
 
 ---
@@ -30,6 +30,7 @@ FAL_API_KEY=
 REPLICATE_API_KEY=
 BFL_API_KEY=
 OPENAI_API_KEY=
+CIVITAI_API_KEY=
 
 # Nebula integration (recommended for security).
 # Defines the mapping between .env keys and Nebula (i.e., your personal GSM — Google Secret Manager).
@@ -84,7 +85,7 @@ WebHelper works from its own page without any setup.
 
 ### 🌐 WebHelper (AI API)
 - 🌐 `GET /webhelper` — Entry point for the web UI (SPA).
-- 🌐 `GET /api/webhelper/providers` — List of available models (Grok, FAL, FLUX) and their parameters.
+- 🌐 `GET /api/webhelper/providers` — List of available models (Grok, FAL, FLUX, Civitai) and their parameters.
 - 🌐 `POST /api/webhelper/task` — Create a new task (upload Source + Mask from Photoshop).
 - 🌐 `POST /api/webhelper/task/from-file` — **Iterative workflow**: create a new task from an existing generation result.
 - 🌐 `GET /api/webhelper/queue` — Queue of new tasks (polled by the UI).

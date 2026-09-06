@@ -479,6 +479,7 @@ This is the service that owns the API key and the HTTP endpoint, not the model b
 | `"openai"` | OpenAI (direct) |
 | `"xai"` | xAI (direct) |
 | `"bfl"` | Black Forest Labs (direct) |
+| `"civitai"` | Civitai Orchestration |
 
 A future combobox may collapse first-party hosts (`openai`, `xai`, `bfl`, …) into a
 single **Direct** group. Keep the specific host slug in configuration so that grouping

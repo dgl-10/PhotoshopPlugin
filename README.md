@@ -123,6 +123,7 @@ WebHelper is designed as a universal bridge. It includes modular **Response Hand
 - **FAL.ai Handler**: Optimized for FAL's asynchronous generation pipeline.
 - **Replicate Handler**: Optimized for Replicate's asynchronous generation pipeline.
 - **BFL.ai Handler**: Specialized polling engine for **Black Forest Labs (Flux models)** asynchronous generation pipeline.
+- **Civitai Handler**: Async polling engine for **Civitai Orchestration API** workflows (supporting Qwen 2/3, Wan 2.7, Seedream via Yellow Buzz).
 
 > [!TIP]
 > This architecture allows you to add many API services that match one of the supported response patterns by editing `providers.json` and linking the provider to a built-in handler. In this repository, see `PhotoshopHelper/Providers_Configuration_Guide.md` and `PhotoshopHelper/Prompt_Providers_Configuration.md`; installed builds may place a copy of the guide next to the helper configuration files.
