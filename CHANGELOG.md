@@ -2,6 +2,15 @@
 
 All notable changes to **FromPS / ToPS** and **PhotoshopHelper** are documented in this file.
 
+## [1.2.1]
+
+### 🧩 New Providers & API Integrations
+- **Civitai Orchestration API Integration**: Added native support for image generation via the Civitai Orchestration API (billed via Yellow Buzz):
+  - **Qwen 2 / 3**: Qwen 2.0, 2.0 Pro, 3.0 Pro.
+  - **Wan 2.7**: Alibaba Wan 2.7 (Standard and Pro tiers).
+  - **Seedream**: Seedream v4, v4.5, and v5.0 Lite.
+- **Civitai Response Handler**: Added universal async polling response handler (`civitai`) supporting job status tracking and error reporting for Orchestration API workflows.
+
 ## [1.2.0]
 
 ### 🌐 WebHelper Redesign
