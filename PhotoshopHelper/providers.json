@@ -2753,6 +2753,116 @@
             ]
         },
         {
+            "id": "bfl_flux_pro_1_1",
+            "name": "FLUX1.1 [pro] via BFL API Key (from $0.04 per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
+            "nice_name": {
+                "default": "FLUX1.1 {{model_flux_pro_1_1}} (BFL Key)",
+                "depends_on": "model_flux_pro_1_1",
+                "values": {
+                    "pro": "FLUX1.1 Pro (BFL Key)",
+                    "ultra": "FLUX1.1 Ultra (BFL Key)",
+                    "ultra_raw": "FLUX1.1 Ultra Raw (BFL Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "flux1_1_{{model_flux_pro_1_1}}",
+                "depends_on": "model_flux_pro_1_1",
+                "values": {
+                    "pro": "flux1_1_pro",
+                    "ultra": "flux1_1_ultra",
+                    "ultra_raw": "flux1_1_ultra_raw"
+                }
+            },
+            "generation_modes": [
+                "t2i"
+            ],
+            "image_format": "base64_raw",
+            "max_reference_images": 0,
+            "supports_negative_prompt": false,
+            "english_only": true,
+            "mask_handling": {
+                "supported": false,
+                "required": false
+            },
+            "remarks": "<b>Pricing:</b> FLUX1.1 [pro]: $0.04/image. Ultra & Ultra Raw: $0.06/image.<br>• <b>Pro:</b> fast generation up to 1440px side (calculated automatically per aspect ratio).<br>• <b>Ultra:</b> up to 4 MP resolution with native aspect ratio support.<br>• <b>Ultra Raw:</b> candid photography aesthetics and natural realism at 4 MP.",
+            "preprocessor": [
+                {
+                    // Calculate width and height (max 1440, step 32) from aspect ratio only for Pro model
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 1440,
+                        "min_size": 256,
+                        "step": 32,
+                        "filter_by": "{{model_flux_pro_1_1}}",
+                        "filter_type": "equals",
+                        "values": "pro"
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                // Route to /flux-pro-1.1 when model is 'pro' in pure T2I mode
+                "{{?!source_image && model_flux_pro_1_1 == 'pro'}}endpoint_url": "https://api.bfl.ai/v1/flux-pro-1.1",
+                // Route to /flux-pro-1.1-ultra when model is 'ultra' or 'ultra_raw' in pure T2I mode
+                "{{?!source_image && (model_flux_pro_1_1 == 'ultra' || model_flux_pro_1_1 == 'ultra_raw')}}endpoint_url": "https://api.bfl.ai/v1/flux-pro-1.1-ultra",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "x-key": "{{env:BFL_API_KEY}}"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "output_format": "png",
+                    "safety_tolerance": 6,
+                    "prompt_upsampling": false,
+                    // Pro model requires width and height as integers (multiples of 32)
+                    "{{?model_flux_pro_1_1 == 'pro'}}width": "{{calculated_output_size_width}}",
+                    "{{?model_flux_pro_1_1 == 'pro'}}height": "{{calculated_output_size_height}}",
+                    // Ultra models accept native aspect ratio string
+                    "{{?model_flux_pro_1_1 != 'pro'}}aspect_ratio": "{{aspect_ratio}}",
+                    // Raw mode switch for Ultra
+                    "{{?model_flux_pro_1_1 == 'ultra'}}raw": false,
+                    "{{?model_flux_pro_1_1 == 'ultra_raw'}}raw": true
+                }
+            },
+            "response_config": {
+                "$ref": "bfl"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "model_flux_pro_1_1",
+                    "type": "dropdown",
+                    "label": "Model Variant",
+                    "default": "pro",
+                    "options": [
+                        {
+                            "value": "pro",
+                            "label": "FLUX1.1 [pro] ($0.04 per image)"
+                        },
+                        {
+                            "value": "ultra",
+                            "label": "FLUX1.1 [pro] Ultra ($0.06 per image)"
+                        },
+                        {
+                            "value": "ultra_raw",
+                            "label": "FLUX1.1 [pro] Ultra Raw ($0.06 per image)"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "id": "pruna_p_image_replicate",
             "generation_modes": [
                 "t2i",
