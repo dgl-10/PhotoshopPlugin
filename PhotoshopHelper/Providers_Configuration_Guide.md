@@ -2419,7 +2419,7 @@ A **synchronous provider** using OpenAI's Direct Image API (returns results imme
                 {
                     "name": "input_optimization",
                     "type": "dropdown",
-                    "label": "Input images optimization (экономия на входных токенах)",
+                    "label": "Input images optimization (save on input tokens)",
                     "options": [
                         {
                             "value": "auto",
