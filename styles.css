@@ -338,6 +338,7 @@ sp-menu-item,
     min-width: 0;
     margin-right: 8px;
     font-size: 11px;
+    height: 28px;
 }
 
 .icon-with-text svg {

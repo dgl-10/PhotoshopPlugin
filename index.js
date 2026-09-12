@@ -369,6 +369,9 @@ async function handleCapture(viaTempDocCreation, fullDocMask = false) {
             ui.showError('fromps', 'Failed to generate preview');
         }
 
+        // Reflect Select All state in mask-related buttons
+        ui.setMaskButtonsEnabled(capturedPayload.isSelectAll);
+
         // Update source-selection dropdown with all captures
         ui.updateSourceDropdown(capturedPayloads, newIndex);
 
@@ -389,6 +392,7 @@ async function handleClearFromPS() {
     capturedPayload = null;
     ui.clearFromPSPreview();
     ui.resetSourceDropdown(capturedPayloads);
+    ui.setMaskButtonsEnabled(false); // Reset mask buttons to enabled state (no active capture)
 }
 
 /**
@@ -445,6 +449,9 @@ async function handleSourceSelection(val) {
             const ratioInfo = capturedPayload.aspectRatio ? ` [${capturedPayload.aspectRatio}]` : '';
             ui.showInfo('fromps', `Capture ${idx + 1}: ${capturedPayload.bounds.width}×${capturedPayload.bounds.height}${ratioInfo}`);
         }
+
+        // Reflect Select All state of the switched-to capture in mask-related buttons
+        ui.setMaskButtonsEnabled(capturedPayload.isSelectAll);
     } catch (error) {
         console.error('Source switch error:', error);
         ui.showError('fromps', 'Failed to switch capture');
@@ -499,7 +506,7 @@ async function handleSaveImage() {
  * Handle Save Mask button click
  */
 async function handleSaveMask() {
-    if (!capturedPayload || !capturedPayload.maskData) {
+    if (!capturedPayload || !capturedPayload.maskData || capturedPayload.isSelectAll) {
         ui.showError('fromps', 'No mask to save');
         return;
     }
@@ -539,7 +546,13 @@ async function handleSaveAndMask() {
         // We now pass a default filename with extension to getFileForSaving
         const defaultName = `${safeName}.png`;
 
-        const result = await fsModule.saveImageAndMask(capturedPayload, defaultName);
+        // When the selection is a trivial Select All the mask is all-white and
+        // carries no information — skip mask saving entirely.
+        const payloadForSave = capturedPayload.isSelectAll
+            ? Object.assign({}, capturedPayload, { maskData: null })
+            : capturedPayload;
+
+        const result = await fsModule.saveImageAndMask(payloadForSave, defaultName);
 
         if (!result || result.cancelled) {
             ui.clearStatus('fromps'); // User cancelled
@@ -618,7 +631,7 @@ async function handleCopyToClipboard() {
  * Handle Copy Mask to Clipboard button click
  */
 async function handleCopyMask() {
-    if (!capturedPayload || !capturedPayload.maskData) {
+    if (!capturedPayload || !capturedPayload.maskData || capturedPayload.isSelectAll) {
         ui.showError('fromps', 'No mask to copy');
         return;
     }
@@ -670,7 +683,7 @@ async function handleDragOut(mode) {
             const imageBase64 = capturedPayload.imageBase64 || await fsModule.imageDataToBase64(capturedPayload.imageData);
 
             let maskBase64 = null;
-            if (capturedPayload.maskData) {
+            if (capturedPayload.maskData && !capturedPayload.isSelectAll) {
                 maskBase64 = await fsModule.maskDataToBase64(capturedPayload.maskData);
             }
 
@@ -705,6 +718,11 @@ async function handleDragOut(mode) {
         return;
     }
 
+    if (mode === 'maskOnly' && (!capturedPayload.maskData || capturedPayload.isSelectAll)) {
+        ui.showError('fromps', 'No mask to drag');
+        return;
+    }
+
     try {
         ui.showInfo('fromps', 'Starting drag...');
 
@@ -713,13 +731,18 @@ async function handleDragOut(mode) {
         const mustImage = mode !== "maskOnly";
         const mustMask = mode !== "imageOnly";
 
+        // Select All: mask is trivially all-white — no spatial info for the model.
+        // Degrade mask-inclusive modes: 'maskOnly' is blocked before this point,
+        // 'imageAndMask' / 'both' fall back to image-only (single file drag).
+        const effectiveMustMask = mustMask && !capturedPayload.isSelectAll;
+
         let imageBase64 = null;
         let maskBase64 = null;
         if (mustImage) {
             // Use cached base64 if available — avoids re-encoding restored imageData after switch
             imageBase64 = capturedPayload.imageBase64 || await fsModule.imageDataToBase64(capturedPayload.imageData);
         }
-        if (mustMask && capturedPayload.maskData) {
+        if (effectiveMustMask && capturedPayload.maskData) {
             //Load mask
             maskBase64 = await fsModule.maskDataToBase64(capturedPayload.maskData);
         }
@@ -727,7 +750,7 @@ async function handleDragOut(mode) {
         // 2. Validate (Unified Error Check)
         let errorMsg = null;
         // Case: Both required and both failed
-        if (mustImage && mustMask && !imageBase64 && !maskBase64) {
+        if (mustImage && effectiveMustMask && !imageBase64 && !maskBase64) {
             errorMsg = 'Failed to encode image and mask';
         }
         // Case: Image required and failed
@@ -735,10 +758,10 @@ async function handleDragOut(mode) {
             errorMsg = 'Failed to encode image';
         }
         // Case: Mask required and failed
-        else if (mustMask && !maskBase64) {
+        else if (effectiveMustMask && !maskBase64) {
             // Special check: if we needed a mask but don't even have source data
             if (!capturedPayload.maskData) {
-                errorMsg = 'No mask available to drag';
+                errorMsg = 'No mask to drag';
             } else {
                 errorMsg = 'Failed to encode mask';
             }
@@ -755,7 +778,7 @@ async function handleDragOut(mode) {
         // 3. Build Drag Array
         const imagesToDrag = [];
         if (mustImage && imageBase64) imagesToDrag.push(imageBase64);
-        if (mustMask && maskBase64) imagesToDrag.push(maskBase64);
+        if (effectiveMustMask && maskBase64) imagesToDrag.push(maskBase64);
 
         // Call Photoshop Helper to start drag operation
         const result = await helper.startDrag(imagesToDrag);
@@ -935,9 +958,9 @@ async function handlePlaceBack(mode = 'so') {
         const isFeatherVisible = settings.getShowFeatherPanel();
         let effectiveFeather;
         if (!isFeatherVisible) {
-            effectiveFeather = Object.assign({}, settings.getFeatherSettings(), { enabled: false });
+            effectiveFeather = Object.assign({}, settings.getFeatherSettings(), { enabled: false, skip: capturedPayload.isSelectAll });
         } else {
-            effectiveFeather = Object.assign({}, settings.getFeatherSettings(), currentFeatherOptions);
+            effectiveFeather = Object.assign({}, settings.getFeatherSettings(), currentFeatherOptions, { skip: capturedPayload.isSelectAll });
         }
 
         // Place back into Photoshop

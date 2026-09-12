@@ -206,7 +206,8 @@ function clearToPSPreview() {
 
 /**
  * Show error message in card status area
- * Error messages persist until manually cleared or overwritten
+ * Error messages persist until manually cleared or overwritten by design
+ * (errors intentionally do not auto-clear to ensure the user does not miss them).
  * @param {string} cardId - 'fromps' or 'tops'
  * @param {string} message - Error message
  */
@@ -221,6 +222,9 @@ function showError(cardId, message) {
     if (status) {
         status.textContent = message;
         status.className = 'status-message error';
+        // Note: By intentional user design, errors have no auto-clear timeout.
+        // They persist until the user performs the next action or clears manually,
+        // ensuring critical error messages are not missed.
     }
 }
 
@@ -429,6 +433,34 @@ function hideStatusWarning() {
     }
 }
 
+/**
+ * Update mask-related button states based on whether the current capture
+ * is a trivial Select All (all-white mask that carries no spatial information).
+ * - Disables: Copy Mask button, "Mask Only" items in Save and Drag menus.
+ * - Leaves enabled: "Both" / "imageAndMask" items (index.js degrades them to image-only internally).
+ * @param {boolean} isSelectAll
+ */
+function setMaskButtonsEnabled(isSelectAll) {
+    const btnCopyMask = document.getElementById('btn-copy-mask');
+    if (btnCopyMask) btnCopyMask.disabled = isSelectAll;
+
+    // Disable "Mask Only" item in save menu
+    const saveMenu = document.querySelector('#save-options-menu sp-menu');
+    if (saveMenu) {
+        saveMenu.querySelectorAll('sp-menu-item').forEach(item => {
+            if (item.value === 'maskOnly') item.disabled = isSelectAll;
+        });
+    }
+
+    // Disable "Mask Only" item in drag menu
+    const dragMenu = document.querySelector('#drag-options-menu sp-menu');
+    if (dragMenu) {
+        dragMenu.querySelectorAll('sp-menu-item').forEach(item => {
+            if (item.value === 'maskOnly') item.disabled = isSelectAll;
+        });
+    }
+}
+
 module.exports = {
     STATES,
     setFromPSState,
@@ -442,6 +474,7 @@ module.exports = {
     clearStatus,
     setCaptureButtonEnabled,
     setPlaceButtonEnabled,
+    setMaskButtonsEnabled,
     getSourceMode,
     updateSourceDropdown,
     resetSourceDropdown,

@@ -438,6 +438,17 @@ async function captureSelection(sourceMode, viaTempDocCreation, fullDocMask = fa
             finalMaskBuffer = tightMaskBuffer;
         }
 
+        // Determine if the selection is a trivial "Select All" — the mask is entirely white
+        // and carries no spatial information for the model.
+        // NOTE: Bounds-based check alone is not sufficient: Full Doc mode also produces
+        // expandedBounds equal to the document size but with a real mask (black background,
+        // white selection area). Only a pixel-level check is reliable here.
+        // Short-circuit: for non-Select-All masks the loop exits on the first dark pixel.
+        const isSelectAll = finalMaskBuffer.every(v => v >= 250);
+        if (isSelectAll) {
+            console.log('[Capture] Select All detected — mask is trivially all-white, will suppress mask-related operations.');
+        }
+
         // Create a compliant object for the payload
         // We use a plain object structure that fs.js can understand
         const maskData = {
@@ -519,6 +530,7 @@ async function captureSelection(sourceMode, viaTempDocCreation, fullDocMask = fa
             maskData,
             bounds: expandedBounds, // Return the expanded bounds as the primary bounds
             aspectRatio: bestRatioName,
+            isSelectAll, // true when Ctrl+A / Select All: mask is all-white, no spatial info
             context
         };
     }, { commandName: "Capture Selection" });
@@ -932,6 +944,11 @@ function resolveMaskFeather(buffer, width, height, freeSides, overrides = {}) {
 
     if (!config.enabled) {
         console.log('[Feather] Disabled (enabled=false), skipping mask softening.');
+        return none;
+    }
+
+    if (config.skip) {
+        console.log('[Feather] Select All detected \u2014 mask is trivially all-white, skipping feather.');
         return none;
     }
 
