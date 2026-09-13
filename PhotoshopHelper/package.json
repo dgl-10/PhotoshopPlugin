@@ -118,6 +118,7 @@
             "oneClick": false,
             "allowToChangeInstallationDirectory": true,
             "createDesktopShortcut": true,
+            "runAfterFinish": true,
             "deleteAppDataOnUninstall": true,
             "include": "../installer.nsh"
         }

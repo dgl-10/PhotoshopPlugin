@@ -83,6 +83,7 @@ const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow, setPairingRefresher } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
 const { initializeAutoUpdater, cleanupAutoUpdater, getUpdaterMenuItem, getUpdateStatus, getUpdateAlert } = require('./updater');
+const { WINDOWS_AUTO_START_NAME, interpretAutoStartSettings } = require('./auto-start');
 
 try {
     const { envPath } = getConfigPaths();
@@ -171,10 +172,83 @@ if (!fs.existsSync(WEBHELPER_TEMP_DIR)) {
 const TEMP_FILE_PATH = path.join(WEBHELPER_TEMP_DIR, 'ps_clipboard_temp.png');
 
 /**
+ * Safely read the platform-specific auto-start state for the tray menu.
+ * Development builds cannot create a stable login item, so they expose the
+ * correct platform label while keeping the checkbox disabled and unchecked.
+ *
+ * @returns {{supported: boolean, checked: boolean, approvalRequired: boolean, label: string}}
+ */
+function getAutoStartMenuState() {
+    if (!app.isPackaged) {
+        return {
+            ...interpretAutoStartSettings(process.platform),
+            checked: false
+        };
+    }
+
+    try {
+        const queryOptions = process.platform === 'win32'
+            ? { path: process.execPath, args: [] }
+            : undefined;
+        const settings = app.getLoginItemSettings(queryOptions);
+        return interpretAutoStartSettings(process.platform, settings);
+    } catch (err) {
+        log.error('Failed to get login item settings:', err);
+        return {
+            ...interpretAutoStartSettings(process.platform),
+            checked: false
+        };
+    }
+}
+
+/**
+ * Safely toggle auto-start at user login.
+ * No-op in development mode.
+ * @param {boolean} enable
+ */
+function setAutoStartEnabled(enable) {
+    if (!app.isPackaged) {
+        log.info('Skipping setLoginItemSettings in development mode.');
+        return;
+    }
+    try {
+        if (process.platform === 'win32') {
+            app.setLoginItemSettings({
+                openAtLogin: enable,
+                enabled: enable,
+                name: WINDOWS_AUTO_START_NAME,
+                path: process.execPath,
+                args: []
+            });
+        } else {
+            // macOS support is best-effort for the project's unsigned builds.
+            // Electron may report `requires-approval`, which is represented by a
+            // distinct tray label when the menu is rebuilt below.
+            app.setLoginItemSettings({
+                openAtLogin: enable
+            });
+        }
+        log.info(`Auto-start at login set to: ${enable}`);
+    } catch (err) {
+        log.error('Failed to set login item settings:', err);
+        dialog.showMessageBox({
+            type: 'error',
+            title: 'Auto-Start Error',
+            message: 'Failed to update auto-start settings.',
+            detail: err.message || 'Unknown error occurred.'
+        });
+    }
+}
+
+/**
  * Rebuild and apply the context menu to the tray based on current application state
  */
 function updateTrayMenu() {
     if (!tray) return;
+
+    // Read the login-item status once per rebuild so the label, checkmark, and
+    // click behavior all describe the same operating-system state.
+    const autoStartState = getAutoStartMenuState();
 
     const menuTemplate = [
         {
@@ -204,6 +278,19 @@ function updateTrayMenu() {
             label: 'Settings...',
             click: async () => {
                 await openSetupWindow();
+            }
+        },
+        {
+            label: autoStartState.label,
+            type: 'checkbox',
+            checked: autoStartState.checked,
+            enabled: app.isPackaged && autoStartState.supported,
+            click: (menuItem) => {
+                // Electron updates a checkbox MenuItem before invoking click.
+                // Using that new value also lets a checked macOS
+                // `requires-approval` item be cleanly unregistered.
+                setAutoStartEnabled(menuItem.checked);
+                updateTrayMenu();
             }
         },
         { type: 'separator' }

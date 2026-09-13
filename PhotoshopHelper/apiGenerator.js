@@ -601,7 +601,15 @@ async function generate(taskOrId, providerIdOrObject, num_images, aspect_ratio, 
 
         console.log(`[RequestBuilder] Executing request ${i + 1}/${requestCount} for taskId ${taskLabel}`);
         try {
-            const apiResult = await makeRequest(urlObj, options, currentBody);
+            // makeRequest() supports an automatic-retry retryConfig param, but it is deliberately
+            // NOT used here: this call is the paid generation submit request. A "fetch failed" or
+            // transient 502/503/504 here does not prove the provider never received/started the job —
+            // long-running providers (e.g. a synchronous OpenAI request that holds the connection open
+            // for the whole generation, or Replicate's queued jobs) can accept and even bill the job
+            // before the response makes it back to us. Auto-retrying would risk silently submitting
+            // (and paying for) a duplicate generation. Forcing retries: 0 makes that choice explicit
+            // instead of inheriting makeRequest's default retry count for non-GET methods.
+            const apiResult = await makeRequest(urlObj, options, currentBody, { retries: 0 });
 
             // Wait for generation to complete and extract URLs
             const { imageStrings, finalData, imagesConfig, downloadHeaders } = await waitForApiResult(

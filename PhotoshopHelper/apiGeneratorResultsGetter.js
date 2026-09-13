@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { detectMimeTypeFromBase64, mimeTypeToExt } = require('./imageUtils');
 
 /**
@@ -77,9 +78,17 @@ function resolveHandler(responseConfig, responseHandlers) {
 }
 
 /**
- * Modern Fetch-based request wrapper (matching official @fal-ai/client patterns)
+ * Modern Fetch-based request wrapper with automatic retries for transient network errors.
+ *
+ * @param {string|URL} url
+ * @param {object} [options={}]
+ * @param {string|object|null} [body=null]
+ * @param {object} [retryConfig={}]
+ * @param {number} [retryConfig.retries] - Max retries (defaults: 2 for GET, 1 for POST)
+ * @param {number} [retryConfig.delayMs=1000] - Initial delay between retries in milliseconds
+ * @returns {Promise<any>} Parsed response data
  */
-async function makeRequest(url, options, body = null) {
+async function makeRequest(url, options = {}, body = null, retryConfig = {}) {
     const method = (options.method || 'GET').toUpperCase();
     const fetchOptions = {
         method,
@@ -92,9 +101,50 @@ async function makeRequest(url, options, body = null) {
         body: method !== 'GET' && body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined
     };
 
-    try {
-        const res = await fetch(url, fetchOptions);
-        const data = await res.text();
+    const defaultRetries = method === 'GET' ? 2 : 1;
+    // Guard against invalid values (negative, NaN, non-integer) from callers of this exported
+    // function — without this, e.g. { retries: -1 } makes the loop below run zero times and
+    // silently return undefined instead of ever calling fetch().
+    const maxRetries = (Number.isInteger(retryConfig.retries) && retryConfig.retries >= 0)
+        ? retryConfig.retries
+        : defaultRetries;
+    let delayMs = retryConfig.delayMs || 1000;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        let res;
+        try {
+            res = await fetch(url, fetchOptions);
+        } catch (networkErr) {
+            // Pure transport/network error (socket closed, DNS lookup failed, timeout, ECONNRESET, etc.)
+            const cause = networkErr.cause
+                ? ` (${networkErr.cause.code || networkErr.cause.message || networkErr.cause})`
+                : '';
+            const isConnectionError = networkErr.name === 'TypeError' || networkErr.code || networkErr.cause;
+
+            if (isConnectionError && attempt < maxRetries) {
+                console.warn(`[makeRequest] Network attempt ${attempt + 1}/${maxRetries + 1} failed for ${url}: ${networkErr.message}${cause}. Retrying in ${delayMs}ms...`);
+                await new Promise(r => setTimeout(r, delayMs));
+                delayMs *= 2;
+                continue;
+            }
+
+            throw new Error(`Network Connection Error: ${networkErr.message}${cause}`);
+        }
+
+        // Server responded with an HTTP status
+        let data;
+        try {
+            data = await res.text();
+        } catch (readErr) {
+            const cause = readErr.cause ? ` (${readErr.cause.code || readErr.cause.message || readErr.cause})` : '';
+            if (attempt < maxRetries) {
+                console.warn(`[makeRequest] Reading response stream failed on attempt ${attempt + 1}/${maxRetries + 1}: ${readErr.message}${cause}. Retrying in ${delayMs}ms...`);
+                await new Promise(r => setTimeout(r, delayMs));
+                delayMs *= 2;
+                continue;
+            }
+            throw new Error(`Network Connection Error: reading response stream failed - ${readErr.message}${cause}`);
+        }
 
         let parsed;
         try {
@@ -104,18 +154,29 @@ async function makeRequest(url, options, body = null) {
         }
 
         if (!res.ok) {
-            const errorMsg = parsed.error?.message || parsed.error || parsed.detail || parsed.message || `API Error ${res.status}`;
-            throw new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+            // Transient server errors (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout) can be retried
+            const isTransientServerStatus = [502, 503, 504].includes(res.status);
+            if (isTransientServerStatus && attempt < maxRetries) {
+                console.warn(`[makeRequest] Received transient HTTP ${res.status} on attempt ${attempt + 1}/${maxRetries + 1}. Retrying in ${delayMs}ms...`);
+                await new Promise(r => setTimeout(r, delayMs));
+                delayMs *= 2;
+                continue;
+            }
+
+            const errorMsg = (typeof parsed === 'object' && parsed !== null)
+                ? (parsed.error?.message || parsed.error || parsed.detail || parsed.message || `HTTP ${res.status}`)
+                : (typeof parsed === 'string' && parsed.trim() ? parsed : `HTTP ${res.status}`);
+            const cleanErrorMsg = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
+            throw new Error(`API Error [${res.status}]: ${cleanErrorMsg}`);
         }
 
         return parsed;
-    } catch (err) {
-        throw new Error(`Network Error: ${err.message}`);
     }
 }
 
 /**
  * Universal polling function driven by config.
+ * Tolerates temporary network glitches without aborting in-progress generations.
  * Returns the final poll response body when status reaches "completed".
  */
 async function pollUntilDone(pollingConfig, templateVars) {
@@ -123,6 +184,7 @@ async function pollUntilDone(pollingConfig, templateVars) {
     const timeoutMs = pollingConfig.timeout_ms || 180000;
     const maxAttempts = Math.ceil(timeoutMs / intervalMs);
     const statusPath = pollingConfig.status.path;
+    const MAX_CONSECUTIVE_NETWORK_ERRORS = 5;
 
     // Build polling URL
     const pollingUrl = resolveTemplateString(pollingConfig.url_template, templateVars);
@@ -139,13 +201,36 @@ async function pollUntilDone(pollingConfig, templateVars) {
     }
 
     let attempts = 0;
+    let consecutiveNetworkErrors = 0;
+
     while (attempts < maxAttempts) {
         attempts++;
         await new Promise(r => setTimeout(r, intervalMs));
 
         console.log(`Polling status (Attempt ${attempts}/${maxAttempts}): ${pollingUrl}`);
 
-        const res = await makeRequest(pollingUrl, { method: pollingConfig.method || 'GET', headers });
+        let res;
+        try {
+            res = await makeRequest(pollingUrl, { method: pollingConfig.method || 'GET', headers });
+            consecutiveNetworkErrors = 0; // Reset network error counter on success
+        } catch (pollErr) {
+            const isNetworkGlitch = pollErr.message.startsWith('Network Connection Error') ||
+                pollErr.message.includes('API Error [502]') ||
+                pollErr.message.includes('API Error [503]') ||
+                pollErr.message.includes('API Error [504]');
+
+            if (isNetworkGlitch) {
+                consecutiveNetworkErrors++;
+                console.warn(`[pollUntilDone] Polling network hiccup (${consecutiveNetworkErrors}/${MAX_CONSECUTIVE_NETWORK_ERRORS}): ${pollErr.message}`);
+                if (consecutiveNetworkErrors < MAX_CONSECUTIVE_NETWORK_ERRORS) {
+                    continue; // Skip this tick and try again next interval
+                }
+            }
+
+            // If too many consecutive network errors or it's a non-retryable API error (e.g. 401/404)
+            pollErr.fallback_url = pollingUrl;
+            throw pollErr;
+        }
 
         const currentStatus = getNested(res, statusPath);
 
@@ -253,51 +338,68 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
     let buffer = null;
 
     if (format === 'url') {
-        try {
-            // Download from URL using fetch (handles redirects automatically)
-            const res = await fetch(imageStr, { headers: downloadHeaders || {} });
-            if (!res.ok) throw new Error(`HTTP ${res.status} (${res.statusText})`);
+        const maxDownloadRetries = 2;
+        let lastDownloadErr = null;
 
-            const contentType = res.headers.get('content-type');
-            if (contentType) {
-                if (contentType.includes('image/jpeg') || contentType.includes('image/jpg')) ext = 'jpg';
-                else if (contentType.includes('image/webp')) ext = 'webp';
-                else if (contentType.includes('image/gif')) ext = 'gif';
-            } else {
+        for (let downloadAttempt = 0; downloadAttempt <= maxDownloadRetries; downloadAttempt++) {
+            try {
+                // Download from URL using fetch (handles redirects automatically)
+                const res = await fetch(imageStr, { headers: downloadHeaders || {} });
+                if (!res.ok) throw new Error(`HTTP ${res.status} (${res.statusText})`);
+
+                const contentType = res.headers.get('content-type');
+                if (contentType) {
+                    if (contentType.includes('image/jpeg') || contentType.includes('image/jpg')) ext = 'jpg';
+                    else if (contentType.includes('image/webp')) ext = 'webp';
+                    else if (contentType.includes('image/gif')) ext = 'gif';
+                } else {
+                    try {
+                        const urlObj = new URL(imageStr);
+                        const pathExt = path.extname(urlObj.pathname).toLowerCase();
+                        if (pathExt === '.jpg' || pathExt === '.jpeg') ext = 'jpg';
+                        else if (pathExt === '.webp') ext = 'webp';
+                        else if (pathExt === '.gif') ext = 'gif';
+                    } catch (e) {
+                        // Ignore invalid URLs
+                    }
+                }
+
+                const filePath = getUniqueFilename(tempDir, "generated_image", ext, fileSuffix);
+                const fileName = path.basename(filePath);
                 try {
-                    const urlObj = new URL(imageStr);
-                    const pathExt = path.extname(urlObj.pathname).toLowerCase();
-                    if (pathExt === '.jpg' || pathExt === '.jpeg') ext = 'jpg';
-                    else if (pathExt === '.webp') ext = 'webp';
-                    else if (pathExt === '.gif') ext = 'gif';
-                } catch (e) {
-                    // Ignore invalid URLs
+                    // pipeline() (unlike source.pipe(dest)) forwards errors from BOTH ends into
+                    // this rejection and destroys both streams. A plain .pipe() only listens for
+                    // errors on the destination; an error on the source (e.g. the connection
+                    // dropping mid-download) would then be an unhandled 'error' event, which
+                    // Node treats as an uncaught exception and can crash the whole process.
+                    await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(filePath));
+                } catch (streamErr) {
+                    fs.rm(filePath, { force: true }, () => {});
+                    throw streamErr;
+                }
+
+                return {
+                    image: `/api/webhelper/file/${fileName}`,
+                    status: 'done'
+                };
+            } catch (downloadErr) {
+                lastDownloadErr = downloadErr;
+                if (downloadAttempt < maxDownloadRetries) {
+                    console.warn(`[ResultsGetter] Image download attempt ${downloadAttempt + 1} failed: ${downloadErr.message}. Retrying in 1000ms...`);
+                    await new Promise(r => setTimeout(r, 1000));
+                    continue;
                 }
             }
-
-            const filePath = getUniqueFilename(tempDir, "generated_image", ext, fileSuffix);
-            const fileName = path.basename(filePath);
-            const fileStream = fs.createWriteStream(filePath);
-            await new Promise((resolve, reject) => {
-                Readable.fromWeb(res.body).pipe(fileStream);
-                fileStream.on('finish', resolve);
-                fileStream.on('error', reject);
-            });
-            
-            return {
-                image: `/api/webhelper/file/${fileName}`,
-                status: 'done'
-            };
-        } catch (downloadErr) {
-            console.error('[ResultsGetter] Download failed:', downloadErr);
-            return {
-                status: 'error',
-                error: `Download failed: ${downloadErr.message}`,
-                fallback_url: imageStr
-            };
         }
-    } 
-    
+
+        console.error('[ResultsGetter] Download failed after retries:', lastDownloadErr);
+        return {
+            status: 'error',
+            error: `Download failed: ${lastDownloadErr.message}`,
+            fallback_url: imageStr
+        };
+    }
+
     if (format === 'data_uri') {
         if (imageStr.startsWith('data:image/')) {
             const mime = imageStr.split(';')[0].substring(5);
@@ -310,7 +412,7 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
     } else {
         // Detect MIME type from actual magic bytes and derive extension
         ext = mimeTypeToExt(detectMimeTypeFromBase64(imageStr));
-        
+
         buffer = Buffer.from(imageStr, 'base64');
     }
 
@@ -423,4 +525,8 @@ async function downloadAndSaveImages(imageStrings, imagesConfig, downloadHeaders
     return results;
 }
 
-module.exports = { waitForApiResult, downloadAndSaveImages, makeRequest };
+module.exports = {
+    waitForApiResult,
+    downloadAndSaveImages,
+    makeRequest
+};

@@ -682,7 +682,7 @@ class App {
                     <div class="gen-run">
                         <input type="number" id="num-images-input" class="gen-count" min="1" max="10"
                             value="${escapeHtml(numImages)}" title="Images to generate" aria-label="Number of images">
-                        <button class="btn btn-primary" id="btn-generate" ${blocked ? 'disabled' : ''}>${numImages > 1 ? `Generate ×${escapeHtml(numImages)}` : 'Generate'}</button>
+                        <button class="btn btn-primary" id="btn-generate" ${blocked ? 'disabled' : ''}><div style="display: flex; align-items: center; justify-content: center; margin: auto; gap: 4px;">${this.getMaskIcon(mask.show ? (mask.use ? 2 : 1) : 0)}<span>${numImages > 1 ? `Generate ×${escapeHtml(numImages)}` : 'Generate'}</span></div></button>
                     </div>
                     <label class="check gen-split" id="force-separate-row" ${numImages > 1 ? '' : 'hidden'}>
                         <input type="checkbox" id="force-separate" ${separateOn ? 'checked' : ''} ${forceSingle ? 'disabled' : ''}>
@@ -749,14 +749,31 @@ class App {
         return 'Image-to-image — the first ref is the source.';
     }
 
+    getMaskIcon(maskState) {
+        if (maskState === 2) {
+            return `<svg class="icon mask-icon" viewBox="0 0 24 24"><path d="M2 12a5 5 0 0 0 5 5 8 8 0 0 1 5 2 8 8 0 0 1 5-2 5 5 0 0 0 5-5V7h-5a8 8 0 0 0-8 0H2v5z"/><path d="M6 11c1.5 0 3 .5 3 2-2 0-3 0-3-2z"/><path d="M18 11c-1.5 0-3 .5-3 2 2 0 3 0 3-2z"/></svg>`;
+        } else if (maskState === 1) {
+            return `<svg class="icon mask-icon" viewBox="0 0 24 24"><path d="M2 12a5 5 0 0 0 5 5 8 8 0 0 1 5 2 8 8 0 0 1 5-2 5 5 0 0 0 5-5V7h-5a8 8 0 0 0-8 0H2v5z"/><path d="M6 11c1.5 0 3 .5 3 2-2 0-3 0-3-2z"/><path d="M18 11c-1.5 0-3 .5-3 2 2 0 3 0 3-2z"/><line x1="3" y1="3" x2="21" y2="21"/></svg>`;
+        }
+        //return `<svg class="icon" viewBox="0 0 24 24" style="visibility: hidden;"></svg>`;
+        return '';
+    }
+
     syncGenerateCluster(task) {
         const n = Math.min(10, Math.max(1, task.state.formState.num_images || 1));
         const cluster = this.paneSource.querySelector('#gen-cluster');
         if (cluster) cluster.classList.toggle('is-multi', n > 1);
+
+        const provider = this.provider(task);
+        const mask = P.maskCheckboxState(provider, task);
+        const maskState = mask.show ? (mask.use ? 2 : 1) : 0;
+        const btnText = n > 1 ? `Generate ×${n}` : 'Generate';
+        const iconSvg = this.getMaskIcon(maskState);
+
         const btn = this.paneSource.querySelector('#btn-generate');
         if (btn) {
             const blocked = btn.disabled;
-            btn.textContent = n > 1 ? `Generate ×${n}` : 'Generate';
+            btn.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; margin: auto; gap: 4px;">${iconSvg}<span>${btnText}</span></div>`;
             btn.disabled = blocked;
         }
         const splitRow = this.paneSource.querySelector('#force-separate-row');
@@ -887,7 +904,7 @@ class App {
                 const onPointerUp = (upEvt) => {
                     try {
                         resizer.releasePointerCapture(upEvt.pointerId);
-                    } catch (_) {}
+                    } catch (_) { }
                     resizer.classList.remove('is-dragging');
                     window.removeEventListener('pointermove', onPointerMove);
                     window.removeEventListener('pointerup', onPointerUp);

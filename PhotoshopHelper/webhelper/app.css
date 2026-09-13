@@ -229,19 +229,16 @@ button, input, select, textarea {
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease,
-    color 0.15s ease, transform 0.15s ease, filter 0.15s ease;
+    color 0.15s ease, filter 0.15s ease;
 }
 .btn:hover {
   background: #fff;
   color: var(--ink);
   border-color: var(--violet);
   box-shadow: 0 4px 12px rgba(124, 92, 255, 0.2);
-  transform: translateY(-1px);
 }
-.btn:active { transform: translateY(0); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn:disabled:hover {
-  transform: none;
   box-shadow: none;
   border-color: var(--line-strong);
 }
@@ -262,6 +259,7 @@ a.btn-download:visited {
   color: #fff;
   background: linear-gradient(125deg, var(--coral) 0%, var(--violet) 52%, var(--sky) 100%);
   filter: brightness(1.08);
+  box-shadow: 0 8px 18px rgba(124, 92, 255, 0.35);
   text-decoration: none;
 }
 .btn-danger { color: var(--danger); }
@@ -290,6 +288,7 @@ a.btn-download:visited {
 }
 
 .icon { width: 14px; height: 14px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mask-icon { width: 21px; height: 21px; }
 
 /* ===== Workspace ===== */
 .workspace {
@@ -377,6 +376,7 @@ a.btn-download:visited {
   border-radius: 0 8px 8px 0;
   font-size: 13.5px;
   padding: 0 10px;
+  display: flex;
 }
 .gen-split {
   font-size: 10px;
