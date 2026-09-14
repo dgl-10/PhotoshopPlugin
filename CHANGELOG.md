@@ -2,6 +2,14 @@
 
 All notable changes to **FromPS / ToPS** and **PhotoshopHelper** are documented in this file.
 
+## [1.2.2]
+
+### 🧩 New Providers & AI Integrations
+- **GPT Image 2.5**: Added support for GPT Image 2.5.
+
+### 🛠️ Improvements & Maintenance
+- **Plugin & Helper**: Minor improvements for plugin and helper.
+
 ## [1.2.1]
 
 ### 🧩 New Providers & API Integrations

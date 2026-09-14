@@ -132,6 +132,8 @@ PhotoshopHelper/
 ├── Providers_Configuration_Guide.md  # Detailed guide for provider and API configuration
 ├── Local_Generation_API.md           # File-path-based localhost automation API guide
 ├── donation-manager.js               # Manages usage tracking and donation prompts
+├── auto-start.js                     # Cross-platform login item and startup configuration manager (Windows / macOS)
+├── updater.js                        # Update service: GitHub release checks, tray notifications, and version sync
 ├── drag-window.html                  # Overlay window for Drag & Drop to browser
 ├── drag-window.js                    # File capture and drag-and-drop logic
 ├── apiGenerator.js                   # Generation core: context assembly and request templating

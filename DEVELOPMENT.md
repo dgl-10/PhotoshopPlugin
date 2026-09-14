@@ -140,6 +140,8 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     ├── Prompt_Providers_Configuration.md # LLM prompt for generating new provider configurations
     ├── Providers_Configuration_Guide.md  # Detailed guide for configuring providers and APIs
     ├── donation-manager.js               # Manages usage tracking and donation prompts
+    ├── auto-start.js                     # Cross-platform login item and startup configuration manager (Windows / macOS)
+    ├── updater.js                        # Update service: GitHub release checks, tray notifications, and version sync
     ├── drag-window.html                  # Overlay window for the Drag & Drop files-to-browser feature
     ├── drag-window.js                    # File capture and drag logic
     ├── apiGenerator.js                   # Generation core: context assembly and request templating
