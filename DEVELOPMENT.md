@@ -34,7 +34,7 @@ Most AI plugins for Photoshop require an embedded API key and charge a fee for e
 - Runs on the same loopback-only Helper server: `http://127.0.0.1:18345`
 - Lets another local process reuse one source image and optional mask across multiple provider runs
 - Exchanges absolute local file paths only; generated image bytes are not returned by the API
-- Uses the active `providers.json`, the same provider preprocessors, and the same output directory as WebHelper
+- Uses the active merged provider catalog (the shared catalog plus `providers.user.json`), the same provider preprocessors, and the same output directory as WebHelper
 - Saves results in `%TEMP%\ps_webhelper_tasks` and returns their absolute paths after completion
 - Uses asynchronous polling. Webhooks are not part of the current local contract.
 
@@ -134,8 +134,10 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     ├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware for the local HTTP server
     ├── plugin-pairing.js                 # Delivers the plugin token into the Photoshop plugin's UXP data folder for automatic pairing
     ├── preload.js                        # Context bridge for secure inter-process communication
-    ├── providers.template.json           # Template for AI provider parameter configuration
-    ├── providers.json                    # Configuration for AI providers and parameters
+    ├── providers.template.json           # Shared provider catalog source (development)
+    ├── providers.user.json               # User provider overlay: additions, replacements, and disabled shared models
+    ├── providers-catalog.js              # Provider catalog loader, validator, and overlay merger (shared + user models)
+    ├── providers-updater.js              # Background updater for the shared provider catalog from GitHub
     ├── .env.template                     # Template for environment variables
     ├── Prompt_Providers_Configuration.md # LLM prompt for generating new provider configurations
     ├── Providers_Configuration_Guide.md  # Detailed guide for configuring providers and APIs
@@ -150,6 +152,7 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     ├── apiGeneratorResultsGetter.js      # Results module: polling and response parsing
     ├── apiGeneratorPreprocessors.js      # Preprocessors: resizing, MP optimization, and filtering
     ├── imageUtils.js                     # Image processing utilities (MIME, Base64, NativeImage)
+    ├── atomic-write.js                   # Atomic file replacement utility (safe temporary-file write and rename)
     ├── Local_Generation_API.md           # Complete local API schema and integration examples
     ├── tray-icon.png                     # Application icon for the system tray
     ├── user-settings.js                  # Persistent settings manager using electron-store
@@ -216,7 +219,7 @@ GET /api/local/v1/generations/:generationId
 ```
 
 `POST /api/local/v1/generations` accepts either `providerId` (a catalog id from
-the active `providers.json`) or a complete inline `provider` object — not both —
+the active merged provider catalog) or a complete inline `provider` object — not both —
 plus optional absolute `sourceImagePath`/`maskImagePath`, `referenceImagePaths`,
 `params`, `num_images`, `aspect_ratio`, `use_mask`, and `force_separate_requests`.
 `aspect_ratio` is required when the effective request is text-to-image and optional

@@ -1,0 +1,789 @@
+{
+    // providers.user.json: your own models and your changes to the shared ones.
+    //
+    // The shared model list (providers.template.json) is laid over by this file on every read:
+    //   - a model with a new "id" is added;
+    //   - a model with the "id" of a shared one replaces it entirely;
+    //   - { "id": "<shared id>", "disabled": true } hides a shared model.
+    // Response handlers here replace shared ones of the same name.
+    // See Providers_Configuration_Guide.md for the provider format.
+    "response_handlers": {},
+    "providers": [
+        {
+            "id": "civitai_krea2",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Krea 2 - via Civitai API Key (Yellow Buzz, from ~$0.045/img)",
+            "tags": {
+                "provider": "civitai",
+                "family": "krea"
+            },
+            "remarks": "• <b>Pricing:</b> Flat per image in Yellow Buzz (1,000 Buzz ≈ $1.00 + ~15% crypto fee overhead, ~$0.00115/Buzz):<br>&nbsp;&nbsp;- Medium: ~39 Buzz (~$0.045)<br>&nbsp;&nbsp;- Large: ~78 Buzz (~$0.090)<br>&nbsp;&nbsp;- Style References: +6.5 Buzz (~$0.0075) surcharge when reference images are attached",
+            "image_format": "data_uri",
+            "max_reference_images": 10,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": false,
+                "required": false
+            },
+            "allowed_aspect_ratios": [
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "4:5",
+                "2:3",
+                "9:16"
+            ],
+            "nice_name": {
+                "default": "Krea 2 (Civitai Key)",
+                "depends_on": "size",
+                "values": {
+                    "medium": "Krea 2 Medium (Civitai Key)",
+                    "large": "Krea 2 Large (Civitai Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "krea2",
+                "depends_on": "size",
+                "values": {
+                    "medium": "krea2_medium",
+                    "large": "krea2_large"
+                }
+            },
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 2048,
+                        "min_size": 256,
+                        "step": 16,
+                        "auto_resize_2_max": true
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": false,
+                "endpoint_url": "https://orchestration.civitai.com/v2/consumer/workflows?whatif=false&wait=0",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:CIVITAI_API_KEY}}"
+                },
+                "reference_item_template": {
+                    "imageUrl": "{{item}}",
+                    "strength": 1.0
+                },
+                "body_template": {
+                    // Strictly enforce settlement via Yellow Buzz
+                    "currencies": [
+                        "yellow"
+                    ],
+                    // Permit uncensored / mature generations
+                    "allowMatureContent": true,
+                    "steps": [
+                        {
+                            "$type": "imageGen",
+                            "input": {
+                                "engine": "fal",
+                                "model": "krea2",
+                                "operation": "createImage",
+                                "size": "{{size}}",
+                                "prompt": "{{prompt}}",
+                                "{{?calculated_output_aspect_ratio}}aspectRatio": "{{calculated_output_aspect_ratio}}",
+                                "{{?!calculated_output_aspect_ratio && aspect_ratio}}aspectRatio": "{{aspect_ratio}}",
+                                "{{?!calculated_output_aspect_ratio && !aspect_ratio}}aspectRatio": "1:1",
+                                "creativity": "{{creativity}}",
+                                "quantity": "{{num_images}}",
+                                // Style reference images (up to 10 supported, incurs +6.5 Buzz surcharge)
+                                "{{?source_image}}imageStyleReferences": [
+                                    {
+                                        "imageUrl": "{{source_image}}",
+                                        "strength": 1.0
+                                    },
+                                    "{{resolved_references}}"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "civitai"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Model Tier / Size",
+                    "options": [
+                        {
+                            "value": "medium",
+                            "alias": "std",
+                            "label": "Medium (Fast - 39 Buzz ≈ ~$0.045)"
+                        },
+                        {
+                            "value": "medium",
+                            "alias": "high",
+                            "hidden": true
+                        },
+                        {
+                            "value": "large",
+                            "alias": "ultra",
+                            "label": "Large (Hero Quality - 78 Buzz ≈ ~$0.090)"
+                        }
+                    ],
+                    "default": "medium"
+                },
+                {
+                    "name": "creativity",
+                    "type": "dropdown",
+                    "label": "Creativity Level",
+                    "options": [
+                        {
+                            "value": "raw",
+                            "label": "Raw (Strict Prompt Adherence)"
+                        },
+                        {
+                            "value": "low",
+                            "label": "Low"
+                        },
+                        {
+                            "value": "medium",
+                            "label": "Medium (Balanced)"
+                        },
+                        {
+                            "value": "high",
+                            "label": "High (Artistic Freedom / Richer Details)"
+                        }
+                    ],
+                    "default": "medium"
+                }
+            ]
+        },
+        {
+            "id": "grok_imagine_2_0",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Grok Imagine 2.0 - via XAI API Key (from $0.04/per image)",
+            "tags": {
+                "provider": "xai",
+                "family": "grok"
+            },
+            "remarks": "<b>Image 2.0</b> is a single model with a Quality field (low / medium). Mask / Magic Wand / segmentation are UI-only and not wired in the API.<br>Official multi-ref limit is <b>3 source images total</b> (1 source + 2 extra refs).<br><br><b>Pricing</b> (output + $0.01 per input image):<br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Resolution</b></td><td><b>Low</b></td><td><b>Medium</b></td></tr><tr><td>1K</td><td>$0.04</td><td>$0.06</td></tr><tr><td>2K</td><td>$0.06</td><td>$0.08</td></tr></table><br>Note that all generations that do not pass moderation are charged at full cost.",
+            "image_format": "data_uri",
+            "max_reference_images": 5,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                // "supported": true,
+                // "type": "separate_field",
+                // "field_name": "mask"
+                "supported": false,
+                "required": false
+            },
+            "allowed_aspect_ratios": [
+                "2:1",
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "3:4",
+                "2:3",
+                "9:16",
+                "1:2"
+            ],
+            "nice_name": {
+                "default": "Grok Imagine 2.0 (XAI Key)",
+                "depends_on": "quality",
+                "values": {
+                    "low": "Grok Imagine 2.0 Low (XAI Key)",
+                    "medium": "Grok Imagine 2.0 Medium (XAI Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "grok_imagine_2_0",
+                "depends_on": "quality",
+                "values": {
+                    "low": "grok_imagine_2_0_low",
+                    "medium": "grok_imagine_2_0_medium"
+                }
+            },
+            "request_config": {
+                "{{?!source_image}}endpoint_url": "https://api.x.ai/v1/images/generations",
+                "{{?source_image}}endpoint_url": "https://api.x.ai/v1/images/edits",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:XAI_API_KEY}}"
+                },
+                "reference_item_template": {
+                    "url": "{{item}}",
+                    "type": "image_url"
+                },
+                "body_template": {
+                    "model": "grok-imagine-image-2.0",
+                    "prompt": "{{prompt}}",
+                    "n": "{{num_images}}",
+                    "quality": "{{quality}}",
+                    "resolution": "{{resolution}}",
+                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                    "{{?source_image}}images": [
+                        {
+                            "url": "{{source_image}}",
+                            "type": "image_url"
+                        },
+                        "{{resolved_references}}"
+                    ],
+                    "{{?mask_image}}mask": {
+                        "url": "{{mask_image}}",
+                        "type": "image_url"
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "sync",
+                "params": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "data",
+                            "mode": "array",
+                            "item_path": "url"
+                        }
+                    ]
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "quality",
+                    "type": "dropdown",
+                    "label": "Quality",
+                    "options": [
+                        {
+                            "value": "low",
+                            "label": "Low — $0.04 (1K) / $0.06 (2K) + $0.01/input"
+                        },
+                        {
+                            "value": "medium",
+                            "label": "Medium — $0.06 (1K) / $0.08 (2K) + $0.01/input"
+                        }
+                    ],
+                    "default": "medium"
+                },
+                {
+                    "name": "resolution",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Resolution",
+                    "options": [
+                        {
+                            "value": "1k",
+                            "alias": "std"
+                        },
+                        {
+                            "value": "2k",
+                            "alias": "high"
+                        },
+                        {
+                            "value": "2k",
+                            "alias": "ultra",
+                            "hidden": true
+                        }
+                    ],
+                    "default": "1k"
+                }
+            ]
+        },
+        {
+            "id": "qwen_image_edit_2511_replicate",
+            "generation_modes": [
+                "i2i"
+            ],
+            "name": "Qwen Image Edit 2511 via Replicate API Key ($0.03/image)",
+            "tags": {
+                "provider": "replicate",
+                "family": "alibaba"
+            },
+            "nice_name": "Qwen Image Edit (Replicate Key)",
+            "filename_suffix": "qwen_image_edit",
+            "image_format": "data_uri",
+            "max_reference_images": 3,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image"
+            },
+            "allowed_aspect_ratios": [
+                "16:9",
+                "4:3",
+                "1:1",
+                "3:4",
+                "9:16"
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                // Gated endpoint: resolves only for I2I (or promoted reference-only requests)
+                "{{?source_image}}endpoint_url": "https://api.replicate.com/v1/models/qwen/qwen-image-edit-2511/predictions",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:REPLICATE_API_KEY}}"
+                },
+                "body_template": {
+                    "input": {
+                        "prompt": "{{prompt}}",
+                        "disable_safety_checker": true,
+                        "go_fast": true,
+                        "output_format": "png",
+                        "{{?!aspect_ratio}}aspect_ratio": "match_input_image",
+                        "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                        "{{?source_image}}image": [
+                            "{{source_image}}",
+                            "{{resolved_image_array}}"
+                        ]
+                    }
+                }
+            },
+            "response_config": {
+                "$ref": "replicate",
+                "params": {
+                    "model_path": "qwen/qwen-image-edit-2511"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Edit Instruction",
+                    "default": ""
+                }
+            ]
+        },
+        {
+            "id": "gpt_image_1.5_openai",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "GPT-Image-1.5 via OpenAI API Key",
+            "tags": {
+                "provider": "openai",
+                "family": "gpt-image"
+            },
+            "nice_name": "GPT-Image-1.5 (OpenAI Key)",
+            "filename_suffix": "gpt_image_1.5",
+            "image_format": "data_uri",
+            "max_reference_images": 16,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "required": false,
+                "type": "separate_field",
+                "field_name": "mask"
+            },
+            "allowed_aspect_ratios": [
+                "3:2",
+                "1:1",
+                "2:3"
+            ],
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 1024,
+                        "filter_by": "{{aspect_ratio}}",
+                        "filter_type": "equals",
+                        "values": "1:1"
+                    }
+                },
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 1536,
+                        "filter_by": "{{aspect_ratio}}",
+                        "filter_type": "equals",
+                        "values": [
+                            "3:2",
+                            "2:3"
+                        ]
+                    }
+                },
+                {
+                    "name": "convert_mask_to_alpha",
+                    "args": {
+                        "mode": "white_to_transparent",
+                        "threshold": 128,
+                        "filter_by": "{{mask_image}}",
+                        "filter_type": "not_empty"
+                    }
+                }
+            ],
+            "request_config": {
+                "{{?!source_image}}endpoint_url": "https://api.openai.com/v1/images/generations",
+                "{{?source_image}}endpoint_url": "https://api.openai.com/v1/images/edits",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:OPENAI_API_KEY}}"
+                },
+                "reference_item_template": {
+                    "image_url": "{{item}}"
+                },
+                "body_template": {
+                    "model": "gpt-image-1.5",
+                    "prompt": "{{prompt}}",
+                    "{{?source_image}}images": [
+                        {
+                            "image_url": "{{source_image}}"
+                        },
+                        "{{resolved_references}}"
+                    ],
+                    "{{?mask_image}}mask": {
+                        "image_url": "{{mask_image}}"
+                    },
+                    "n": "{{num_images}}",
+                    "quality": "{{quality}}",
+                    "moderation": "low",
+                    "output_format": "png",
+                    "{{?source_image}}input_fidelity": "high",
+                    "{{?transparent_bg}}background": "transparent",
+                    "{{?!aspect_ratio}}size": "auto",
+                    "{{?aspect_ratio}}size": "{{calculated_output_size_width}}x{{calculated_output_size_height}}"
+                }
+            },
+            "response_config": {
+                "$ref": "sync",
+                "params": {
+                    "extract": [
+                        {
+                            "path": "data",
+                            "mode": "array",
+                            "item_path": "b64_json"
+                        },
+                        {
+                            "path": "data",
+                            "mode": "array",
+                            "item_path": "url"
+                        }
+                    ]
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "quality",
+                    "type": "dropdown",
+                    "label": "Quality",
+                    "options": [
+                        {
+                            "value": "auto"
+                        },
+                        {
+                            "value": "high"
+                        },
+                        {
+                            "value": "medium"
+                        },
+                        {
+                            "value": "low"
+                        }
+                    ],
+                    "default": "medium"
+                },
+                {
+                    "name": "transparent_bg",
+                    "type": "boolean",
+                    "label": "Transparent Background",
+                    "default": false
+                }
+            ]
+        },
+        {
+            "id": "bfl_flux_fill_inpaint",
+            "generation_modes": [
+                "i2i"
+            ],
+            "name": "FLUX.1 Fill inpaint via BFL API Key ($0.05/image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
+            "nice_name": "FLUX.1 Fill (BFL Key)",
+            "image_format": "base64_raw",
+            "max_reference_images": 0,
+            "supports_negative_prompt": false,
+            "english_only": true,
+            "mask_handling": {
+                "supported": true,
+                "required": true,
+                "type": "separate_field",
+                "field_name": "mask"
+            },
+            // Empty array: provider does not support aspect ratio changes (always matches input size)
+            "allowed_aspect_ratios": [],
+            "preprocessor": [
+                {
+                    "name": "image_optimizer_by_min_size",
+                    "args": {
+                        "min_size": 256,
+                        "uscale_2_min": "{{allow_uscale_2_min}}"
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                "endpoint_url": "https://api.bfl.ai/v1/flux-pro-1.0-fill",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "x-key": "{{env:BFL_API_KEY}}"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "image": "{{source_image}}",
+                    "mask": "{{mask_image}}",
+                    "steps": 25,
+                    "guidance": 30,
+                    "output_format": "png",
+                    "safety_tolerance": 6
+                }
+            },
+            "response_config": {
+                "$ref": "bfl"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "allow_uscale_2_min",
+                    "alias": "allow_uscale_2_min",
+                    "type": "boolean",
+                    "label": "Allow upscale to min size",
+                    "default": false
+                }
+            ]
+        },
+        {
+            "id": "bfl_kontext",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "FLUX Kontext via BFL API Key (from $0.04 per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
+            "nice_name": {
+                "default": "FLUX Kontext (BFL Key)",
+                "depends_on": "model_flux_kontext",
+                "values": {
+                    "pro": "FLUX Kontext Pro (BFL Key)",
+                    "max": "FLUX Kontext Max (BFL Key)"
+                }
+            },
+            "filename_suffix": "flux_kontext_{{model_flux_kontext}}",
+            "image_format": "base64_raw",
+            "max_reference_images": 4,
+            "supports_negative_prompt": false,
+            "english_only": true,
+            "mask_handling": {
+                "supported": false,
+                "required": false
+            },
+            "request_config": {
+                "single_image_per_request": true,
+                "endpoint_url": "https://api.bfl.ai/v1/flux-kontext-{{model_flux_kontext}}",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "x-key": "{{env:BFL_API_KEY}}"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                    "{{?source_image}}input_image": "{{source_image}}",
+                    "{{?reference_1}}input_image_2": "{{reference_1}}",
+                    "{{?reference_2}}input_image_3": "{{reference_2}}",
+                    "{{?reference_3}}input_image_4": "{{reference_3}}",
+                    "output_format": "png",
+                    "safety_tolerance": 6
+                }
+            },
+            "response_config": {
+                "$ref": "bfl"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "model_flux_kontext",
+                    "type": "dropdown",
+                    "label": "Model Variant",
+                    "options": [
+                        {
+                            "value": "pro",
+                            "label": "FLUX Kontext Pro ($0.04 per image)"
+                        },
+                        {
+                            "value": "max",
+                            "label": "FLUX Kontext Max ($0.08 per image)"
+                        }
+                    ],
+                    "default": "pro"
+                }
+            ]
+        },
+        {
+            "id": "bfl_flux_pro_1_1",
+            "name": "FLUX1.1 [pro] via BFL API Key (from $0.04 per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
+            "nice_name": {
+                "default": "FLUX1.1 {{model_flux_pro_1_1}} (BFL Key)",
+                "depends_on": "model_flux_pro_1_1",
+                "values": {
+                    "pro": "FLUX1.1 Pro (BFL Key)",
+                    "ultra": "FLUX1.1 Ultra (BFL Key)",
+                    "ultra_raw": "FLUX1.1 Ultra Raw (BFL Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "flux1_1_{{model_flux_pro_1_1}}",
+                "depends_on": "model_flux_pro_1_1",
+                "values": {
+                    "pro": "flux1_1_pro",
+                    "ultra": "flux1_1_ultra",
+                    "ultra_raw": "flux1_1_ultra_raw"
+                }
+            },
+            "generation_modes": [
+                "t2i"
+            ],
+            "image_format": "base64_raw",
+            "max_reference_images": 0,
+            "supports_negative_prompt": false,
+            "english_only": true,
+            "mask_handling": {
+                "supported": false,
+                "required": false
+            },
+            "remarks": "<b>Pricing:</b> FLUX1.1 [pro]: $0.04/image. Ultra & Ultra Raw: $0.06/image.<br>• <b>Pro:</b> fast generation up to 1440px side (calculated automatically per aspect ratio).<br>• <b>Ultra:</b> up to 4 MP resolution with native aspect ratio support.<br>• <b>Ultra Raw:</b> candid photography aesthetics and natural realism at 4 MP.",
+            "preprocessor": [
+                {
+                    // Calculate width and height (max 1440, step 32) from aspect ratio only for Pro model
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 1440,
+                        "min_size": 256,
+                        "step": 32,
+                        "filter_by": "{{model_flux_pro_1_1}}",
+                        "filter_type": "equals",
+                        "values": "pro"
+                    }
+                }
+            ],
+            "request_config": {
+                "single_image_per_request": true,
+                // Route to /flux-pro-1.1 when model is 'pro' in pure T2I mode
+                "{{?!source_image && model_flux_pro_1_1 == 'pro'}}endpoint_url": "https://api.bfl.ai/v1/flux-pro-1.1",
+                // Route to /flux-pro-1.1-ultra when model is 'ultra' or 'ultra_raw' in pure T2I mode
+                "{{?!source_image && (model_flux_pro_1_1 == 'ultra' || model_flux_pro_1_1 == 'ultra_raw')}}endpoint_url": "https://api.bfl.ai/v1/flux-pro-1.1-ultra",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "x-key": "{{env:BFL_API_KEY}}"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "output_format": "png",
+                    "safety_tolerance": 6,
+                    "prompt_upsampling": false,
+                    // Pro model requires width and height as integers (multiples of 32)
+                    "{{?model_flux_pro_1_1 == 'pro'}}width": "{{calculated_output_size_width}}",
+                    "{{?model_flux_pro_1_1 == 'pro'}}height": "{{calculated_output_size_height}}",
+                    // Ultra models accept native aspect ratio string
+                    "{{?model_flux_pro_1_1 != 'pro'}}aspect_ratio": "{{aspect_ratio}}",
+                    // Raw mode switch for Ultra
+                    "{{?model_flux_pro_1_1 == 'ultra'}}raw": false,
+                    "{{?model_flux_pro_1_1 == 'ultra_raw'}}raw": true
+                }
+            },
+            "response_config": {
+                "$ref": "bfl"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "model_flux_pro_1_1",
+                    "type": "dropdown",
+                    "label": "Model Variant",
+                    "default": "pro",
+                    "options": [
+                        {
+                            "value": "pro",
+                            "label": "FLUX1.1 [pro] ($0.04 per image)"
+                        },
+                        {
+                            "value": "ultra",
+                            "label": "FLUX1.1 [pro] Ultra ($0.06 per image)"
+                        },
+                        {
+                            "value": "ultra_raw",
+                            "label": "FLUX1.1 [pro] Ultra Raw ($0.06 per image)"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

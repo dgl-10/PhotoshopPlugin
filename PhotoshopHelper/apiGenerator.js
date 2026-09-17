@@ -2,9 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const JSON5 = require('json5');
 const { waitForApiResult, downloadAndSaveImages, makeRequest } = require('./apiGeneratorResultsGetter');
-const { getConfigPaths } = require('./setup/config-paths');
+const { loadProvidersCatalog } = require('./providers-catalog');
 const { resolveTemplate } = require('./templateEngine');
 
 // The current generator always saves image results and has request semantics only
@@ -13,12 +12,10 @@ const { resolveTemplate } = require('./templateEngine');
 // implemented end to end.
 const IMPLEMENTED_GENERATION_MODES = new Set(['t2i', 'i2i']);
 
-// Helper to reliably read providers config
+// Helper to reliably read providers config: the shared list with the user's
+// providers.user.json laid over it
 function getProvidersConfig() {
-    const { providersPath } = getConfigPaths();
-    if (!fs.existsSync(providersPath)) throw new Error("providers.json not found");
-    const providersRaw = fs.readFileSync(providersPath, 'utf8');
-    return JSON5.parse(providersRaw);
+    return loadProvidersCatalog();
 }
 
 /**

@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 
 const { getConfigPaths } = require('./config-paths');
+const { ensureUserCatalogFile } = require('../providers-catalog');
 
 const __isDevCheck = 0; // 0 = production, 1 = dev + firstrun check, 2 = dev + disable firstrun check
 
@@ -29,21 +30,25 @@ async function markSetupComplete() {
 /**
  * Copies bundled template files to the user's data directory on first launch.
  * Only copies a file if it does NOT already exist in userData.
+ *
+ * The provider list itself is not copied: it is read from the app bundle (or its
+ * downloaded update) on every use. Only an empty providers.user.json is created.
  */
 function copyTemplatesIfNeeded() {
-    const { envPath, providersPath, resourcesPath } = getConfigPaths();
+    const { envPath, resourcesPath } = getConfigPaths();
 
     const envTemplate = path.join(resourcesPath, '.env.template');
-    const providersTemplate = path.join(resourcesPath, 'providers.template.json');
 
     if (!fs.existsSync(envPath) && fs.existsSync(envTemplate)) {
         fs.copyFileSync(envTemplate, envPath);
         console.log('[setup] .env.template → userData/.env');
     }
 
-    if (!fs.existsSync(providersPath) && fs.existsSync(providersTemplate)) {
-        fs.copyFileSync(providersTemplate, providersPath);
-        console.log('[setup] providers.template.json → userData/providers.json');
+    try {
+        ensureUserCatalogFile();
+    } catch (error) {
+        // The built-in models still load without the user file, so startup goes on.
+        console.error('[setup] Failed to prepare providers.user.json:', error);
     }
 }
 
@@ -85,7 +90,7 @@ function createFirstRunWizard(isFirstRun, userDataPath, pluginPath, pluginFilePa
 
     wizardWindow = new BrowserWindow({
         width: 670,
-        height: 580,
+        height: 590,
         resizable: false,
         title: isFirstRun ? 'PhotoshopHelper — First Run Setup' : 'PhotoshopHelper — Settings',
         // Center on screen

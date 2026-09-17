@@ -1,4 +1,4 @@
-# Provider Configuration Guide (`providers.json`)
+# Provider Configuration Guide
 
 > **Audience:** Developers and administrators who need to add, modify, or understand API provider configurations for the WebHelper image generation system.
 
@@ -7,7 +7,7 @@
 ## Table of Contents
 
 1. [Overview](#1-overview)
-2. [File Format and Top-Level Structure](#2-file-format-and-top-level-structure)
+2. [Top-Level Structure](#2-top-level-structure)
 3. [Provider Object — Complete Field Reference](#3-provider-object--complete-field-reference)
    - 3.1 [Identity and Display](#31-identity-and-display)
    - 3.2 [Image Format (`image_format`)](#32-image-format-image_format)
@@ -74,20 +74,17 @@
 
 ## 1. Overview
 
-The `providers.json` file is the single source of truth for all AI image generation API integrations in the WebHelper system. It lives on the server side at:
-
-```
-PhotoshopHelper/providers.json
-```
-
-This file defines:
-- **Which APIs are available** (providers)
-- **How to call them** (request templates, headers, endpoints)
-- **How to read their responses** (response handlers)
+A provider configuration describes one AI image model to WebHelper:
+- **Which API to call** (endpoints, headers, request templates)
+- **How to read its response** (response handlers)
 - **What UI controls to show the user** (parameters)
 - **How to preprocess images before sending** (preprocessors)
 
-The file uses **JSON5** format (comments and trailing commas are allowed).
+Configurations are written in **JSON5** (comments and trailing commas are allowed).
+
+A configuration that replaces a model already available in the app keeps that model's
+`id` and replaces it as a whole: no field-by-field merging happens, so every field the
+model needs must be present.
 
 ### Key Design Principles
 
@@ -97,7 +94,7 @@ The file uses **JSON5** format (comments and trailing commas are allowed).
 
 ---
 
-## 2. File Format and Top-Level Structure
+## 2. Top-Level Structure
 
 ```jsonc
 {
@@ -1018,7 +1015,9 @@ Some handlers are parameterized — the provider supplies values that the handle
 
 ## 8. Response Handlers (`response_handlers`)
 
-Response handlers are defined at the top level of `providers.json` to avoid duplication. Multiple providers from the same platform share one handler.
+Response handlers are defined at the top level, next to `providers`, to avoid
+duplication. Multiple providers from the same platform can share one handler. A handler
+whose name is already used by a handler shipped with the app replaces it completely.
 
 ### 8.1 Handler Types
 
@@ -1492,7 +1491,7 @@ When they select any model not in `values`, it falls back to `2`.
 When the user clicks "Generate", this is the complete server-side sequence:
 
 ```
-1. Load providers.json
+1. Load the provider configurations
 2. Find provider by providerId
 3. Validate mask requirements
 4. Build context from user params + system variables

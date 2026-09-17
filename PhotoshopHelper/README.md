@@ -126,8 +126,10 @@ PhotoshopHelper/
 ├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware
 ├── plugin-pairing.js                 # Delivers the plugin token into the Photoshop plugin's UXP data folder
 ├── preload.js                        # Context bridge for secure inter-process communication
-├── providers.template.json           # Template for AI provider parameter configuration
-├── providers.json                    # Configuration for AI providers and parameters
+├── providers.template.json           # Shared provider catalog source (development)
+├── providers.user.json               # User provider overlay: additions, replacements, and disabled shared models
+├── providers-catalog.js              # Provider catalog loader, validator, and overlay merger (shared + user models)
+├── providers-updater.js              # Background updater for the shared provider catalog from GitHub
 ├── Prompt_Providers_Configuration.md # LLM prompt for generating new provider configurations
 ├── Providers_Configuration_Guide.md  # Detailed guide for provider and API configuration
 ├── Local_Generation_API.md           # File-path-based localhost automation API guide
@@ -142,6 +144,7 @@ PhotoshopHelper/
 ├── apiGeneratorResultsGetter.js      # Results module: polling and response parsing
 ├── apiGeneratorPreprocessors.js      # Preprocessors: resizing, MP optimization, and filtering
 ├── imageUtils.js                     # Image processing utilities (MIME, Base64, NativeImage)
+├── atomic-write.js                   # Atomic file replacement utility (safe temporary-file write and rename)
 ├── tray-icon.png                     # Application icon for the system tray
 ├── user-settings.js                  # Persistent settings manager using electron-store
 ├── user-settings.json                # Runtime configuration state file (dev mode only, excluded from build)

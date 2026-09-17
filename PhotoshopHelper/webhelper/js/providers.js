@@ -65,17 +65,17 @@ export function effectiveMaxRefs(provider, task) {
 
 export function maskCheckboxState(provider, task) {
     const hasMask = Boolean(task?.data?.maskImage);
-    const show = Boolean(provider) && hasMask;
     if (!provider || !provider.mask_handling) {
-        return { show, checked: false, disabled: true, use: false };
+        return { show: false, checked: false, disabled: true, use: false };
     }
     const supported = provider.mask_handling.supported !== false;
     const required = provider.mask_handling.required === true;
-    if (!supported) return { show, checked: false, disabled: true, use: false };
-    if (required) return { show, checked: true, disabled: true, use: hasMask };
+    if (!supported) return { show: false, checked: false, disabled: true, use: false };
+    if (required) return { show: hasMask, checked: true, disabled: true, use: hasMask };
     const checked = task?.state?.useMask ?? true;
-    return { show, checked, disabled: false, use: hasMask && checked };
+    return { show: hasMask, checked, disabled: false, use: hasMask && checked };
 }
+
 
 export function allowedAspectRatios(provider, formState) {
     if (!provider || provider.allowed_aspect_ratios === undefined) return ALL_ASPECT_RATIOS.slice();

@@ -193,18 +193,20 @@
                 </div>
                 <div class="tile-content">
                     <div class="text-title">
-                        Configure API Keys &amp; providers.json
+                        Configure AI Providers (Optional)
                     </div>
                     <p class="text-muted text-small mb-0">
-                        <i>This step is optional. You only need to configure these settings if you plan to use the
-                            WebHelper (component for AI generation with your own API keys).
+                        <i>Configure this only if you plan to use AI generation in WebHelper or through the Local
+                            Generation API.
                             <span id="first-run-note">You can skip this for now and configure it at any time
                                 later.</span></i><br />
-                        Your settings folder contains a ready-to-fill <code>.env</code> file. Paste your API keys there
-                        and save. You can also edit <code>providers.json</code> to customize available models.
+                        Add your API keys to the ready-to-fill <code>.env</code> file. Only models with all required
+                        keys will appear. The built-in model catalog updates automatically. Use
+                        <code>providers.user.json</code> only to add your own models, override built-in ones, or
+                        disable models you do not need.
                         <br />
-                        <span class="text-warning">Note: You need to restart the application for these changes to take
-                            effect.</span>
+                        <span class="text-warning">Restart PhotoshopHelper after changing <code>.env</code>.
+                            Changes to <code>providers.user.json</code> only require reloading WebHelper.</span>
                     </p>
                     <code class="path-pill" id="settings-path-display">Loading path…</code>
                 </div>
@@ -269,7 +271,7 @@
             window.wizardBridge.openSettingsFolder(_pluginPath, 'plugin.ccx');
         });
 
-        // Reveal the settings folder (.env / providers.json)
+        // Reveal the settings folder (.env / providers.user.json)
         document.getElementById('btn-open-settings').addEventListener('click', () => {
             document.getElementById('btn-relaunch').style.display = 'inline-block';
             window.setTimeout(() => window.wizardBridge.openSettingsFolder(_userDataPath, '.env'), 500);

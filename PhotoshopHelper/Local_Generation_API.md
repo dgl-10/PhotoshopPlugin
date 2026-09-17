@@ -54,12 +54,10 @@ GET http://127.0.0.1:18345/api/webhelper/providers
 Invoke-RestMethod -Uri 'http://127.0.0.1:18345/api/webhelper/providers'
 ```
 
-Do not open `providers.json`, `providers.template.json`, or any other file on disk
-to discover providers or parameter names. The on-disk file is server-owned
-configuration: packaged builds keep it outside the project tree, it includes
-request templates and key placeholders, and it lists providers whose API keys are
-missing. Discovery omits those unavailable providers and strips `request_config`,
-`response_config`, `preprocessor`, `image_format`, and `filename_suffix`.
+Do not attempt to read provider configurations directly from disk. Provider availability
+is evaluated dynamically by the server (validating configured credentials, applying user
+overrides, and filtering out incomplete templates). The discovery endpoint is the only
+source of truth for currently active and supported providers.
 
 The response body is `{ "providers": [ ... ] }`.
 

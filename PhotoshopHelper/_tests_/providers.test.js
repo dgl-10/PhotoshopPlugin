@@ -57,21 +57,21 @@ test('every shipped template provider has grouping tags', () => {
     }
 });
 
-test('every local providers.json entry has grouping tags', () => {
-    const catalog = loadCatalog('providers.json');
+test('every providers.user.json entry has grouping tags', () => {
+    const catalog = loadCatalog('providers.user.json');
     assert.ok(Array.isArray(catalog.providers) && catalog.providers.length > 0);
 
     for (const provider of catalog.providers) {
-        assertProviderTags(provider, 'providers.json');
+        assertProviderTags(provider, 'providers.user.json');
     }
 });
 
-test('template and providers.json share the same tags for matching ids', () => {
+test('template and providers.user.json share the same tags for matching ids', () => {
     const templateById = new Map(
         loadCatalog('providers.template.json').providers.map(provider => [provider.id, provider])
     );
     const liveById = new Map(
-        loadCatalog('providers.json').providers.map(provider => [provider.id, provider])
+        loadCatalog('providers.user.json').providers.map(provider => [provider.id, provider])
     );
 
     for (const [id, templateProvider] of templateById) {
@@ -83,7 +83,7 @@ test('template and providers.json share the same tags for matching ids', () => {
         assert.deepEqual(
             liveProvider.tags,
             templateProvider.tags,
-            `${id}: tags in providers.json must match providers.template.json`
+            `${id}: tags in providers.user.json must match providers.template.json`
         );
     }
 });

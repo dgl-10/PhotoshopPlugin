@@ -73,8 +73,9 @@ const path = require('node:path');
 const fs = require('node:fs');
 const express = require('express');
 const { spawnSync } = require('node:child_process');
-const JSON5 = require('json5');
 const { generate } = require('./apiGenerator');
+const { loadProvidersCatalog, findMissingEnvKeys } = require('./providers-catalog');
+const { createCatalogUpdater } = require('./providers-updater');
 const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
 const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
@@ -156,6 +157,10 @@ let localApiToken = '';
 // started still receives its token without the user restarting anything.
 const PAIRING_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 let pairingRefreshTimer = null;
+
+// Keeps the model list current from the repository. It runs on the app update schedule
+// and from the tray, both of which exist only in packaged builds.
+const catalogUpdater = createCatalogUpdater({ logger: log });
 
 // WebHelper specific globals
 global.tasks = {};
@@ -315,6 +320,14 @@ function updateTrayMenu() {
             label: 'Copy WebHelper URL',
             click: () => {
                 clipboard.writeText(`http://localhost:${PORT}/webhelper`);
+            }
+        },
+        {
+            // Development reads the local providers.template.json and downloads nothing.
+            label: app.isPackaged ? 'Check for New Models' : 'Check for New Models (Dev Mode)',
+            enabled: app.isPackaged,
+            click: async () => {
+                await showCatalogCheckResult(await catalogUpdater.checkNow());
             }
         }
     );
@@ -529,6 +542,40 @@ function updateTrayMenu() {
 
     tray.setToolTip('Photoshop Helper');
     tray.setContextMenu(contextMenu);
+}
+
+/**
+ * Tell the user what a model list check started from the tray found.
+ *
+ * @param {object} result - Result of catalogUpdater.checkNow().
+ */
+async function showCatalogCheckResult(result) {
+    const messages = {
+        updated: {
+            type: 'info',
+            message: 'Model list updated.',
+            detail: 'Reload WebHelper to see the new models.'
+        },
+        unchanged: {
+            type: 'info',
+            message: 'Model list is up to date.'
+        },
+        error: {
+            type: 'warning',
+            message: 'Could not check for new models.',
+            detail: result.error
+        }
+    };
+    const { type, message, detail } = messages[result.status] || messages.error;
+
+    await dialog.showMessageBox({
+        type,
+        buttons: ['OK'],
+        defaultId: 0,
+        title: 'Model List',
+        message,
+        detail
+    });
 }
 
 /**
@@ -1004,50 +1051,32 @@ function startHttpServer() {
     // GET /api/webhelper/providers - Get list of models/providers
     expressApp.get('/api/webhelper/providers', (req, res) => {
         try {
-            const { providersPath } = getConfigPaths();
-            if (fs.existsSync(providersPath)) {
-                const providersRaw = fs.readFileSync(providersPath, 'utf8');
-                const providersData = JSON5.parse(providersRaw);
+            const catalog = loadProvidersCatalog();
 
-                // 1. Filter out providers for which API keys are not defined in the system
-                const availableProviders = (providersData.providers || []).filter(p => {
-                    let configStr = JSON.stringify(p);
+            // 1. Filter out providers for which API keys are not defined in the system
+            const availableProviders = catalog.providers.filter(p => (
+                findMissingEnvKeys(p, catalog.response_handlers).length === 0
+            ));
 
-                    // Also check the referenced response_handler for env variables
-                    if (p.response_config && p.response_config.$ref && providersData.response_handlers[p.response_config.$ref]) {
-                        configStr += JSON.stringify(providersData.response_handlers[p.response_config.$ref]);
-                    }
+            // 2. Sanitize and elevate properties for the client
+            const sanitizedProviders = availableProviders.map(p => {
+                const sanitized = { ...p };
 
-                    // Extract all "{{env:SOME_API_KEY}}" variables that this provider or its handler needs
-                    const mapMatches = [...configStr.matchAll(/\{\{env:([a-zA-Z0-9_]+)\}\}/g)];
-                    const requiredKeys = [...new Set(mapMatches.map(m => m[1]))];
+                // Elevate single_image_per_request to client level if it exists in request_config
+                if (p.request_config && p.request_config.single_image_per_request) {
+                    sanitized.single_image_per_request = true;
+                } else {
+                    sanitized.single_image_per_request = false;
+                }
 
-                    // The provider is only available if ALL required API keys exist in process.env and are not empty
-                    return requiredKeys.every(key => process.env[key] && process.env[key].trim() !== "");
-                });
-
-                // 2. Sanitize and elevate properties for the client
-                const sanitizedProviders = availableProviders.map(p => {
-                    const sanitized = { ...p };
-
-                    // Elevate single_image_per_request to client level if it exists in request_config
-                    if (p.request_config && p.request_config.single_image_per_request) {
-                        sanitized.single_image_per_request = true;
-                    } else {
-                        sanitized.single_image_per_request = false;
-                    }
-
-                    delete sanitized.request_config;
-                    delete sanitized.response_config;
-                    delete sanitized.image_format;
-                    delete sanitized.filename_suffix;
-                    delete sanitized.preprocessor;
-                    return sanitized;
-                });
-                res.json({ providers: sanitizedProviders });
-            } else {
-                res.json({ providers: [] });
-            }
+                delete sanitized.request_config;
+                delete sanitized.response_config;
+                delete sanitized.image_format;
+                delete sanitized.filename_suffix;
+                delete sanitized.preprocessor;
+                return sanitized;
+            });
+            res.json({ providers: sanitizedProviders });
         } catch (error) {
             console.error('Error reading providers:', error);
             res.status(500).json({ error: error.message });
@@ -1505,7 +1534,7 @@ app.whenReady().then(async () => {
 
     try {
         log.info('Initializing auto updater...');
-        initializeAutoUpdater(() => updateTrayMenu());
+        initializeAutoUpdater(() => updateTrayMenu(), () => void catalogUpdater.checkNow());
 
         // Resolve both secrets before any route or setup window exists, so pairing can
         // occur immediately and the server has credentials ready.

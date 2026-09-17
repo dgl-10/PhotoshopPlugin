@@ -138,7 +138,12 @@ function getUpdaterMenuItem() {
     }
 }
 
-function initializeAutoUpdater(onStateChange) {
+/**
+ * @param {Function} [onStateChange] - Called whenever the update status changes.
+ * @param {Function} [onScheduledCheck] - Called with every startup and periodic update
+ *   check, so other periodic downloads (the model list) share this schedule.
+ */
+function initializeAutoUpdater(onStateChange, onScheduledCheck) {
     if (app.isPackaged) {
         try {
             const { autoUpdater: updater } = require('electron-updater');
@@ -291,8 +296,20 @@ function initializeAutoUpdater(onStateChange) {
                 });
             }
 
+            const runScheduledCheck = () => {
+                if (typeof onScheduledCheck !== 'function') return;
+                try {
+                    onScheduledCheck();
+                } catch (error) {
+                    log.error('Scheduled check callback failed:', error);
+                }
+            };
+
             // Keep one interval alive for the application lifetime and skip only active update states.
             updateCheckInterval = setInterval(() => {
+                // The callback's own work does not depend on the app update state.
+                runScheduledCheck();
+
                 const skipStates = ['checking', 'downloading'];
                 if (autoUpdater && !skipStates.includes(updateStatus.state)) {
                     log.info('Running periodic auto-update check...');
@@ -300,6 +317,7 @@ function initializeAutoUpdater(onStateChange) {
                 }
             }, CHECK_INTERVAL);
 
+            runScheduledCheck();
             void checkForUpdates('startup');
         } catch (error) {
             console.error('Failed to initialize auto-updater:', error);

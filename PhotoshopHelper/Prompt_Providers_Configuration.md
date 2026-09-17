@@ -329,3 +329,18 @@ Return:
    paid request.
 
 Write all comments inside JSON5 in English.
+
+## Installing the Result
+
+Return the configuration in the answer and stop there — the user installs it. Only when
+the user asks for the model to be added to the app and you can write files on their
+machine, add the provider object to the `providers` array of `providers.user.json`, and
+a new response handler to the `response_handlers` object of the same file:
+
+- Windows: `%APPDATA%\photoshop-helper\providers.user.json`
+- macOS: `~/Library/Application Support/photoshop-helper/providers.user.json`
+
+Keep the rest of that file untouched, and never write to any other provider file: the
+list of models shipped with the app is downloaded and replaced automatically. Tell the
+user to reload the WebHelper page afterwards; the model appears there once its API key
+is set in the `.env` file next to `providers.user.json`.

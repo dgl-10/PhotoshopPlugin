@@ -16,9 +16,9 @@ API providers may retain inputs, outputs, prompts, account identifiers, or billi
 
 ## API keys and provider configuration
 
-- Installed builds keep `.env`, `providers.json`, and user settings in the Electron application data directory shown by the setup wizard.
+- Installed builds keep `.env`, `providers.user.json`, and user settings in the Electron application data directory shown by the setup wizard. They also download the shared provider catalog there as `providers.remote.json`.
 - API keys are read by PhotoshopHelper and inserted into requests to the selected provider.
-- Provider definitions reference keys by environment-variable name; keys should never be placed directly in `providers.json`.
+- Provider definitions reference keys by environment-variable name; keys should never be placed directly in either provider catalog file.
 - Optional Nebula integration can inject keys from the user's own secret-management setup.
 
 Do not attach `.env` files or unredacted configuration files to GitHub issues.

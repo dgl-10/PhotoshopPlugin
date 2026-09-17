@@ -42,7 +42,8 @@
         },
         "files": [
             "**/*",
-            "!providers.json",
+            "!providers.user.json",
+            "!providers.template.json",
             "!.env",
             "!user-settings.json",
             "!_tests_/**",
@@ -59,10 +60,6 @@
             {
                 "from": ".env.template",
                 "to": ".env.template"
-            },
-            {
-                "from": "providers.template.json",
-                "to": "providers.template.json"
             },
             {
                 "from": "Prompt_Providers_Configuration.md",

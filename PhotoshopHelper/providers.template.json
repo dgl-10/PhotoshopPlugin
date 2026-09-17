@@ -2,11 +2,14 @@
     // ---------------------------------------------------------------------------
     // providers.template.json
     //
-    // This file is shipped inside the app bundle and copied to the user's
-    // settings folder (userData) on first launch as providers.json.
+    // The shared model list. Installed apps download this file from the main branch
+    // of the repository (see providers-updater.js), so a change pushed to main reaches
+    // every user within 12 hours. `npm start` reads it from disk directly.
+    // Do not edit the downloaded copy (providers.remote.json): the next download replaces
+    // it and the edits are lost. To change a model from this list, copy the whole model
+    // into providers.user.json and edit it there; own models go there too.
     //
     // All API keys are referenced by name via {{env:KEY_NAME}} — never hardcoded.
-    // Add your own providers following the same pattern.
     // See Providers_Configuration_Guide.md for the full schema reference.
     // Use Prompt_Providers_Configuration.md as a prompt for LLMs to generate new configurations.
     // ---------------------------------------------------------------------------
@@ -400,11 +403,11 @@
                 "field_name": "images"
             },
             "allowed_aspect_ratios": [
-                "16:9",
-                "4:3",
-                "1:1",
-                "3:4",
-                "9:16"
+                //"16:9",
+                //"4:3",
+                "1:1" //,
+                //"3:4",
+                //"9:16"
             ],
             "nice_name": {
                 "default": "Wan 2.7 (Civitai Key)",

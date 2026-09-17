@@ -126,7 +126,7 @@ WebHelper is designed as a universal bridge. It includes modular **Response Hand
 - **Civitai Handler**: Async polling engine for **Civitai Orchestration API** workflows (supporting Qwen 2/3, Wan 2.7, Seedream via Yellow Buzz).
 
 > [!TIP]
-> This architecture allows you to add many API services that match one of the supported response patterns by editing `providers.json` and linking the provider to a built-in handler. In this repository, see `PhotoshopHelper/Providers_Configuration_Guide.md` and `PhotoshopHelper/Prompt_Providers_Configuration.md`; installed builds may place a copy of the guide next to the helper configuration files.
+> This architecture allows you to add many API services that match one of the supported response patterns. The shared provider catalog updates automatically. To add your own providers or customize existing ones, edit `providers.user.json` in the settings folder shown by PhotoshopHelper. See `PhotoshopHelper/Providers_Configuration_Guide.md` and `PhotoshopHelper/Prompt_Providers_Configuration.md` for the format.
 <img src="_screenshots/01/15.png" alt="Using Gemini chat with the Configuration Guide for adding a new provider">
 
 ---
