@@ -2,6 +2,11 @@
 
 All notable changes to **FromPS / ToPS** and **PhotoshopHelper** are documented in this file.
 
+## [1.2.3]
+
+### 🔄 Providers Auto-Update
+- **Providers Auto-Update**: Added automatic background updating of the shared providers list.
+
 ## [1.2.2]
 
 ### 🧩 New Providers & AI Integrations
