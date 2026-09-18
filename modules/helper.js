@@ -352,6 +352,7 @@ module.exports = {
     HELPER_VERSION,
     isHelperRunning,
     isPaired,
+    getHelperToken, // Exported for WebSocket bridge prototype / testing; should otherwise be private
     getManualToken,
     setManualToken,
     copyToClipboard,

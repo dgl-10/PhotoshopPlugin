@@ -30,7 +30,8 @@
     },
     "devDependencies": {
         "electron": "^32.0.0",
-        "electron-builder": "^24.13.3"
+        "electron-builder": "^24.13.3",
+        "ws": "^8.21.3"
     },
     "build": {
         "appId": "com.photoshop-helper",

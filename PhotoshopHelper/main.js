@@ -80,6 +80,8 @@ const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenera
 const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
 const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment } = require('./user-settings');
+const { getLlmConfig, getLlmCapabilities, checkConnection: checkLlmConnection, sendLlmQuery } = require('./llm-engine');
+const { createWsBridgeServer } = require('./ws-bridge-prototype');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow, setPairingRefresher } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -157,6 +159,11 @@ let localApiToken = '';
 // started still receives its token without the user restarting anything.
 const PAIRING_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 let pairingRefreshTimer = null;
+
+// WebSocket bridge server for plugin ↔ Helper bidirectional communication.
+// Runs on a separate port (18346) alongside the main HTTP server.
+const WS_BRIDGE_PORT = 18346;
+let wsBridgeServer = null;
 
 // Keeps the model list current from the repository. It runs on the app update schedule
 // and from the tray, both of which exist only in packaged builds.
@@ -762,6 +769,20 @@ function startHttpServer() {
     expressApp.use('/api/file', requirePluginToken);
     expressApp.use('/webhelper', webHelperPasswordGate);
     expressApp.use('/api/webhelper', webHelperPasswordGate, requireWebHelperAccess);
+
+    // LLM endpoints: /api/llm/config and /api/llm/check are accessible with the
+    // plugin token or from same-origin (no money spent). /api/llm/query can call
+    // a paid API, so it requires the stronger localApiToken.
+    const requireLlmReadAccess = createAuthMiddleware({
+        getToken: () => pluginToken,
+        allowSameOrigin: true
+    });
+    const requireLlmQueryAccess = createAuthMiddleware({ getToken: () => localApiToken });
+    expressApp.use('/api/llm/config', requireLlmReadAccess);
+    expressApp.use('/api/llm/check', requireLlmReadAccess);
+    expressApp.use('/api/llm/query', requireLlmQueryAccess);
+    // TODO: TEMPORARY TEST HARNESS - REMOVE BEFORE RELEASE (used only for Stage 2 prototype verification)
+    expressApp.use('/api/llm/test-ws-command', requireLlmReadAccess);
 
     // Mount the local service-to-service generation API over the existing provider
     // pipeline. Its token is deliberately distinct from the plugin token: the plugin's
@@ -1448,6 +1469,121 @@ function startHttpServer() {
         }
     });
 
+    // ── LLM endpoints ────────────────────────────────────────────────────────
+
+    // GET /api/llm/config - Return current LLM configuration and capabilities.
+    // Never exposes API keys.
+    expressApp.get('/api/llm/config', (req, res) => {
+        const config = getLlmConfig();
+        const capabilities = getLlmCapabilities();
+        res.json({
+            mode: config.mode,
+            configured: config.configured,
+            errors: config.errors,
+            apiProvider: config.apiProvider,
+            apiModel: config.apiModel,
+            cliType: config.cliType,
+            cliModel: config.cliModel,
+            capabilities
+        });
+    });
+
+    // POST /api/llm/check - Verify that the configured LLM connection works.
+    // Accepts optional { probe: true } to perform a real lightweight request.
+    expressApp.post('/api/llm/check', async (req, res) => {
+        try {
+            const probe = req.body?.probe === true;
+            const result = await checkLlmConnection({ probe });
+            res.json(result);
+        } catch (error) {
+            console.error('LLM check error:', error.message);
+            res.status(500).json({ ok: false, message: 'Internal error during LLM check.' });
+        }
+    });
+
+    // POST /api/llm/query - Send a prompt to the configured LLM.
+    // Body: { prompt: string, systemPrompt?: string, images?: string[] }
+    expressApp.post('/api/llm/query', async (req, res) => {
+        const { prompt, systemPrompt, images } = req.body || {};
+
+        if (!prompt || typeof prompt !== 'string') {
+            return res.status(400).json({ ok: false, error: 'Missing or invalid "prompt" field.' });
+        }
+
+        try {
+            const result = await sendLlmQuery({ prompt, systemPrompt, images });
+            if (result.ok) {
+                res.json(result);
+            } else {
+                res.status(502).json(result);
+            }
+        } catch (error) {
+            console.error('LLM query error:', error.message);
+            res.status(500).json({ ok: false, error: 'Internal error during LLM query.' });
+        }
+    });
+
+    // TODO: TEMPORARY TEST HARNESS - REMOVE BEFORE RELEASE
+    // POST /api/llm/test-ws-command - Test round-trip command execution over the WS bridge
+    expressApp.post('/api/llm/test-ws-command', async (req, res) => {
+        if (!wsBridgeServer) {
+            return res.status(503).json({ ok: false, error: 'WS bridge server is not initialized.' });
+        }
+
+        const clientsCount = wsBridgeServer.getConnectedClients();
+        if (clientsCount === 0) {
+            return res.status(503).json({ ok: false, error: 'No UXP plugin connected to WS bridge.' });
+        }
+
+        const action = req.body?.action || 'test-echo';
+        const payload = req.body?.payload || { sentAt: new Date().toISOString() };
+
+        const commandId = wsBridgeServer.sendCommand(action, payload);
+        const startTime = Date.now();
+        const timeoutMs = 5000;
+        const checkInterval = 50;
+
+        const poll = () => new Promise((resolve) => {
+            const timer = setInterval(() => {
+                const cmd = wsBridgeServer.commandQueue.get(commandId);
+                if (!cmd) {
+                    clearInterval(timer);
+                    resolve({ ok: false, error: 'Command missing from queue' });
+                } else if (cmd.state === 'completed') {
+                    clearInterval(timer);
+                    resolve({
+                        ok: true,
+                        commandId,
+                        roundTripMs: Date.now() - startTime,
+                        state: cmd.state,
+                        result: cmd.result
+                    });
+                } else if (cmd.state === 'failed') {
+                    clearInterval(timer);
+                    resolve({
+                        ok: false,
+                        commandId,
+                        roundTripMs: Date.now() - startTime,
+                        state: cmd.state,
+                        error: cmd.error
+                    });
+                } else if (Date.now() - startTime > timeoutMs) {
+                    clearInterval(timer);
+                    resolve({
+                        ok: false,
+                        commandId,
+                        roundTripMs: Date.now() - startTime,
+                        state: cmd.state,
+                        error: 'Timeout waiting for plugin result'
+                    });
+                }
+            }, checkInterval);
+        });
+
+        const outcome = await poll();
+        res.status(outcome.ok ? 200 : 504).json(outcome);
+    });
+
     // Start listening
     httpServer = expressApp.listen(PORT, '127.0.0.1', () => {
         console.log(`Photoshop Helper server running on http://localhost:${PORT}`);
@@ -1456,6 +1592,18 @@ function startHttpServer() {
         // later in this session picks up the token without a Helper restart.
         refreshPluginPairing();
         pairingRefreshTimer = setInterval(refreshPluginPairing, PAIRING_REFRESH_INTERVAL_MS);
+
+        // Start the WebSocket bridge prototype server.
+        try {
+            wsBridgeServer = createWsBridgeServer({
+                port: WS_BRIDGE_PORT,
+                token: pluginToken,
+                logger: log
+            });
+            log.info(`WS bridge prototype listening on ws://127.0.0.1:${WS_BRIDGE_PORT}`);
+        } catch (err) {
+            log.warn(`WS bridge prototype could not start: ${err.message}`);
+        }
     });
 
     httpServer.on('error', (error) => {
@@ -1586,5 +1734,10 @@ app.on('before-quit', () => {
     // Close HTTP server
     if (httpServer) {
         httpServer.close();
+    }
+
+    // Close WebSocket bridge server
+    if (wsBridgeServer) {
+        wsBridgeServer.close().catch(() => {});
     }
 });

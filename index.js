@@ -11,6 +11,7 @@ const settings = require('./modules/settings.js');
 
 const helper = require('./modules/helper.js');
 const imageUtils = require('./modules/image-utils.js');
+const { createWsBridgeClient } = require('./modules/ws-bridge-prototype.js');
 
 const { entrypoints, versions } = require("uxp");
 
@@ -82,8 +83,71 @@ function init() {
     // Start checking Photoshop Helper status
     startHelperStatusPolling();
 
+    // Start the WS bridge prototype client.
+    // This connects after a short delay to give the panel time to pair.
+    setTimeout(() => initWsBridge(), 2000);
+
     console.log('FromPS/ToPS plugin initialized');
 }
+
+// WS bridge prototype client instance (module-level for inspection in DevTools).
+let _wsBridgeClient = null;
+
+/**
+ * Initialize the WebSocket bridge prototype client.
+ *
+ * This is a PROTOTYPE for measuring real UXP WebSocket behavior.
+ * Key things being tested:
+ *   - Does the connection survive panel hide/show?
+ *   - Does reconnect work after Helper restart?
+ *   - Does executeAsModal block message delivery?
+ *
+ * All results are logged to the UXP DevTools console.
+ */
+async function initWsBridge() {
+    try {
+        console.log('[ws-bridge] Initializing WS bridge...');
+        const WS_BRIDGE_PORT = 18346;
+
+        // Get the pairing token — same one used for HTTP requests
+        const token = await helper.getHelperToken();
+        if (!token) {
+            console.warn('[ws-bridge] No pairing token — skipping WS connection. Pair with Helper first.');
+            return;
+        }
+
+        const url = `ws://127.0.0.1:${WS_BRIDGE_PORT}`;
+        console.log(`[ws-bridge] Connecting to ${url}…`);
+
+        _wsBridgeClient = createWsBridgeClient({ url, token, maxReconnectDelay: 30000 });
+
+        _wsBridgeClient.onStatusChange = (status) => {
+            console.log(`[ws-bridge] Status: ${status}`);
+        };
+
+        // Handle incoming commands from Helper
+        _wsBridgeClient.onCommand = (commandId, action, payload) => {
+            console.log(`[ws-bridge] Command received: action="${action}" commandId=${commandId}`, payload);
+
+            // Demo: acknowledge and return a test result
+            // In production this would execute real Photoshop operations via ps.js
+            setTimeout(() => {
+                console.log(`[ws-bridge] Sending result for ${commandId}`);
+                _wsBridgeClient.sendResult(commandId, {
+                    success: true,
+                    action,
+                    executedAt: new Date().toISOString()
+                });
+            }, 100);
+        };
+
+        _wsBridgeClient.connect();
+        console.log('[ws-bridge] Client initialized. Watch status changes in this console.');
+    } catch (err) {
+        console.error('[ws-bridge] Failed to initialize WS bridge:', err);
+    }
+}
+
 
 /**
  * Set up all event listeners
