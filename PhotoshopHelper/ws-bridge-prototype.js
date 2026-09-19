@@ -55,6 +55,7 @@ function createWsBridgeServer({ port, token, logger }) {
 
     const log = logger || console;
     const commandQueue = new Map(); // commandId -> { action, payload, state, sentAt, result }
+    const waiters = new Map(); // commandId -> { resolve, reject, timeoutId }
 
     const wss = new WebSocketServer({ port, host: '127.0.0.1' });
 
@@ -132,6 +133,12 @@ function createWsBridgeServer({ port, token, logger }) {
                         cmd.result = msg.payload;
                         cmd.completedAt = Date.now();
                     }
+                    const waiter = waiters.get(msg.commandId);
+                    if (waiter) {
+                        clearTimeout(waiter.timeoutId);
+                        waiters.delete(msg.commandId);
+                        waiter.resolve(msg.payload);
+                    }
                     break;
                 }
 
@@ -141,6 +148,12 @@ function createWsBridgeServer({ port, token, logger }) {
                         cmd.state = 'failed';
                         cmd.error = msg.error || msg.payload;
                         cmd.completedAt = Date.now();
+                    }
+                    const waiter = waiters.get(msg.commandId);
+                    if (waiter) {
+                        clearTimeout(waiter.timeoutId);
+                        waiters.delete(msg.commandId);
+                        waiter.reject(new Error(msg.error || msg.payload || 'Unknown error'));
                     }
                     break;
                 }
@@ -244,7 +257,35 @@ function createWsBridgeServer({ port, token, logger }) {
         });
     }
 
-    return { wss, close, sendCommand, getConnectedClients, commandQueue };
+    function waitForResult(commandId, timeoutMs = 30000) {
+        return new Promise((resolve, reject) => {
+            // Check if the command has already completed before registering the waiter
+            const cmd = commandQueue.get(commandId);
+            if (!cmd) {
+                return reject(new Error(`Unknown command: ${commandId}`));
+            }
+            if (cmd.state === 'completed') {
+                return resolve(cmd.result);
+            }
+            if (cmd.state === 'failed') {
+                return reject(new Error(cmd.error || 'Command failed'));
+            }
+
+            const timeoutId = setTimeout(() => {
+                waiters.delete(commandId);
+                reject(new Error(`Command ${commandId} timed out after ${timeoutMs}ms`));
+            }, timeoutMs);
+
+            waiters.set(commandId, { resolve, reject, timeoutId });
+        });
+    }
+
+    function sendCommandAndWait(action, payload = {}, timeoutMs = 30000) {
+        const commandId = sendCommand(action, payload);
+        return waitForResult(commandId, timeoutMs);
+    }
+
+    return { wss, close, sendCommand, sendCommandAndWait, waitForResult, getConnectedClients, commandQueue };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

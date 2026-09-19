@@ -82,6 +82,7 @@ const { writePairingFile } = require('./plugin-pairing');
 const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment } = require('./user-settings');
 const { getLlmConfig, getLlmCapabilities, checkConnection: checkLlmConnection, sendLlmQuery } = require('./llm-engine');
 const { createWsBridgeServer } = require('./ws-bridge-prototype');
+const { createMcpRouter } = require('./mcp-server');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow, setPairingRefresher } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -783,6 +784,13 @@ function startHttpServer() {
     expressApp.use('/api/llm/query', requireLlmQueryAccess);
     // TODO: TEMPORARY TEST HARNESS - REMOVE BEFORE RELEASE (used only for Stage 2 prototype verification)
     expressApp.use('/api/llm/test-ws-command', requireLlmReadAccess);
+
+    // MCP server — external HTTP API for CLI agents (Claude Code, Codex, Grok, agy).
+    // Protected by localApiToken, same as Local Generation API.
+    // Future: will also serve as a gateway for paid generation calls via this API.
+    expressApp.use('/mcp', requireLlmQueryAccess, createMcpRouter({
+        getWsBridge: () => wsBridgeServer
+    }));
 
     // Mount the local service-to-service generation API over the existing provider
     // pipeline. Its token is deliberately distinct from the plugin token: the plugin's

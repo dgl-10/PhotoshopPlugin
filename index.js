@@ -11,6 +11,7 @@ const settings = require('./modules/settings.js');
 
 const helper = require('./modules/helper.js');
 const imageUtils = require('./modules/image-utils.js');
+const commandHandlers = require('./modules/command-handlers.js');
 const { createWsBridgeClient } = require('./modules/ws-bridge-prototype.js');
 
 const { entrypoints, versions } = require("uxp");
@@ -126,19 +127,32 @@ async function initWsBridge() {
         };
 
         // Handle incoming commands from Helper
-        _wsBridgeClient.onCommand = (commandId, action, payload) => {
-            console.log(`[ws-bridge] Command received: action="${action}" commandId=${commandId}`, payload);
-
-            // Demo: acknowledge and return a test result
-            // In production this would execute real Photoshop operations via ps.js
-            setTimeout(() => {
-                console.log(`[ws-bridge] Sending result for ${commandId}`);
-                _wsBridgeClient.sendResult(commandId, {
-                    success: true,
-                    action,
-                    executedAt: new Date().toISOString()
-                });
-            }, 100);
+        _wsBridgeClient.onCommand = async (commandId, action, payload) => {
+            console.log(`[ws-bridge] Command received: action="${action}" commandId=${commandId}`);
+            try {
+                let result;
+                switch (action) {
+                    case 'get_document_info':
+                        result = await commandHandlers.getDocumentInfo();
+                        break;
+                    case 'execute_batch_play':
+                        result = await commandHandlers.executeBatchPlay(payload);
+                        break;
+                    case 'execute_script':
+                        result = await commandHandlers.executeScript(payload);
+                        break;
+                    case 'get_image':
+                        result = await commandHandlers.getImage(payload);
+                        break;
+                    default:
+                        _wsBridgeClient.sendError(commandId, `Unknown action: ${action}`);
+                        return;
+                }
+                _wsBridgeClient.sendResult(commandId, result);
+            } catch (err) {
+                console.error(`[ws-bridge] Command "${action}" failed:`, err.message || err);
+                _wsBridgeClient.sendError(commandId, err.message || 'Unknown error during command execution');
+            }
         };
 
         _wsBridgeClient.connect();
