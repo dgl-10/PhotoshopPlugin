@@ -33,7 +33,11 @@ const storePromise = import('electron-store').then(StoreModule => {
             // Shared secrets for the local HTTP server. Both are created on first use
             // rather than shipped with a value, so every installation is distinct.
             pluginToken: null,
-            localApiToken: null
+            localApiToken: null,
+            // The document agent writes every MCP call it receives to disk when this is on.
+            // Off by default in a built Helper: it is a diagnostic tool, not part of normal
+            // use. A development run writes the journal regardless of this setting.
+            agentJournalEnabled: false
         }
     });
 });
@@ -202,6 +206,28 @@ async function regenerateLocalApiToken() {
 }
 
 /**
+ * Whether the document agent writes its journal of MCP calls to disk.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function isAgentJournalEnabled() {
+    const store = await storePromise;
+    return store.get('agentJournalEnabled') === true;
+}
+
+/**
+ * Turn the agent's journal on or off.
+ *
+ * @param {boolean} enabled - New state.
+ * @returns {Promise<boolean>} The stored state.
+ */
+async function setAgentJournalEnabled(enabled) {
+    const store = await storePromise;
+    store.set('agentJournalEnabled', Boolean(enabled));
+    return Boolean(enabled);
+}
+
+/**
  * Save a token to the current user's OS environment variables.
  *
  * On Windows, writes to HKCU\Environment via PowerShell and broadcasts WM_SETTINGCHANGE.
@@ -308,6 +334,8 @@ module.exports = {
     regenerateLocalApiToken,
     saveTokenToUserEnvironment,
     getTokenFromUserEnvironment,
+    isAgentJournalEnabled,
+    setAgentJournalEnabled,
     INITIAL_DONATION_THRESHOLD,
     DONATED_THRESHOLD: DONATED_NEW_DONATION_THRESHOLD,
     HARDCORE_UNPAID_THRESHOLD,

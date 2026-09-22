@@ -131,7 +131,7 @@ For each supported mode:
 
 - choose the correct provider-level `image_format`;
 - configure `mask_handling` only according to documented mask support;
-- set `max_reference_images` to a verified limit;
+- set `max_reference_images` to the total verified API image limit (the full image budget accepted by the API endpoint, e.g., 3 for Qwen or 4 for Wan 2.7). Never subtract 1 for the source image — the runtime automatically allocates slots for `source_image` and referential masks dynamically;
 - preserve the provider's required source/reference order;
 - use the guide's canonical source and reference placeholders;
 - include a mask only in modes and fields that officially accept it;

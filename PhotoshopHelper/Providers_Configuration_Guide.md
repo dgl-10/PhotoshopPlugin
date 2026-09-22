@@ -132,7 +132,7 @@ Each object in the `providers` array has the following structure. Fields marked 
 | `generation_modes` | `array` | ★ | Explicit non-empty list of supported generation modes. Currently limited to `"t2i"` and `"i2i"`. See §3.10. |
 | `image_format` | `string` | ★ | Format for encoding images sent TO the API. See §3.2. |
 | `mask_handling` | `object` | ★ | How this provider handles inpainting masks. See §3.3. |
-| `max_reference_images` | `number` or `object` | ★ | Maximum additional reference images. See §3.4. |
+| `max_reference_images` | `number` or `object` | ★ | Maximum total input/reference images accepted by the provider API. See §3.4. |
 | `supports_negative_prompt` | `boolean` | ★ | Whether to show a "Negative Prompt" text field in the UI. |
 | `english_only` | `boolean` or `string` | ★ | Prompt language requirement: `false` (multilingual), `true` (English only), or `"recommended"` (English recommended for optimal quality). See §3.5. |
 | `request_config` | `object` | ★ | Server-side HTTP request configuration. See §4. |
@@ -254,6 +254,10 @@ When `model_flux2` is `"klein-9b"`, the API limit is 4 images total. For `"pro"`
 > - In pure **Text-to-Image (T2I)** with references, the full budget (e.g. 8) is available in the UI references strip. The server automatically promotes the 1st reference to `source_image`.
 > - In **Image-to-Image (I2I)** when an explicit source image is present on canvas, it consumes 1 slot (`max_reference_images - 1`).
 > - If a referential mask (`first_referential` / `last_referential`) is active, it consumes 1 additional slot.
+
+> [!IMPORTANT]
+> **Do not manually subtract 1 for the source image in the configuration!**
+> Always specify the **total image budget** accepted by the API endpoint (e.g., if the API accepts up to 3 images in `image_urls`, specify `max_reference_images: 3`). The UI and server runtime automatically manage slot allocation: when a source image or referential mask is present on canvas, it reserves slots dynamically.
 
 Setting `max_reference_images: 0` means the provider does not accept any reference images (e.g. pure T2I or pure inpaint).
 
@@ -1471,18 +1475,18 @@ Multiple fields support a dynamic object form that changes behavior based on the
 **Example:**
 ```jsonc
 "max_reference_images": {
-    "default": 2,
+    "default": 3,
     "depends_on": "model_alibaba",
     "values": {
-        "fal-ai/qwen-image-2/edit": 2,
-        "fal-ai/wan/v2.7/edit": 3,
-        "fal-ai/wan/v2.7/pro/edit": 3
+        "fal-ai/qwen-image-2/edit": 3,
+        "fal-ai/wan/v2.7/edit": 4,
+        "fal-ai/wan/v2.7/pro/edit": 4
     }
 }
 ```
 
-When the user selects "Wan 2.7 Pro" (`"fal-ai/wan/v2.7/pro/edit"`), `max_reference_images` becomes `3`.
-When they select any model not in `values`, it falls back to `2`.
+When the user selects "Wan 2.7 Pro" (`"fal-ai/wan/v2.7/pro/edit"`), `max_reference_images` becomes `4`.
+When they select any model not in `values`, it falls back to `3`.
 
 ---
 
@@ -1979,6 +1983,8 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
             "nice_name": {
                 "depends_on": "model_alibaba",
                 "values": {
+                    "alibaba/qwen-image-3/pro/1k": "Qwen 3 Pro 1K (FAL Key)",
+                    "alibaba/qwen-image-3/pro/2k": "Qwen 3 Pro 2K (FAL Key)",
                     "fal-ai/qwen-image-2/edit": "Qwen 2 (FAL Key)",
                     "fal-ai/qwen-image-2/pro/edit": "Qwen 2 Pro (FAL Key)",
                     "wan/v2.6/image-to-image": "Wan 2.6 (FAL Key)",
@@ -2004,6 +2010,8 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
             "filename_suffix": {
                 "depends_on": "model_alibaba",
                 "values": {
+                    "alibaba/qwen-image-3/pro/1k": "qwen_v3_pro_1k",
+                    "alibaba/qwen-image-3/pro/2k": "qwen_v3_pro_2k",
                     "fal-ai/qwen-image-2/edit": "qwen_v2",
                     "fal-ai/qwen-image-2/pro/edit": "qwen_v2_pro",
                     "wan/v2.6/image-to-image": "wan_v2_6",
@@ -2013,15 +2021,17 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
                 }
             },
             "max_reference_images": {
-                "default": 2,
+                "default": 3,
                 "depends_on": "model_alibaba",
                 "values": {
-                    "fal-ai/qwen-image-2/edit": 2,
-                    "fal-ai/qwen-image-2/pro/edit": 2,
-                    "fal-ai/wan-25-preview/image-to-image": 1,
-                    "wan/v2.6/image-to-image": 2,
-                    "fal-ai/wan/v2.7/edit": 3,
-                    "fal-ai/wan/v2.7/pro/edit": 3
+                    "alibaba/qwen-image-3/pro/1k": 3,
+                    "alibaba/qwen-image-3/pro/2k": 3,
+                    "fal-ai/qwen-image-2/edit": 3,
+                    "fal-ai/qwen-image-2/pro/edit": 3,
+                    "fal-ai/wan-25-preview/image-to-image": 2,
+                    "wan/v2.6/image-to-image": 3,
+                    "fal-ai/wan/v2.7/edit": 4,
+                    "fal-ai/wan/v2.7/pro/edit": 4
                 }
             },
             "supports_negative_prompt": true,
@@ -2069,12 +2079,26 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
                 {
                     "name": "image_get_size_mp",
                     "args": {
-                        "output_resolution_mp": 4, //qwen
+                        "output_resolution_mp": 4, //qwen 2 & qwen 3 2k
                         "min_size": 512,
                         "auto_resize_2_max": "{{auto_resize_2_max}}",
                         "filter_by": "{{model_alibaba}}",
                         "filter_type": "contains",
-                        "values": "qwen-image-2"
+                        "values": [
+                            "qwen-image-2",
+                            "qwen-image-3/pro/2k"
+                        ]
+                    }
+                },
+                {
+                    "name": "image_get_size_mp",
+                    "args": {
+                        "output_resolution_mp": 1, //qwen 3 1k
+                        "min_size": 512,
+                        "auto_resize_2_max": "{{auto_resize_2_max}}",
+                        "filter_by": "{{model_alibaba}}",
+                        "filter_type": "contains",
+                        "values": "qwen-image-3/pro/1k"
                     }
                 },
                 {
@@ -2103,6 +2127,8 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
             "request_config": {
                 // Each route is an ordinary conditional template key. Explicit
                 // model checks reject unknown dropdown values before any FAL call.
+                "{{?!source_image && (model_alibaba == 'alibaba/qwen-image-3/pro/1k' || model_alibaba == 'alibaba/qwen-image-3/pro/2k')}}endpoint_url": "https://queue.fal.run/alibaba/qwen-image-3/text-to-image",
+                "{{?source_image && (model_alibaba == 'alibaba/qwen-image-3/pro/1k' || model_alibaba == 'alibaba/qwen-image-3/pro/2k')}}endpoint_url": "https://queue.fal.run/alibaba/qwen-image-3/edit",
                 "{{?!source_image && model_alibaba == 'fal-ai/qwen-image-2/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/qwen-image-2/text-to-image",
                 "{{?source_image && model_alibaba == 'fal-ai/qwen-image-2/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/qwen-image-2/edit",
                 "{{?!source_image && model_alibaba == 'fal-ai/qwen-image-2/pro/edit'}}endpoint_url": "https://queue.fal.run/fal-ai/qwen-image-2/pro/text-to-image",
@@ -2161,6 +2187,14 @@ A provider that bundles multiple Alibaba-family models (Wan 2.5/2.6/2.7, Qwen 2)
                     "type": "dropdown",
                     "label": "Model",
                     "options": [
+                        {
+                            "value": "alibaba/qwen-image-3/pro/1k",
+                            "label": "Qwen 3 Pro 1K (0.04 per image) - 1024 px"
+                        },
+                        {
+                            "value": "alibaba/qwen-image-3/pro/2k",
+                            "label": "Qwen 3 Pro 2K (0.075 per image) - 2048 px"
+                        },
                         {
                             "value": "fal-ai/wan/v2.7/edit",
                             "label": "Wan 2.7 (0.03 per image) - 1280 px"

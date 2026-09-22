@@ -9,4 +9,6 @@ Thumbs.db
 
 _PluginToCCX
 PhotoshopHelper/user-settings.json
+PhotoshopHelper/agent-journal/
+PhotoshopHelper/knowledge-base.user/
 .claude/*

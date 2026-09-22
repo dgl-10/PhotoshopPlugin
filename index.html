@@ -488,6 +488,126 @@
         </form>
     </dialog>
 
+    <!--
+        The AI assistant, a modal dialog like Settings just above — not a panel entrypoint.
+        A second panel in the manifest sounds tidy, but Photoshop opens every declared panel
+        the first time it installs or reloads the plugin, with no manifest setting to stop
+        it, and showing it from a menu afterwards needs UXP's inter-plugin-communication
+        permission just to reach a panel that belongs to this same plugin. A dialog needs
+        none of that: `uxpShowModal({ size })` gives it its own size regardless of how this
+        panel is currently docked, so it is not squeezed into a narrow docked width either.
+        Opening it is also what opens the channel to PhotoshopHelper.
+    -->
+    <dialog id="assistant-dialog">
+        <div class="assistant">
+
+            <div class="assistant-header">
+                <div id="assistant-channel" class="assistant-badge assistant-badge-warn">Helper: connecting...</div>
+                <div id="assistant-task" class="assistant-task assistant-online-only" style="display: none"></div>
+                <sp-action-button class="close-button" id="assistant-dialog-close" quiet title="Close">
+                    <sp-icon name="ui:CrossMedium" size="s" slot="icon"></sp-icon>
+                </sp-action-button>
+            </div>
+
+            <div id="assistant-offline" class="assistant-offline" style="display: none">
+                <sp-body size="S">Start PhotoshopHelper.</sp-body>
+                <sp-body size="S">The assistant does not work without it.</sp-body>
+            </div>
+
+            <div class="assistant-toolbar assistant-agent-only" style="display: none">
+                <sp-action-button id="assistant-new-chat" quiet>New chat</sp-action-button>
+                <sp-dropdown id="assistant-chat-list" placeholder="Chats">
+                    <sp-menu slot="options"></sp-menu>
+                </sp-dropdown>
+                <sp-action-button id="assistant-setup" quiet>Connect agent</sp-action-button>
+            </div>
+
+            <div id="assistant-messages" class="assistant-messages assistant-agent-only" style="display: none"></div>
+
+            <div id="assistant-setup-card" class="assistant-setup assistant-noagent-only" style="display: none">
+
+                <div class="assistant-setup-section">
+                    <div class="assistant-setup-heading">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+                            <path d="M8,0a8,8,0,1,0,8,8A8,8,0,0,0,8,0Z" fill="#e5b25d" />
+                            <rect x="7.1" y="7" width="1.8" height="5.5" fill="#2b2b2b" />
+                            <rect x="7.1" y="3.5" width="1.8" height="1.9" fill="#2b2b2b" />
+                        </svg>
+                        <span class="assistant-setup-title">Built-in agent is not set up</span>
+                    </div>
+                    <div class="assistant-setup-text">
+                        To run the agent from this panel, open the .env file and configure it there.
+                    </div>
+                </div>
+
+                <div class="assistant-setup-section assistant-setup-section-next">
+                    <div class="assistant-setup-heading">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+                            <path d="M8,0a8,8,0,1,0,8,8A8,8,0,0,0,8,0Z" fill="#2680eb" />
+                            <path d="M3.5 7h5V4.2L13 8l-4.5 3.8V9h-5z" fill="#ffffff" />
+                        </svg>
+                        <span class="assistant-setup-title">Outside agent</span>
+                    </div>
+                    <div class="assistant-setup-text">
+                        Claude Code Desktop, Codex Desktop or any other agent that supports MCP
+                        can work in Photoshop through PhotoshopHelper. This panel shows the
+                        progress and the report.
+                    </div>
+                    <div class="assistant-setup-text assistant-setup-note">
+                        Keep this panel open while the agent works: it is the agent's link to
+                        Photoshop. With the panel closed, the MCP server cannot reach the document.
+                    </div>
+
+                    <div class="assistant-setup-step">
+                        <span class="assistant-setup-step-number">1.</span>
+                        Once: in the PhotoshopHelper tray menu choose Access Tokens → Save
+                        Token to User Environment. The agent reads the key from there.
+                    </div>
+
+                    <div class="assistant-setup-step">
+                        <span class="assistant-setup-step-number">2.</span>
+                        Choose your agent and copy the text for it.
+                    </div>
+                    <div class="assistant-setup-picker">
+                        <sp-dropdown id="assistant-setup-choice" placeholder="Choose your agent">
+                            <sp-menu slot="options"></sp-menu>
+                        </sp-dropdown>
+
+                        <div id="assistant-setup-output" class="assistant-command" style="display: none">
+                            <div class="assistant-command-head">
+                                <span id="assistant-setup-hint" class="assistant-command-label"></span>
+                                <sp-action-button id="assistant-setup-copy" quiet>Copy</sp-action-button>
+                            </div>
+                            <div id="assistant-setup-text" class="assistant-command-text"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div id="assistant-progress" class="assistant-progress assistant-online-only" style="display: none"></div>
+
+            <div id="assistant-confirm" class="assistant-confirm assistant-online-only" style="display: none">
+                <sp-body size="XS">The agent says it is done:</sp-body>
+                <div id="assistant-confirm-text" class="assistant-confirm-text"></div>
+                <div class="assistant-confirm-buttons">
+                    <sp-button variant="cta" id="assistant-confirm-yes">Result is good</sp-button>
+                    <sp-button variant="secondary" quiet id="assistant-confirm-no">Not really</sp-button>
+                </div>
+            </div>
+
+            <div class="assistant-input assistant-agent-only" style="display: none">
+                <sp-textarea id="assistant-input" placeholder="What should be done in this document?"></sp-textarea>
+                <div class="assistant-buttons">
+                    <sp-button variant="cta" id="assistant-send">Send</sp-button>
+                    <sp-button variant="secondary" quiet id="assistant-stop">Stop</sp-button>
+                    <sp-button variant="secondary" quiet id="assistant-rollback">Roll back</sp-button>
+                </div>
+            </div>
+
+        </div>
+    </dialog>
+
     <script src="index.js"></script>
 </body>
 

@@ -11,8 +11,7 @@ const settings = require('./modules/settings.js');
 
 const helper = require('./modules/helper.js');
 const imageUtils = require('./modules/image-utils.js');
-const commandHandlers = require('./modules/command-handlers.js');
-const { createWsBridgeClient } = require('./modules/ws-bridge-prototype.js');
+const assistantPanel = require('./modules/agent-panel.js');
 
 const { entrypoints, versions } = require("uxp");
 
@@ -28,6 +27,10 @@ let currentFeatherOptions = { enabled: false }; // Mask feathering bias settings
 // distinct case from the Helper being absent, and needs a different fix from the user.
 const HELPER_NOT_PAIRED_MESSAGE = 'Helper not paired! Add its token in Settings';
 
+// Whether the 'close' listener on the assistant dialog has been attached yet. Attached
+// once, lazily, the first time the dialog is opened.
+let assistantDialogWired = false;
+
 /**
  * Initialize plugin
  */
@@ -42,19 +45,39 @@ function init() {
 
     // Setup UXP entrypoints for flyout menu
     entrypoints.setup({
+        plugin: {
+            create() {
+                // UXP requires a create handler whenever the plugin lifecycle object is
+                // declared, even when initialization itself still happens in init().
+                // Keeping this handler intentionally empty preserves the existing startup
+                // order while allowing destroy() to report a clean WebSocket shutdown.
+            },
+            destroy() {
+                // Best-effort clean shutdown. UXP may kill a plugin too quickly for a close
+                // frame, so Helper's heartbeat remains the fallback for abrupt unloads.
+                assistantPanel.onDestroy('plugin-runtime-destroyed');
+            }
+        },
         panels: {
             "fromps-tops-panel": {
                 show() {
                     console.log("Panel shown");
                 },
+                destroy() {
+                    assistantPanel.onDestroy('plugin-panel-destroyed');
+                },
                 menuItems: [
                     { id: "clearAll", label: "Clear All" },
+                    "-",
+                    { id: "aiAssistant", label: "FromPS / ToPS AI..." },
                     "-",
                     { id: "settings", label: "Settings..." }
                 ],
                 invokeMenu(id) {
                     if (id === "clearAll") {
                         handleClearAll();
+                    } else if (id === "aiAssistant") {
+                        showAssistantDialog();
                     } else if (id === "settings") {
                         settings.showSettingsDialog();
                     }
@@ -84,84 +107,52 @@ function init() {
     // Start checking Photoshop Helper status
     startHelperStatusPolling();
 
-    // Start the WS bridge prototype client.
-    // This connects after a short delay to give the panel time to pair.
-    setTimeout(() => initWsBridge(), 2000);
-
     console.log('FromPS/ToPS plugin initialized');
 }
 
-// WS bridge prototype client instance (module-level for inspection in DevTools).
-let _wsBridgeClient = null;
-
 /**
- * Initialize the WebSocket bridge prototype client.
+ * Open the AI assistant as a non-modal dialog in this panel's own document.
  *
- * This is a PROTOTYPE for measuring real UXP WebSocket behavior.
- * Key things being tested:
- *   - Does the connection survive panel hide/show?
- *   - Does reconnect work after Helper restart?
- *   - Does executeAsModal block message delivery?
+ * Settings uses `showModal()`/`uxpShowModal()` because it is a short form the person fills
+ * in and closes. The assistant is the opposite: a conversation meant to run in the
+ * background while the person keeps working in Photoshop, exactly as the rules told the
+ * agent — "the person is working in Photoshop while you are". A modal dialog fights that
+ * directly: in UXP, `showModal()` can freeze the whole application, not just this panel
+ * (Adobe's own known-issues page documents a `lockDocumentFocus` option specifically for
+ * turning that on, meaning the surface is capable of it, and it is exactly what happened
+ * here). The non-modal `show()` has no such lock — the canvas, tools and every other panel
+ * stay usable while this dialog is open. It also still accepts an explicit `size`, so the
+ * assistant is not squeezed into a narrow docked panel width either.
  *
- * All results are logged to the UXP DevTools console.
+ * @see https://developer.adobe.com/photoshop/uxp/2022/ps_reference/known-issues
  */
-async function initWsBridge() {
-    try {
-        console.log('[ws-bridge] Initializing WS bridge...');
-        const WS_BRIDGE_PORT = 18346;
+function showAssistantDialog() {
+    const dialog = document.getElementById('assistant-dialog');
+    if (!dialog) return;
 
-        // Get the pairing token — same one used for HTTP requests
-        const token = await helper.getHelperToken();
-        if (!token) {
-            console.warn('[ws-bridge] No pairing token — skipping WS connection. Pair with Helper first.');
+    if (!assistantDialogWired) {
+        // The 'close' event fires no matter how the dialog closed — the X button, or a
+        // call to dialog.close() — so this one listener is the single place the channel to
+        // Helper is told to start winding down. Escape does not close a non-modal dialog;
+        // the X button is the only way out, and it is always present.
+        dialog.addEventListener('close', () => assistantPanel.onHide('assistant-dialog-closed'));
+        assistantDialogWired = true;
+    }
+
+    try {
+        dialog.show({ size: { width: 380, height: 640 } });
+    } catch (error) {
+        console.warn('[assistant] show() with a size option failed, retrying without it:', error.message || error);
+        try {
+            dialog.show();
+        } catch (fallbackError) {
+            console.error('Failed to open the AI assistant dialog:', fallbackError);
             return;
         }
-
-        const url = `ws://127.0.0.1:${WS_BRIDGE_PORT}`;
-        console.log(`[ws-bridge] Connecting to ${url}…`);
-
-        _wsBridgeClient = createWsBridgeClient({ url, token, maxReconnectDelay: 30000 });
-
-        _wsBridgeClient.onStatusChange = (status) => {
-            console.log(`[ws-bridge] Status: ${status}`);
-        };
-
-        // Handle incoming commands from Helper
-        _wsBridgeClient.onCommand = async (commandId, action, payload) => {
-            console.log(`[ws-bridge] Command received: action="${action}" commandId=${commandId}`);
-            try {
-                let result;
-                switch (action) {
-                    case 'get_document_info':
-                        result = await commandHandlers.getDocumentInfo();
-                        break;
-                    case 'execute_batch_play':
-                        result = await commandHandlers.executeBatchPlay(payload);
-                        break;
-                    case 'execute_script':
-                        result = await commandHandlers.executeScript(payload);
-                        break;
-                    case 'get_image':
-                        result = await commandHandlers.getImage(payload);
-                        break;
-                    default:
-                        _wsBridgeClient.sendError(commandId, `Unknown action: ${action}`);
-                        return;
-                }
-                _wsBridgeClient.sendResult(commandId, result);
-            } catch (err) {
-                console.error(`[ws-bridge] Command "${action}" failed:`, err.message || err);
-                _wsBridgeClient.sendError(commandId, err.message || 'Unknown error during command execution');
-            }
-        };
-
-        _wsBridgeClient.connect();
-        console.log('[ws-bridge] Client initialized. Watch status changes in this console.');
-    } catch (err) {
-        console.error('[ws-bridge] Failed to initialize WS bridge:', err);
     }
-}
 
+    assistantPanel.onShow();
+}
 
 /**
  * Set up all event listeners

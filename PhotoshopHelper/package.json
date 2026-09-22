@@ -73,6 +73,10 @@
             {
                 "from": "Local_Generation_API.md",
                 "to": "Local_Generation_API.md"
+            },
+            {
+                "from": "knowledge-base",
+                "to": "knowledge-base"
             }
         ],
         "extraFiles": [

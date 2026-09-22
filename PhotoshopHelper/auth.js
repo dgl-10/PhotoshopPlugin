@@ -83,6 +83,73 @@ function isSameOriginRequest(req) {
 }
 
 /**
+ * Mask a token for safe diagnostic logging, keeping leading and trailing characters visible.
+ *
+ * @param {string} [token] - Token string to mask.
+ * @param {number} [visibleCount=4] - Number of characters to preserve at start and end.
+ * @returns {string} Masked token or placeholder.
+ */
+function maskToken(token, visibleCount = 4) {
+    if (!token || typeof token !== 'string') {
+        return '(none)';
+    }
+
+    if (token.length <= visibleCount * 2) {
+        return '****';
+    }
+
+    return `${token.slice(0, visibleCount)}****${token.slice(-visibleCount)}`;
+}
+
+/**
+ * Mask an Authorization header value for diagnostic logging.
+ *
+ * @param {string} [header] - Authorization header value.
+ * @returns {string} Masked authorization header string.
+ */
+function maskAuthorizationHeader(header) {
+    if (!header || typeof header !== 'string') {
+        return '(none)';
+    }
+
+    const bearerPrefix = 'Bearer ';
+    if (header.startsWith(bearerPrefix)) {
+        return `${bearerPrefix}${maskToken(header.slice(bearerPrefix.length))}`;
+    }
+
+    const basicPrefix = 'Basic ';
+    if (header.startsWith(basicPrefix)) {
+        return `${basicPrefix}****`;
+    }
+
+    return maskToken(header);
+}
+
+/**
+ * Sanitize request headers for diagnostic logging to avoid leaking sensitive credentials.
+ *
+ * @param {object} headers - HTTP request headers.
+ * @returns {object} Copy of headers with sensitive values masked.
+ */
+function sanitizeHeaders(headers) {
+    if (!headers || typeof headers !== 'object') {
+        return headers;
+    }
+
+    const sanitized = { ...headers };
+
+    if (sanitized.authorization) {
+        sanitized.authorization = maskAuthorizationHeader(String(sanitized.authorization));
+    }
+
+    if (sanitized['x-api-key']) {
+        sanitized['x-api-key'] = maskToken(String(sanitized['x-api-key']));
+    }
+
+    return sanitized;
+}
+
+/**
  * Create middleware that requires a shared secret, optionally trusting same-origin pages.
  *
  * The expected token is read through a callback on every request so a rotated secret
@@ -127,6 +194,12 @@ function createAuthMiddleware(options) {
         const suppliedToken = extractToken(req);
 
         if (!suppliedToken || !tokensMatch(suppliedToken, expectedToken)) {
+            // Diagnostic logging to inspect MCP/API authorization attempts
+            console.log(`\n[auth] 401 Unauthorized for ${req.method} ${req.originalUrl || req.url}`);
+            console.log(`[auth] Authorization header: "${maskAuthorizationHeader(req.get('authorization'))}"`);
+            console.log(`[auth] Supplied token:        "${maskToken(suppliedToken)}"`);
+            console.log(`[auth] Expected token:        "${maskToken(expectedToken)}"`);
+            console.log(`[auth] Request headers:`, JSON.stringify(sanitizeHeaders(req.headers), null, 2));
             return res.status(401).json({ error: 'Unauthorized.' });
         }
 
@@ -266,6 +339,7 @@ module.exports = {
     createAuthMiddleware,
     createSameOriginCorsMiddleware,
     createPasswordGate,
+    maskAuthorizationHeader,
 
     // Not used by any runtime module — every call site is inside this file. Exported
     // only so _tests_/auth.test.js can exercise each piece in isolation instead of only

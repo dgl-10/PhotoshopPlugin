@@ -807,3 +807,258 @@ dialog::backdrop {
     border-left: none !important;
     border-top: 1px solid var(--border-color) !important;
 }
+/* ── AI assistant dialog ──────────────────────────────────────────────────── */
+
+.assistant {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    /* A fixed size on purpose: the dialog is as big as this container, and with Helper not
+       running almost everything inside is hidden. Tune the size here. */
+    width: 380px;
+    height: 560px;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+.assistant-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+    padding-right: 32px;
+}
+
+.assistant-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    align-self: flex-start;
+}
+
+.assistant-badge-ok {
+    background: rgba(45, 157, 120, 0.25);
+    color: #6fd3aa;
+}
+
+.assistant-badge-warn {
+    background: rgba(200, 140, 40, 0.25);
+    color: #e5b25d;
+}
+
+.assistant-badge-error {
+    background: rgba(210, 70, 70, 0.25);
+    color: #f08a8a;
+}
+
+.assistant-offline {
+    padding: 6px 0;
+}
+
+.assistant-task {
+    font-size: 11px;
+    opacity: 0.85;
+}
+
+.assistant-toolbar {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.assistant-toolbar sp-dropdown {
+    flex: 1;
+    min-width: 0;
+}
+
+.assistant-messages {
+    flex: 1;
+    min-height: 80px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+    border-radius: 4px;
+}
+
+.assistant-message {
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 5px 7px;
+    border-radius: 4px;
+}
+
+.assistant-message-user {
+    background: rgba(90, 130, 200, 0.22);
+}
+
+.assistant-message-agent {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.assistant-message-system {
+    background: rgba(200, 140, 40, 0.16);
+    font-style: italic;
+}
+
+.assistant-progress {
+    max-height: 110px;
+    overflow-y: auto;
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+.assistant-step {
+    padding: 1px 0;
+}
+
+.assistant-step::before {
+    content: "· ";
+}
+
+.assistant-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid rgba(110, 180, 140, 0.4);
+    border-radius: 4px;
+}
+
+.assistant-confirm-text {
+    font-size: 11px;
+    white-space: pre-wrap;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.assistant-confirm-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.assistant-input {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.assistant-input sp-textarea {
+    width: 100%;
+    min-height: 56px;
+}
+
+.assistant-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.assistant-setup {
+    flex: 1;
+    min-height: 80px;
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+    border-radius: 4px;
+}
+
+/* Spacing is done with margins: flex "gap" does not take effect in this dialog. */
+.assistant-setup-section-next {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+}
+
+.assistant-setup-heading {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.assistant-setup-heading svg {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+}
+
+.assistant-setup-title {
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.assistant-setup-text {
+    font-size: 11px;
+    line-height: 1.4;
+    opacity: 0.85;
+}
+
+.assistant-setup-note {
+    margin-top: 8px;
+    opacity: 1;
+    color: #e5b25d;
+}
+
+.assistant-setup-step {
+    font-size: 11px;
+    line-height: 1.4;
+    margin-top: 12px;
+    opacity: 0.85;
+}
+
+.assistant-setup-step-number {
+    font-weight: bold;
+}
+
+.assistant-setup sp-dropdown {
+    width: 100%;
+    margin-top: 8px;
+}
+
+/* Flex + explicit order, not just source order: sp-dropdown has been seen painting itself
+   after later siblings regardless of where it sits in the markup, so the stacking here is
+   pinned rather than left to whatever the component decides. */
+.assistant-setup-picker {
+    display: flex;
+    flex-direction: column;
+}
+
+.assistant-setup-picker sp-dropdown {
+    order: 1;
+}
+
+.assistant-setup-picker .assistant-command {
+    order: 2;
+}
+
+.assistant-command {
+    margin-top: 10px;
+}
+
+.assistant-command-head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 3px;
+}
+
+.assistant-command-label {
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.assistant-command-text {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 6px 8px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.25);
+}

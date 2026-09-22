@@ -77,12 +77,14 @@ const { generate } = require('./apiGenerator');
 const { loadProvidersCatalog, findMissingEnvKeys } = require('./providers-catalog');
 const { createCatalogUpdater } = require('./providers-updater');
 const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
-const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest } = require('./auth');
+const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest, maskAuthorizationHeader } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
-const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment } = require('./user-settings');
+const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment, isAgentJournalEnabled, setAgentJournalEnabled } = require('./user-settings');
 const { getLlmConfig, getLlmCapabilities, checkConnection: checkLlmConnection, sendLlmQuery } = require('./llm-engine');
-const { createWsBridgeServer } = require('./ws-bridge-prototype');
+const { createWsBridgeServer } = require('./ws-bridge');
 const { createMcpRouter } = require('./mcp-server');
+const { createAgentService, resolveAgentPaths } = require('./agent');
+const { createAgentRouter } = require('./agent/agent-api');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow, setPairingRefresher } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -165,6 +167,49 @@ let pairingRefreshTimer = null;
 // Runs on a separate port (18346) alongside the main HTTP server.
 const WS_BRIDGE_PORT = 18346;
 let wsBridgeServer = null;
+
+// The document agent: the MCP tools an AI agent calls, and what the assistant panel in
+// the plugin talks to. Created once the config paths are known.
+let agentService = null;
+
+// Whether the agent's journal of MCP calls is written to disk. A development run always
+// writes it; a built Helper only when the user asks, from the tray menu.
+let agentJournalChecked = false;
+
+/**
+ * Build the document agent service.
+ *
+ * @returns {object} The agent service.
+ */
+function initAgentService() {
+    if (app.isPackaged) {
+        isAgentJournalEnabled()
+            .then(enabled => {
+                agentJournalChecked = enabled;
+                updateTrayMenu();
+            })
+            .catch(() => { agentJournalChecked = false; });
+    } else {
+        agentJournalChecked = true;
+    }
+
+    agentService = createAgentService({
+        getBridge: () => wsBridgeServer,
+        paths: resolveAgentPaths(getConfigPaths()),
+        isJournalEnabled: () => agentJournalChecked,
+        logger: log
+    });
+
+    // Creating the user's layer up front means the person finds the folder for their own
+    // articles even before the agent has written anything into it.
+    try {
+        agentService.knowledgeBase.ensureUserLayer();
+    } catch (error) {
+        log.warn(`Could not create the knowledge base folder: ${error.message}`);
+    }
+
+    return agentService;
+}
 
 // Keeps the model list current from the repository. It runs on the app update schedule
 // and from the tray, both of which exist only in packaged builds.
@@ -337,6 +382,49 @@ function updateTrayMenu() {
             click: async () => {
                 await showCatalogCheckResult(await catalogUpdater.checkNow());
             }
+        }
+    );
+
+    menuTemplate.push(
+        { type: 'separator' },
+        {
+            label: 'AI Agent for Photoshop',
+            submenu: [
+                {
+                    label: 'Connect Your Agent (MCP)...',
+                    click: () => { void showMcpSetupDialog(); }
+                },
+                {
+                    label: 'Open the Knowledge Base Folder',
+                    click: () => {
+                        if (!agentService) return;
+                        try {
+                            agentService.knowledgeBase.ensureUserLayer();
+                            shell.openPath(agentService.knowledgeBase.paths.userDir);
+                        } catch (error) {
+                            log.warn(`Could not open the knowledge base folder: ${error.message}`);
+                        }
+                    }
+                },
+                {
+                    label: app.isPackaged
+                        ? 'Write the Agent Journal'
+                        : 'Write the Agent Journal (always on in development)',
+                    type: 'checkbox',
+                    checked: agentJournalChecked,
+                    enabled: app.isPackaged,
+                    click: async (menuItem) => {
+                        agentJournalChecked = await setAgentJournalEnabled(menuItem.checked);
+                        updateTrayMenu();
+                    }
+                },
+                {
+                    label: 'Open the Agent Journal Folder',
+                    click: () => {
+                        if (agentService) shell.openPath(agentService.journal.dir);
+                    }
+                }
+            ]
         }
     );
 
@@ -706,6 +794,48 @@ function refreshPluginPairing() {
 }
 
 /**
+ * Show the commands that connect a CLI agent to this MCP server.
+ *
+ * Nothing is registered here: the dialog copies a command for the person to run, because
+ * editing another program's global configuration is theirs to decide. The command carries
+ * a reference to the environment variable, not the token itself.
+ *
+ * @returns {Promise<void>}
+ */
+async function showMcpSetupDialog() {
+    const { buildInstallCommands, buildAgentInstructions, TOKEN_ENV_VAR } = require('./agent/mcp-setup');
+    const commands = buildInstallCommands({ port: PORT });
+
+    const buttons = [...commands.map(entry => `Copy: ${entry.label}`), 'Copy: Ask My Agent', 'Close'];
+
+    const { response } = await dialog.showMessageBox({
+        type: 'info',
+        buttons,
+        defaultId: 0,
+        cancelId: buttons.length - 1,
+        title: 'Connect Your Agent',
+        message: 'Register PhotoshopHelper as an MCP server in your CLI agent.',
+        detail:
+            'Run the copied command once in a terminal, then restart the agent. Your other MCP '
+            + 'servers are left alone.\n\n'
+            + `The command refers to the ${TOKEN_ENV_VAR} environment variable instead of the `
+            + 'token itself. Save the token there first: Access Tokens → Save Token to User '
+            + 'Environment.\n\n'
+            + 'The last button copies a short text you can paste to an agent so it sets this up '
+            + 'for you.'
+    });
+
+    if (response === buttons.length - 1) return;
+
+    if (response === commands.length) {
+        clipboard.writeText(buildAgentInstructions({ port: PORT }));
+        return;
+    }
+
+    clipboard.writeText(commands[response].copyCommand || commands[response].command);
+}
+
+/**
  * Start the HTTP server
  */
 function startHttpServer() {
@@ -782,14 +912,28 @@ function startHttpServer() {
     expressApp.use('/api/llm/config', requireLlmReadAccess);
     expressApp.use('/api/llm/check', requireLlmReadAccess);
     expressApp.use('/api/llm/query', requireLlmQueryAccess);
-    // TODO: TEMPORARY TEST HARNESS - REMOVE BEFORE RELEASE (used only for Stage 2 prototype verification)
-    expressApp.use('/api/llm/test-ws-command', requireLlmReadAccess);
 
-    // MCP server — external HTTP API for CLI agents (Claude Code, Codex, Grok, agy).
-    // Protected by localApiToken, same as Local Generation API.
-    // Future: will also serve as a gateway for paid generation calls via this API.
-    expressApp.use('/mcp', requireLlmQueryAccess, createMcpRouter({
-        getWsBridge: () => wsBridgeServer
+    // MCP server — the entry point for CLI agents (Claude Code, Codex, Grok, Antigravity),
+    // both the one Helper launches and the one the user opens themselves.
+    // Protected by localApiToken, the same secret as the Local Generation API, because the
+    // same server will later publish generation tools that do spend money.
+    expressApp.use('/mcp', (req, _res, next) => {
+        // Diagnostic log: prints incoming HTTP method, URL, and raw Authorization header to console
+        console.log(`\n>>> [MCP INCOMING] ${req.method} ${req.originalUrl || req.url}`);
+        console.log(`>>> [MCP INCOMING] Authorization: "${maskAuthorizationHeader(req.get('authorization'))}"`);
+        console.log(`>>> [MCP INCOMING] Accept:        "${req.get('accept') || '(none)'}"`);
+        next();
+    }, requireLlmQueryAccess, createMcpRouter({
+        tools: agentService.tools
+    }));
+
+    // The assistant panel inside the plugin. The plugin token is the right secret here:
+    // these routes drive Photoshop and the person's own CLI subscription, and the runner
+    // refuses to work unless Helper is set to a CLI, so no paid API sits behind them.
+    expressApp.use('/api/agent', requirePluginToken, createAgentRouter({
+        service: agentService,
+        port: PORT,
+        logger: log
     }));
 
     // Mount the local service-to-service generation API over the existing provider
@@ -1531,67 +1675,6 @@ function startHttpServer() {
         }
     });
 
-    // TODO: TEMPORARY TEST HARNESS - REMOVE BEFORE RELEASE
-    // POST /api/llm/test-ws-command - Test round-trip command execution over the WS bridge
-    expressApp.post('/api/llm/test-ws-command', async (req, res) => {
-        if (!wsBridgeServer) {
-            return res.status(503).json({ ok: false, error: 'WS bridge server is not initialized.' });
-        }
-
-        const clientsCount = wsBridgeServer.getConnectedClients();
-        if (clientsCount === 0) {
-            return res.status(503).json({ ok: false, error: 'No UXP plugin connected to WS bridge.' });
-        }
-
-        const action = req.body?.action || 'test-echo';
-        const payload = req.body?.payload || { sentAt: new Date().toISOString() };
-
-        const commandId = wsBridgeServer.sendCommand(action, payload);
-        const startTime = Date.now();
-        const timeoutMs = 5000;
-        const checkInterval = 50;
-
-        const poll = () => new Promise((resolve) => {
-            const timer = setInterval(() => {
-                const cmd = wsBridgeServer.commandQueue.get(commandId);
-                if (!cmd) {
-                    clearInterval(timer);
-                    resolve({ ok: false, error: 'Command missing from queue' });
-                } else if (cmd.state === 'completed') {
-                    clearInterval(timer);
-                    resolve({
-                        ok: true,
-                        commandId,
-                        roundTripMs: Date.now() - startTime,
-                        state: cmd.state,
-                        result: cmd.result
-                    });
-                } else if (cmd.state === 'failed') {
-                    clearInterval(timer);
-                    resolve({
-                        ok: false,
-                        commandId,
-                        roundTripMs: Date.now() - startTime,
-                        state: cmd.state,
-                        error: cmd.error
-                    });
-                } else if (Date.now() - startTime > timeoutMs) {
-                    clearInterval(timer);
-                    resolve({
-                        ok: false,
-                        commandId,
-                        roundTripMs: Date.now() - startTime,
-                        state: cmd.state,
-                        error: 'Timeout waiting for plugin result'
-                    });
-                }
-            }, checkInterval);
-        });
-
-        const outcome = await poll();
-        res.status(outcome.ok ? 200 : 504).json(outcome);
-    });
-
     // Start listening
     httpServer = expressApp.listen(PORT, '127.0.0.1', () => {
         console.log(`Photoshop Helper server running on http://localhost:${PORT}`);
@@ -1601,16 +1684,25 @@ function startHttpServer() {
         refreshPluginPairing();
         pairingRefreshTimer = setInterval(refreshPluginPairing, PAIRING_REFRESH_INTERVAL_MS);
 
-        // Start the WebSocket bridge prototype server.
+        // Start the channel to the plugin. The plugin connects to it while its assistant
+        // panel is open, so an idle Helper normally has nobody on the other end.
         try {
             wsBridgeServer = createWsBridgeServer({
                 port: WS_BRIDGE_PORT,
                 token: pluginToken,
-                logger: log
+                logger: log,
+                onClientChange: (event) => {
+                    // A closed dialog is recoverable. The agent service keeps the task paused
+                    // and uses the runtime identity to distinguish a harmless reconnect from
+                    // a full UXP reload that needs an explicit document rebind.
+                    if (agentService) {
+                        agentService.handlePluginConnectionChange(event);
+                    }
+                }
             });
-            log.info(`WS bridge prototype listening on ws://127.0.0.1:${WS_BRIDGE_PORT}`);
+            log.info(`Plugin channel listening on ws://127.0.0.1:${WS_BRIDGE_PORT}`);
         } catch (err) {
-            log.warn(`WS bridge prototype could not start: ${err.message}`);
+            log.warn(`Plugin channel could not start: ${err.message}`);
         }
     });
 
@@ -1705,6 +1797,9 @@ app.whenReady().then(async () => {
 
         log.info('Creating tray icon...');
         await createTray();
+
+        log.info('Building the document agent...');
+        initAgentService();
 
         log.info('Starting HTTP server...');
         startHttpServer();
