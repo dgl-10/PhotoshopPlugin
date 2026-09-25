@@ -115,15 +115,14 @@ async function hasSelection(doc) {
 }
 
 /**
- * ps_start_task: bind the task to the open document and put a snapshot in the History panel.
+ * ps_start_task: bind the task to the open document without modifying it.
  *
  * @param {object} payload - { taskId, intent }.
  * @returns {Promise<object>}
  */
 async function agentStartTask(payload) {
     const started = await agentDocument.startTask({
-        taskId: payload.taskId,
-        intent: payload.intent
+        taskId: payload.taskId
     });
 
     if (!started.document) {
@@ -134,9 +133,9 @@ async function agentStartTask(payload) {
 }
 
 /**
- * Rebind a suspended task after the UXP runtime was recreated. Helper supplies only the
- * document identity and rollback metadata it received earlier; the plugin validates all
- * of it against the documents and History snapshots that are actually open now.
+ * Rebind a suspended task after the UXP runtime was recreated. Helper supplies the
+ * original document identity; the plugin accepts it only when it can find that document
+ * unambiguously among the documents that are actually open now.
  *
  * @param {object} payload - Persisted task metadata from Helper.
  * @returns {Promise<object>} Recovery status and current document facts.
@@ -312,10 +311,6 @@ async function agentExecuteScript(payload) {
         let scriptOutput = null;
         const watch = batchPlayWatch.createBatchPlayWatch({ photoshop, realRequire: require });
 
-        // The first change of the task is what earns the snapshot. A task that only looked,
-        // or turned out to be a question, leaves the History panel untouched.
-        const snapshot = await agentDocument.ensureRollbackPoint(payload.taskId, doc);
-
         try {
             await inModalScope(async (executionContext) => {
                 const suspensionId = await executionContext.hostControl.suspendHistory({
@@ -353,24 +348,12 @@ async function agentExecuteScript(payload) {
 
         const answer = {
             result: scriptOutput === undefined ? null : scriptOutput,
-            snapshot,
             status: agentDocument.buildStatus(payload.taskId)
         };
         const rejected = watch.report();
         if (rejected) answer.rejectedCommands = rejected;
         return answer;
     });
-}
-
-/**
- * The panel's "back to the snapshot" button.
- *
- * @param {object} payload - { taskId }.
- * @returns {Promise<object>}
- */
-async function agentRollback(payload) {
-    const outcome = await agentDocument.rollbackToStart(payload.taskId);
-    return { ...outcome, status: agentDocument.buildStatus(payload.taskId) };
 }
 
 /**
@@ -393,7 +376,6 @@ const HANDLERS = {
     agent_get_layer: agentGetLayer,
     agent_get_image: agentGetImage,
     agent_execute_script: agentExecuteScript,
-    agent_rollback: agentRollback,
     agent_ping: agentPing
 };
 

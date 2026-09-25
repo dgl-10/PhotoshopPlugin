@@ -91,13 +91,13 @@ test('every accepted call keeps the task alive', () => {
 test('finishing stores the report and frees the slot', () => {
     const { tasks } = withClock();
     const task = tasks.start({ intent: 'curves' });
-    tasks.noteArticle(task.id, 'curves-clipped');
+    tasks.noteContribution(task.id, 'curves-clipped');
 
     const finished = tasks.finish(task.id, { summary: 'added a curves layer', issues: 'none' });
 
     assert.equal(finished.state, 'finished');
     assert.equal(finished.report.summary, 'added a curves layer');
-    assert.deepEqual(finished.touchedArticles, ['curves-clipped']);
+    assert.deepEqual(finished.contributedArticles, ['curves-clipped']);
     assert.equal(tasks.getCurrent(), null);
 });
 

@@ -20,7 +20,7 @@ test('Claude Code is launched with the MCP tools explicitly allowed', () => {
     assert.deepEqual(args.slice(0, 2), ['-p', 'do the thing']);
 });
 
-test('a chat with a session continues it instead of starting a new agent', () => {
+test('a saved session id resumes the existing CLI session', () => {
     const claude = buildArgs({ cli: 'claude', prompt: 'more', sessionId: 'abc-123' });
     assert.ok(claude.args.includes('--resume'));
     assert.ok(claude.args.includes('abc-123'));
@@ -98,7 +98,7 @@ test('the answer and the session id are read out of what the CLI printed', () =>
     assert.deepEqual(codex, { text: 'done', sessionId: 't-2' });
 });
 
-test('secrets are stripped from anything shown in the panel', () => {
+test('secrets are stripped from text returned to a caller', () => {
     const cleaned = sanitize('failed with Authorization: Bearer abc123secret and sk-abcdefghijklmnopqrstuvwxyz');
 
     assert.doesNotMatch(cleaned, /abc123secret/);

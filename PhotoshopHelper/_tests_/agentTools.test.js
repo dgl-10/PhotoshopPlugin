@@ -59,7 +59,6 @@ function makeTools(context, pluginAnswers = {}, { taskOptions = {}, dialogWaitMs
         knowledgeBase,
         journal,
         progress: { push() {} },
-        getOrigin: () => pluginAnswers.__origin || 'external',
         dialogWaitMs
     });
 
@@ -84,7 +83,6 @@ function startAnswer() {
             layerCount: 12
         },
         photoshopVersion: '26.4.0',
-        snapshot: { created: true, name: 'Before the task: tidy up', historyStateId: 3 },
         status: { documentId: 7, documentName: 'poster.psd', historyStep: 'Open', sinceLastCall: [] }
     };
 }
@@ -155,9 +153,9 @@ test('ps_start_task hands over the rules, the knowledge base and the document', 
     assert.match(text, /Look first, change, then check\./);
     // The index itself is asked for, not inlined; the start only says how big the base is.
     assert.match(text, /1 article,/);
-    assert.match(text, /snapshot named/);
     // A task that only looks must not leave anything in the person's History panel.
     assert.match(text, /Nothing has been written to the document/);
+    assert.match(text, /each change script becomes one named Photoshop History step/);
     // One way into the base: the tools. The folders are never named.
     assert.match(text, /only through these tools — never by reading or writing its files/);
     assert.match(text, /ps_kb_list/);
@@ -165,10 +163,8 @@ test('ps_start_task hands over the rules, the knowledge base and the document', 
     // A sub-agent without MCP tools must not become a reason to skip the base.
     assert.match(text, /if your sub-agents cannot call MCP tools, read the base yourself/);
     assert.ok(!text.includes(knowledgeBase.paths.userDir), 'the user folder must not be named');
-    // Marking an article and writing a new one are told apart, so "the base had nothing on
-    // it" does not read as a reason to write.
-    assert.match(text, /helped or failed is always wanted/);
-    assert.match(text, /A new article is wanted only when/);
+    // An empty or small base must not read as a reason to write low-value articles.
+    assert.match(text, /Write a new article only when/);
 });
 
 test('a base too big to list is described rather than dumped', async context => {
@@ -226,7 +222,6 @@ test('ps_resume_task rebinds a suspended task after a plugin runtime restart', a
         agent_start_task: startAnswer(),
         agent_resume_task: {
             document: { id: 7, name: 'poster.psd', path: 'C:/work/poster.psd' },
-            recoveredSnapshot: true,
             status: { documentId: 7, documentName: 'poster.psd', historyStep: 'Agent: curves' }
         }
     });
@@ -245,6 +240,8 @@ test('ps_resume_task rebinds a suspended task after a plugin runtime restart', a
     assert.match(resumed.content[0].text, /resumed/);
     assert.equal(tasks.getCurrent().state, 'running');
     assert.equal(calls.at(-1).action, 'agent_resume_task');
+    assert.equal('snapshotName' in calls.at(-1).payload, false);
+    assert.equal('snapshotCreated' in calls.at(-1).payload, false);
 });
 
 test('ps_get_image returns image content and a caption, never base64 as text', async context => {
@@ -823,18 +820,8 @@ test('rejected commands alone make the struggle question, and it names them', as
     assert.match(text, /2 of your calls went wrong/);
     assert.match(text, /In 2 of them the script itself did not fail, but Photoshop rejected/);
     assert.match(text, /the rejected form and the working one/);
-    assert.match(text, /no new article and no note/);
+    assert.match(text, /written nothing into the knowledge base/);
     assert.ok(tasks.getCurrent(), 'the task is still open, so it can still write');
-});
-
-test('a task is labelled by which way the agent came, without asking the agent', async context => {
-    const external = makeTools(context, { agent_start_task: startAnswer() });
-    await external.tools.call('ps_start_task', { intent: 'from my own terminal' });
-    assert.equal(external.tasks.getCurrent().origin, 'external');
-
-    const fromPanel = makeTools(context, { agent_start_task: startAnswer(), __origin: 'panel' });
-    await fromPanel.tools.call('ps_start_task', { intent: 'from the panel' });
-    assert.equal(fromPanel.tasks.getCurrent().origin, 'panel');
 });
 
 test('an article records who wrote it and which Photoshop it was checked on', async context => {
@@ -858,7 +845,6 @@ test('an article records who wrote it and which Photoshop it was checked on', as
     assert.match(article, /Photoshop: 26\.4\.0/);
     assert.match(article, /written by: claude-code 2\.1\.268/);
     assert.match(article, /written on task: task-/);
-    assert.match(article, /agent-written/);
     // The rakes are kept as their own section, not folded into the recipe.
     assert.match(article, /What did not work first/);
     assert.match(article, /the property name I remembered does not exist/);
@@ -910,25 +896,37 @@ test('a task that went smoothly is not nagged', async context => {
     assert.doesNotMatch(finished.content[0].text, /wrote nothing/);
 });
 
-test('marking is two tools, and only the failed one has a text field', context => {
+test('the knowledge base exposes reading, contribution and agent outcome tools', context => {
+    const { tools } = makeTools(context);
+    const names = tools.list().map(tool => tool.name).filter(name => name.startsWith('ps_kb_'));
+    assert.deepEqual(names, [
+        'ps_kb_list',
+        'ps_kb_read',
+        'ps_kb_contribute',
+        'ps_kb_mark_helped',
+        'ps_kb_mark_failed'
+    ]);
+});
+
+test('helped and failed marks have separate schemas and never expose a user score', context => {
     const { tools } = makeTools(context);
     const byName = Object.fromEntries(tools.list().map(tool => [tool.name, tool]));
 
-    assert.equal(byName.ps_kb_append, undefined, 'the old tool is gone, with no alias');
-
-    // The helped mark has nothing a weak agent could fill with "worked reliably".
     const helped = byName.ps_kb_mark_helped.inputSchema;
     assert.deepEqual(Object.keys(helped.properties).sort(), ['article_id', 'task_id']);
-    assert.deepEqual(helped.required.sort(), ['article_id', 'task_id']);
+    assert.deepEqual([...helped.required].sort(), ['article_id', 'task_id']);
     assert.equal(helped.additionalProperties, false);
 
     const failed = byName.ps_kb_mark_failed.inputSchema;
     assert.deepEqual(Object.keys(failed.properties).sort(), ['article_id', 'note', 'task_id']);
-    assert.deepEqual(failed.required.sort(), ['article_id', 'note', 'task_id']);
+    assert.deepEqual([...failed.required].sort(), ['article_id', 'note', 'task_id']);
     assert.equal(failed.additionalProperties, false);
+
+    assert.match(byName.ps_kb_mark_helped.description, /never changes.*manual confidence/);
+    assert.match(byName.ps_kb_mark_failed.description, /never.*changes manual confidence/);
 });
 
-test('no agent-facing text still names ps_kb_append', async context => {
+test('agent-facing knowledge-base text matches the published tool list', async context => {
     const { tools, knowledgeBase } = makeTools(context, { agent_start_task: startAnswer() });
     const shipped = path.join(__dirname, '..', 'knowledge-base');
     fs.mkdirSync(knowledgeBase.paths.authorDir, { recursive: true });
@@ -937,16 +935,14 @@ test('no agent-facing text still names ps_kb_append', async context => {
     const started = await tools.call('ps_start_task', { intent: 'anything' });
     const descriptions = tools.list().map(tool => JSON.stringify(tool)).join('\n');
 
-    assert.doesNotMatch(started.content[0].text, /ps_kb_append/);
+    assert.match(started.content[0].text, /ps_kb_list/);
+    assert.match(started.content[0].text, /ps_kb_read/);
+    assert.match(started.content[0].text, /ps_kb_contribute/);
     assert.match(started.content[0].text, /ps_kb_mark_helped/);
-    assert.doesNotMatch(descriptions, /ps_kb_append/);
-
-    // The shipped articles are read by the agent too.
-    const articlesDir = path.join(shipped, 'articles');
-    for (const name of fs.readdirSync(articlesDir)) {
-        const text = fs.readFileSync(path.join(articlesDir, name), 'utf8');
-        assert.doesNotMatch(text, /ps_kb_append/, `${name} still names ps_kb_append`);
-    }
+    assert.match(started.content[0].text, /ps_kb_mark_failed/);
+    assert.match(descriptions, /ps_kb_contribute/);
+    assert.match(descriptions, /ps_kb_mark_helped/);
+    assert.match(descriptions, /ps_kb_mark_failed/);
 });
 
 test('everything written into the knowledge base is asked for in English', context => {
@@ -955,15 +951,86 @@ test('everything written into the knowledge base is asked for in English', conte
     const byName = Object.fromEntries(tools.list().map(tool => [tool.name, tool]));
 
     assert.match(byName.ps_kb_contribute.description, /in English/);
-    assert.match(byName.ps_kb_mark_failed.description, /in English/);
+    assert.match(byName.ps_kb_mark_failed.description, /English note/);
 
     const rules = fs.readFileSync(path.join(__dirname, '..', 'knowledge-base', 'rules.md'), 'utf8');
     assert.match(rules, /write into the knowledge base is in English/);
 });
 
+test('a helped mark only counts and does not silence the struggle reminder', async context => {
+    const { tools, tasks, knowledgeBase } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_finish_task: { status: null },
+        agent_execute_script: () => { throw new Error('that descriptor was rejected'); }
+    });
+
+    fs.mkdirSync(path.join(knowledgeBase.paths.authorDir, 'articles'), { recursive: true });
+    fs.writeFileSync(
+        path.join(knowledgeBase.paths.authorDir, 'articles', 'used-recipe.md'),
+        '---\nid: used-recipe\ntitle: Used\nproblem: p\nconfidence: author-verified\nhelped: 0\nfailed: 0\n---\n\ntext\n',
+        'utf8'
+    );
+
+    const taskId = await startTask(tools, 'something hard');
+    const marked = await tools.call('ps_kb_mark_helped', {
+        task_id: taskId,
+        article_id: 'used-recipe',
+        note: 'a client ignoring the schema must not persist this text'
+    });
+
+    assert.ok(!marked.isError);
+    assert.deepEqual(tasks.getCurrent().contributedArticles, []);
+    assert.match(knowledgeBase.readArticle('used-recipe').text, /helped 1 times/);
+    assert.doesNotMatch(knowledgeBase.readArticle('used-recipe').text, /ignoring the schema/);
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+        await tools.call('ps_execute_script', { task_id: taskId, code: 'nope', history_name: 'try' });
+    }
+    const firstFinish = await tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
+    assert.equal(firstFinish.isError, true);
+    assert.match(firstFinish.content[0].text, /ps_kb_mark_failed/);
+});
+
+test('a failed mark requires a note and counts as reusable knowledge, not confidence', async context => {
+    const { tools, tasks, knowledgeBase } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_finish_task: { status: null },
+        agent_execute_script: () => { throw new Error('that descriptor was rejected'); }
+    });
+    knowledgeBase.writeArticle({ id: 'used-recipe', title: 'Used', problem: 'p', body: 'text' });
+
+    const taskId = await startTask(tools, 'something hard');
+    const refused = await tools.call('ps_kb_mark_failed', {
+        task_id: taskId,
+        article_id: 'used-recipe',
+        note: '  '
+    });
+    assert.equal(refused.isError, true);
+    assert.deepEqual(tasks.getCurrent().contributedArticles, []);
+
+    const marked = await tools.call('ps_kb_mark_failed', {
+        task_id: taskId,
+        article_id: 'used-recipe',
+        note: 'the key was wrong; $Sat worked'
+    });
+    assert.ok(!marked.isError);
+    assert.deepEqual(tasks.getCurrent().contributedArticles, ['used-recipe']);
+
+    const article = knowledgeBase.readArticle('used-recipe').text;
+    assert.match(article, /did not work 1 times/);
+    assert.match(article, /\$Sat worked/);
+    assert.match(article, /confidence: agent-written/);
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+        await tools.call('ps_execute_script', { task_id: taskId, code: 'nope', history_name: 'try' });
+    }
+    const finished = await tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
+    assert.ok(!finished.isError, 'the failure note already preserved the reusable knowledge');
+});
+
 test('no agent-facing text names the knowledge base folders', async context => {
-    // An agent told where the files are reads them, and then edits them by hand past the
-    // header, the counters and the layers. The base is reached through the ps_kb_ tools only.
+    // An agent told where the files are could edit them by hand past the article format
+    // and layer policy. The base is reached through the ps_kb_ tools only.
     const { tools, knowledgeBase } = makeTools(context, { agent_start_task: startAnswer() });
     const { authorDir, userDir } = knowledgeBase.paths;
 
@@ -983,14 +1050,12 @@ test('no agent-facing text names the knowledge base folders', async context => {
     const taskId = started.content[0].text.match(/(task-[a-f0-9]+)/)[1];
     const index = await tools.call('ps_kb_list', { task_id: taskId });
     const missingRead = await tools.call('ps_kb_read', { task_id: taskId, article_id: 'no-such-article' });
-    const missingMark = await tools.call('ps_kb_mark_helped', { task_id: taskId, article_id: 'no-such-article' });
 
     const texts = {
         'the ps_start_task answer': started.content[0].text,
         'the tool descriptions': tools.list().map(tool => JSON.stringify(tool)).join('\n'),
         'the ps_kb_list answer': index.content[0].text,
-        'ps_kb_read of a missing article': missingRead.content[0].text,
-        'ps_kb_mark_helped of a missing article': missingMark.content[0].text
+        'ps_kb_read of a missing article': missingRead.content[0].text
     };
 
     const dirs = [authorDir, userDir, path.dirname(authorDir)];
@@ -1004,88 +1069,6 @@ test('no agent-facing text names the knowledge base folders', async context => {
         assert.doesNotMatch(text, /Read the folders yourself|folders ps_start_task named/, where);
     }
     assert.match(texts['the ps_start_task answer'], /never by reading or writing its files/);
-});
-
-test('a helped mark only counts, writes nothing, and does not silence the struggle question', async context => {
-    const { tools, tasks, knowledgeBase } = makeTools(context, {
-        agent_start_task: startAnswer(),
-        agent_finish_task: { status: null },
-        agent_execute_script: () => { throw new Error('that descriptor was rejected'); }
-    });
-
-    // Shipped by the author, so a written note would have to create a user-layer twin.
-    fs.mkdirSync(path.join(knowledgeBase.paths.authorDir, 'articles'), { recursive: true });
-    fs.writeFileSync(
-        path.join(knowledgeBase.paths.authorDir, 'articles', 'used-recipe.md'),
-        '---\nid: used-recipe\ntitle: Used\nproblem: p\n---\n\ntext\n',
-        'utf8'
-    );
-
-    const taskId = await startTask(tools, 'something hard');
-    // A client that ignores the schema may still send a note; it must not reach the base.
-    const marked = await tools.call('ps_kb_mark_helped', {
-        task_id: taskId, article_id: 'used-recipe', note: 'Worked reliably, applied successfully'
-    });
-    assert.ok(!marked.isError);
-    assert.match(marked.content[0].text, /Marked "used-recipe" as helped/);
-    assert.deepEqual(tasks.getCurrent().touchedArticles, [], 'a counter is not something written');
-    assert.ok(
-        !fs.existsSync(path.join(knowledgeBase.paths.userDir, 'articles', 'used-recipe.md')),
-        'no twin is created'
-    );
-    const article = knowledgeBase.readArticle('used-recipe').text;
-    assert.match(article, /helped 1 times/);
-    assert.doesNotMatch(article, /Worked reliably/);
-
-    for (let attempt = 0; attempt < 2; attempt++) {
-        await tools.call('ps_execute_script', { task_id: taskId, code: 'nope', history_name: 'try' });
-    }
-
-    const firstFinish = await tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
-    assert.equal(firstFinish.isError, true, 'the fight still has to be written down');
-    assert.match(firstFinish.content[0].text, /no new article and no note/);
-    assert.match(firstFinish.content[0].text, /ps_kb_mark_failed/);
-});
-
-test('a failed mark needs a note, and with one it counts as written down', async context => {
-    const { tools, tasks, knowledgeBase } = makeTools(context, {
-        agent_start_task: startAnswer(),
-        agent_finish_task: { status: null },
-        agent_execute_script: () => { throw new Error('that descriptor was rejected'); }
-    });
-
-    knowledgeBase.writeArticle({ id: 'used-recipe', title: 'Used', problem: 'p', body: 'text' });
-
-    const taskId = await startTask(tools, 'something hard');
-
-    const refused = await tools.call('ps_kb_mark_failed', {
-        task_id: taskId, article_id: 'used-recipe', note: '  '
-    });
-    assert.equal(refused.isError, true);
-    assert.match(refused.content[0].text, /what helped instead/);
-    assert.deepEqual(tasks.getCurrent().touchedArticles, []);
-    assert.match(knowledgeBase.readArticle('used-recipe').text, /did not work 0 times/);
-
-    const marked = await tools.call('ps_kb_mark_failed', {
-        task_id: taskId,
-        article_id: 'used-recipe',
-        note: 'the key in the table was wrong; $Sat worked'
-    });
-    assert.ok(!marked.isError);
-    assert.deepEqual(tasks.getCurrent().touchedArticles, ['used-recipe']);
-    const article = knowledgeBase.readArticle('used-recipe').text;
-    assert.match(article, /did not work 1 times/);
-    assert.match(article, /\$Sat worked/);
-
-    for (let attempt = 0; attempt < 2; attempt++) {
-        await tools.call('ps_execute_script', { task_id: taskId, code: 'nope', history_name: 'try' });
-    }
-
-    // The note is what the struggle question asks for, so the task closes at once, and
-    // the article waits for the person's confirmation like one the task wrote.
-    const finished = await tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
-    assert.ok(!finished.isError);
-    assert.match(finished.content[0].text, /used-recipe/);
 });
 
 test('the state line tells the agent what the person did', () => {
@@ -1103,7 +1086,7 @@ test('the state line tells the agent what the person did', () => {
     assert.match(line, /the person did 2 things by hand/);
 });
 
-test('finishing frees the slot and names the articles awaiting confirmation', async context => {
+test('finishing frees the slot after a knowledge-base contribution', async context => {
     const { tools, tasks } = makeTools(context, {
         agent_start_task: startAnswer(),
         agent_finish_task: { status: null }
@@ -1122,7 +1105,8 @@ test('finishing frees the slot and names the articles awaiting confirmation', as
 
     const finished = await tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
 
-    assert.match(finished.content[0].text, /curves-clipped/);
+    assert.match(finished.content[0].text, /report is in the AI Assist dialog/);
+    assert.doesNotMatch(finished.content[0].text, /curves-clipped/);
     assert.equal(tasks.getCurrent(), null);
 });
 

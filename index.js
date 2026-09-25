@@ -111,18 +111,17 @@ function init() {
 }
 
 /**
- * Open the AI assistant as a non-modal dialog in this panel's own document.
+ * Open AI Assist as a non-modal dialog in this panel's own document.
  *
  * Settings uses `showModal()`/`uxpShowModal()` because it is a short form the person fills
- * in and closes. The assistant is the opposite: a conversation meant to run in the
- * background while the person keeps working in Photoshop, exactly as the rules told the
- * agent — "the person is working in Photoshop while you are". A modal dialog fights that
- * directly: in UXP, `showModal()` can freeze the whole application, not just this panel
+ * in and closes. AI Assist keeps the MCP channel open and reports a task while the person
+ * continues working in Photoshop. A modal dialog fights that directly: in UXP,
+ * `showModal()` can freeze the whole application, not just this panel
  * (Adobe's own known-issues page documents a `lockDocumentFocus` option specifically for
  * turning that on, meaning the surface is capable of it, and it is exactly what happened
  * here). The non-modal `show()` has no such lock — the canvas, tools and every other panel
- * stay usable while this dialog is open. It also still accepts an explicit `size`, so the
- * assistant is not squeezed into a narrow docked panel width either.
+ * stay usable while this dialog is open. The starting size here is only a first guess:
+ * modules/agent-panel.js resizes the window to its content as soon as it has drawn it.
  *
  * @see https://developer.adobe.com/photoshop/uxp/2022/ps_reference/known-issues
  */
@@ -132,15 +131,18 @@ function showAssistantDialog() {
 
     if (!assistantDialogWired) {
         // The 'close' event fires no matter how the dialog closed — the X button, or a
-        // call to dialog.close() — so this one listener is the single place the channel to
-        // Helper is told to start winding down. Escape does not close a non-modal dialog;
-        // the X button is the only way out, and it is always present.
+        // call to dialog.close() — so this one listener is the single place that closes
+        // the dialog-owned WebSocket. This deliberately does not stop the Helper-side task:
+        // Helper pauses it, and opening this dialog again reconnects the same UXP runtime
+        // so the task can continue with the same id. Escape does not close a non-modal
+        // dialog; the window's own close button is the only way out, and it is always
+        // there. Its 'cancel' event arrives, but preventDefault() does not keep it open.
         dialog.addEventListener('close', () => assistantPanel.onHide('assistant-dialog-closed'));
         assistantDialogWired = true;
     }
 
     try {
-        dialog.show({ size: { width: 380, height: 640 } });
+        dialog.show({ size: { width: 320, height: 120 } });
     } catch (error) {
         console.warn('[assistant] show() with a size option failed, retrying without it:', error.message || error);
         try {

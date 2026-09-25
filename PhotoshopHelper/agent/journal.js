@@ -4,8 +4,8 @@
  * The journal of MCP calls.
  *
  * Only the calls are written to disk — what was called, with what, and a short result.
- * The agent's own reasoning is not recorded: in the external path we do not even know
- * which agent it is, and every CLI writes its own log in its own changing format.
+ * The agent's own reasoning is not recorded. MCP clients and command-line tools each
+ * keep their own logs in formats Helper does not own and should not try to parse.
  *
  * Images never go into the journal, only a note of what was captured.
  *
@@ -128,7 +128,6 @@ function createJournal({ dir, isEnabled, logger = console }) {
             event: 'task-started',
             task: task.id,
             intent: task.intent,
-            origin: task.origin,
             document: { id: task.documentId, name: task.documentName }
         });
         pruneOldFiles();
@@ -163,8 +162,7 @@ function createJournal({ dir, isEnabled, logger = console }) {
             at: new Date().toISOString(),
             event: `task-${how}`,
             task: task.id,
-            report: task.report || null,
-            confirmed: task.confirmed === null ? undefined : task.confirmed
+            report: task.report || null
         });
         currentFile = null;
     }

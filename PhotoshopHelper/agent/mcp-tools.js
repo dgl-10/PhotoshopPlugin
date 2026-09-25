@@ -85,7 +85,7 @@ const MAX_BATCH_ARTICLES = 4;
 //
 // The base is reached only through the ps_kb_ tools, and nothing handed to the agent says
 // where its files are. An agent told the folders reads them, and then edits or adds files
-// by hand, past the header, the counters and the two layers — and possibly into the
+// by hand, past the article header and the two layers — and possibly into the
 // author's layer. Reads through the tools also land in the task journal.
 const KB_READING_RULE =
     'Look at the knowledge base before your first change to the document and before you write '
@@ -94,8 +94,8 @@ const KB_READING_RULE =
     + 'take in, and whatever you read in your main context is sent again with every later call '
     + 'until the task ends. Give the sub-agent the problem; have it open every article whose '
     + 'index line looks like it — several at once through article_ids — and bring back the '
-    + 'recipe and the article id, which you need later to mark the article with '
-    + 'ps_kb_mark_helped or ps_kb_mark_failed. The sub-agent needs this server\'s ps_kb_ tools '
+    + 'recipe and the article id, which you need later to mark with ps_kb_mark_helped or '
+    + 'ps_kb_mark_failed. The sub-agent needs this server\'s ps_kb_ tools '
     + 'and the task id; if your sub-agents cannot call MCP tools, read the base yourself '
     + 'through the tools. If starting a sub-agent needs the person to allow it, ask them for '
     + 'that in one short line.';
@@ -281,9 +281,6 @@ function explainRejectedCommandsInError(error, options = {}) {
  * @param {object} options.knowledgeBase - Knowledge base from knowledge-base.js.
  * @param {object} options.journal - Journal from journal.js.
  * @param {object} [options.progress] - Sink for human-readable progress, shown in the panel.
- * @param {() => string} [options.getOrigin] - Answers 'panel' or 'external' for a task
- *   starting now. Defaults to 'external', which is what an agent Helper did not launch is.
- * @param {() => object} [options.getTaskContext] - Answers { origin, ownerChatId }.
  * @param {number} [options.dialogWaitMs] - How long one call waits for the person to finish
  *   in a dialog before answering "still open". Defaults to DIALOG_WAIT_MS; tests shorten it.
  * @returns {object} { list, call, ASSISTANT_CLOSED_MESSAGE }
@@ -294,8 +291,6 @@ function createAgentTools({
     knowledgeBase,
     journal,
     progress,
-    getOrigin = () => 'external',
-    getTaskContext = () => ({ origin: getOrigin(), ownerChatId: null }),
     dialogWaitMs = DIALOG_WAIT_MS
 }) {
     // Seconds, for the tool descriptions and answers.
@@ -357,21 +352,20 @@ function createAgentTools({
             '## Knowledge base',
             `${articles.length} article${articles.length === 1 ? '' : 's'}, written by the author `
             + 'of Helper and by agents before you. Each starts with a short header: the problem '
-            + 'it is for, how far it has been verified, on which Photoshop version, and how often '
-            + 'it has helped or failed.',
+            + 'it is for, who wrote it, when it was written, the Photoshop version, its manual '
+            + 'confidence label, and how often agents reported that it helped or failed.',
             '',
             'Use it only through these tools — never by reading or writing its files:',
             '  ps_kb_list gives one line per article, ps_kb_read gives one article (or up to 4 via article_ids);',
-            '  ps_kb_contribute writes a new article, ps_kb_mark_helped and ps_kb_mark_failed mark '
-            + 'one you followed.',
-            'They keep the header, the counters and the two layers straight.',
+            '  ps_kb_contribute writes a new technical article;',
+            '  ps_kb_mark_helped and ps_kb_mark_failed record how an article worked for an agent.',
+            'The tools keep the article header, counters, failure notes, and the two layers straight.',
             KB_READING_RULE,
             '',
-            'Two different things go back into the base. Marking each article you followed as '
-            + 'helped or failed is always wanted: ps_kb_mark_helped if it worked as written, '
-            + 'ps_kb_mark_failed with a note if it did not, or only after a change. A new article '
-            + 'is wanted only when the next agent would otherwise get something wrong or lose real '
-            + 'time on it — the rules above say how to tell.'
+            'Mark every article you actually followed: helped if it worked exactly as written, '
+            + 'failed with a note if it did not or needed a change. These agent marks never change '
+            + 'manual confidence. Write a new article only when the next agent would otherwise get '
+            + 'something wrong or lose real time on it — the rules above say how to tell.'
         ];
 
         if (articles.length === 0) {
@@ -436,7 +430,7 @@ function createAgentTools({
                 'Resume a task that was paused because the Photoshop plugin or its AI Assist '
                 + 'window disconnected. Use the existing task_id; never call ps_start_task to '
                 + 'replace a paused task. If the whole plugin runtime restarted, this validates '
-                + 'the original document and rollback snapshot before rebinding the task.',
+                + 'the original document identity before rebinding the task.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -450,12 +444,11 @@ function createAgentTools({
             name: 'ps_finish_task',
             description:
                 'End the task. Say what you did, what you are unhappy with, and what the person '
-                + 'could tune to their own taste. The report goes to the assistant dialog, where '
-                + 'the person confirms the result; a confirmed result lifts the knowledge base '
-                + 'articles you wrote one rung. Before you call it, mark each article you followed '
-                + 'with ps_kb_mark_helped or ps_kb_mark_failed — once the task is closed you cannot. If '
-                + 'the task was a fight and you have written nothing down, this will ask you for '
-                + 'it once before it closes.',
+                + 'could tune to their own taste. Before finishing, mark every knowledge article '
+                + 'you followed with ps_kb_mark_helped or ps_kb_mark_failed. The report goes to '
+                + 'the AI Assist dialog. If the '
+                + 'task was a fight and you have written nothing down, this will ask you for a '
+                + 'technical contribution once before it closes.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -577,9 +570,9 @@ function createAgentTools({
                 + 'the person can read their own history afterwards. Everything that changes the '
                 + 'document goes through here; look first, change, then check. '
                 + 'Top-level `await` is available: the code runs inside an async function. '
-                + 'If the script throws, partial changes stay as one history step — they are not '
-                + 'rolled back automatically; the rollback point is the snapshot created at the '
-                + 'start of the task. `doc` always points to the task\'s document even when the '
+                + 'If the script throws, partial changes stay as one named history step; inspect '
+                + 'the document and use Photoshop\'s normal History controls if necessary. `doc` '
+                + 'always points to the task\'s document even when the '
                 + 'person has switched to another one. To open a dialog the person works in '
                 + 'themselves, see `interactive` (experimental).',
             inputSchema: {
@@ -637,7 +630,7 @@ function createAgentTools({
             description:
                 KB_READING_RULE + ' '
                 + 'The knowledge base index: one line per article — its id, which layer it is in, '
-                + 'how far it has been verified, how often it helped, and the problem it is for.',
+                + 'manual confidence, helped/failed agent counts, Photoshop version, and problem.',
             inputSchema: {
                 type: 'object',
                 properties: { task_id: { type: 'string' } },
@@ -652,9 +645,10 @@ function createAgentTools({
                 + 'Read one or several knowledge base articles by id (up to 4), from both layers at once. '
                 + 'Provide either article_id for a single article (returns markdown text), or article_ids '
                 + 'to read up to 4 articles in a single batch call (returns structured JSON with per-article status). '
-                + 'The article is a hint, not the truth: after following it, check the result, then mark it '
-                + 'with ps_kb_mark_helped or ps_kb_mark_failed. Trust it more when '
-                + 'its rung is higher, it has few failures, and the Photoshop version matches.',
+                + 'The article is a hint, not the truth: after following it, check the result, then '
+                + 'call ps_kb_mark_helped if it worked exactly as written or ps_kb_mark_failed if '
+                + 'it did not or needed a change. Pay particular attention to whether the Photoshop '
+                + 'version matches.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -695,9 +689,9 @@ function createAgentTools({
                 + 'and never conclude from your own failed attempts that something does not work '
                 + 'in Photoshop or in this Helper. Do it '
                 + 'yourself, without being asked. Look at the index first and do not write a '
-                + 'near-copy of an article on the same problem: if it needed a change to work for '
-                + 'you, put that on it with ps_kb_mark_failed; if it worked as written, there is '
-                + 'nothing to write. A base full of near-copies is worse than a small one. Write '
+                + 'near-copy of an article on the same problem. If an existing article needed a '
+                + 'change, preserve that evidence with ps_kb_mark_failed; if it worked as written, '
+                + 'there is nothing to add to its body. A base full of near-copies is worse than a small one. Write '
                 + 'the article in English — title, problem, body and what_did_not_work — whatever '
                 + 'language the person talks to you in. The Photoshop version and which agent you '
                 + 'are get filled in for you.',
@@ -730,19 +724,14 @@ function createAgentTools({
                 additionalProperties: false
             }
         },
-        // Marking is split in two on purpose. With one tool whose note was optional for
-        // "helped", weak agents filled the note on every mark ("worked reliably, applied
-        // successfully"), because a field that exists gets filled. A helped mark now has no
-        // field to fill; the only way to write is the failed mark, where a note is required.
         {
             name: 'ps_kb_mark_helped',
             description:
-                'Mark an article you followed as helped: it worked as written. Call it for every '
-                + 'such article before ps_finish_task, even when you write nothing else — the '
-                + 'counts are how the next agent decides how far to trust the article. It only '
-                + 'adds one to the count and writes nothing into the article. If you had to change '
-                + 'or add anything to make it work — a step, a value, a key — it did not work as '
-                + 'written: use ps_kb_mark_failed instead.',
+                'Mark an article you followed as helped because it worked exactly as written. '
+                + 'Call this once for every such article before ps_finish_task. It increments only '
+                + 'the agent-usage counter: it writes no note, does not rate the overall task, and '
+                + 'never changes the article\'s manual confidence. If you changed or added any '
+                + 'required step, use ps_kb_mark_failed instead.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -756,12 +745,10 @@ function createAgentTools({
         {
             name: 'ps_kb_mark_failed',
             description:
-                'Mark an article you followed as failed, with a note. Use it when the article did '
-                + 'not work, and also when it worked only after you changed or added something: '
-                + 'then the article is inaccurate, and your note is how the next agent finds out. '
-                + 'The note is kept next to the article; write it in English, whatever language '
-                + 'the person talks to you in. An article is never deleted and never quietly '
-                + 'corrected — the next agent sees the whole history.',
+                'Mark an article you followed as failed, including when it worked only after a '
+                + 'change or extra step. The English note is preserved for the next agent. This '
+                + 'increments the agent-usage counter, does not rate the overall task, and never '
+                + 'changes manual confidence.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -769,8 +756,7 @@ function createAgentTools({
                     article_id: { type: 'string' },
                     note: {
                         type: 'string',
-                        description: 'In what task it failed, why, and what helped instead — with '
-                            + 'the descriptor, value or key that worked.'
+                        description: 'In English: what failed, why, and what worked instead.'
                     }
                 },
                 required: ['task_id', 'article_id', 'note'],
@@ -809,18 +795,7 @@ function createAgentTools({
         // The task is created first so the plugin can bind its own context to the id, and
         // dropped again if the document side fails.
         //
-        // Which way the agent came is never asked of the agent — it has no reliable way to
-        // know, and nothing would stop it from answering wrongly. Helper works it out from
-        // its own side: if it has a CLI of its own running right now, this call is that
-        // CLI's. Nothing in the agent's own work depends on the answer; it is there so the
-        // panel and the journal do not describe the person's own agent as one Helper
-        // launched.
-        const taskContext = getTaskContext() || {};
-        const task = tasks.start({
-            intent,
-            origin: taskContext.origin || getOrigin(),
-            ownerChatId: taskContext.ownerChatId || null
-        });
+        const task = tasks.start({ intent });
 
         let opened;
         try {
@@ -842,21 +817,10 @@ function createAgentTools({
         task.documentName = opened.document.name;
         task.documentPath = opened.document.path || null;
         task.photoshopVersion = opened.photoshopVersion || 'unknown';
-        task.snapshotName = opened.snapshot ? opened.snapshot.name : null;
-        task.snapshotCreated = Boolean(opened.snapshot && opened.snapshot.created);
-        task.snapshotHistoryId = opened.snapshot && opened.snapshot.historyStateId !== undefined
-            ? opened.snapshot.historyStateId
-            : null;
         journal.startTask(task);
         note(task.id, `started: ${intent}`, 'ps_start_task');
 
         const rules = knowledgeBase.readRules();
-
-        const snapshotLine =
-            'Nothing has been written to the document. The first time you change something, a '
-            + `snapshot named "${opened.snapshot.name}" appears in the History panel, and going `
-            + 'back to it undoes everything you did. A task that only looks leaves the person\'s '
-            + 'history exactly as it was.';
 
         const text = [
             `Task ${task.id} started.`,
@@ -864,7 +828,9 @@ function createAgentTools({
             + `${opened.document.width}×${opened.document.height} px, `
             + `${opened.document.resolution} ppi, ${opened.document.colorMode}, `
             + `${opened.document.bitsPerChannel} bit, ${opened.document.layerCount} layers.`,
-            snapshotLine,
+            'Nothing has been written to the document. A task that only looks leaves the '
+            + 'person\'s history exactly as it was; each change script becomes one named '
+            + 'Photoshop History step.',
             'Pass task_id to every other ps_ tool. The task is bound to this document: if the '
             + 'person switches to another one, your calls still go to this document.',
             '',
@@ -917,12 +883,9 @@ function createAgentTools({
         try {
             resumed = await callPlugin('agent_resume_task', {
                 taskId: task.id,
-                intent: task.intent,
                 documentId: task.documentId,
                 documentName: task.documentName,
-                documentPath: task.documentPath,
-                snapshotName: task.snapshotName,
-                snapshotCreated: task.snapshotCreated
+                documentPath: task.documentPath
             }, TIMEOUT_READ_MS);
         } catch (error) {
             return textResult(error.message, true);
@@ -944,9 +907,6 @@ function createAgentTools({
 
         return textResult(withStatus(
             `Task ${task.id} resumed on "${task.documentName}". `
-            + (resumed.recoveredSnapshot
-                ? 'Its rollback snapshot was recovered. '
-                : 'No earlier rollback snapshot was needed or found. ')
             + 'Inspect the current document before repeating the operation that was interrupted.',
             resumed.status
         ));
@@ -997,15 +957,14 @@ function createAgentTools({
         // question instead, and the second closes it regardless: nagging an agent that
         // has nothing to say would only earn us an invented article.
         //
-        // A helped mark does not reach touchedArticles, so an agent marking the articles it
-        // used — which the rules ask for on every task — does not silence this question. A
-        // failed mark does: its note is exactly the kind of thing this asks for.
-        //
+        // A failed article mark counts as a contribution because its note is exactly the
+        // reusable evidence this reminder asks for. A helped mark does not: incrementing a
+        // counter should not silence a reminder to record a newly discovered workaround.
         // A script that ran to the end while Photoshop rejected some of its commands counts
         // too, and the question names it: the agent saw no error on those calls, and would
         // otherwise not know what failures it is being asked about.
         if (task.failures >= STRUGGLE_THRESHOLD
-            && task.touchedArticles.length === 0
+            && task.contributedArticles.length === 0
             && task.finishAttempts === 1) {
             const rejectedLine = task.rejectedCalls > 0
                 ? ` In ${task.rejectedCalls} of them the script itself did not fail, but `
@@ -1013,12 +972,12 @@ function createAgentTools({
                 : '';
             return textResult(
                 `Before this closes: ${task.failures} of your calls went wrong, and you have `
-                + 'written nothing into the knowledge base — no new article and no note on an '
-                + `existing one.${rejectedLine} Whatever you worked out the hard way here — the `
+                + `written nothing into the knowledge base.${rejectedLine} Whatever you worked `
+                + 'out the hard way here — the '
                 + 'descriptor Photoshop rejected, the property that does not exist, the way round '
                 + 'you eventually found — the next agent will walk into it again unless you write '
-                + 'it down now: with ps_kb_contribute, or with ps_kb_mark_failed on an article that '
-                + 'failed you or needed a change to work. If a command was rejected and you then '
+                + 'it down now with ps_kb_contribute, or with ps_kb_mark_failed when an article '
+                + 'failed or needed a change. If a command was rejected and you then '
                 + 'found a form that works, the rejected form and the working one, side by side, are exactly '
                 + 'what belongs there. Then call ps_finish_task again. If there is genuinely '
                 + 'nothing worth keeping — the rejection was a typo you fixed, say — call it again '
@@ -1026,8 +985,6 @@ function createAgentTools({
                 true
             );
         }
-
-        const articles = [...task.touchedArticles];
 
         try {
             await callPlugin('agent_finish_task', { taskId: task.id }, TIMEOUT_READ_MS);
@@ -1041,7 +998,6 @@ function createAgentTools({
             issues: args.issues,
             suggestions: args.suggestions
         });
-        finished.awaitingConfirmation = articles.length > 0;
         journal.endTask(finished, 'finished');
         note(task.id, 'task finished', 'ps_finish_task');
 
@@ -1049,13 +1005,7 @@ function createAgentTools({
         // above has already dealt with the task that should have written something; for a
         // task that went smoothly, a closing "you wrote nothing" only pushes agents towards
         // articles nobody needs.
-        const confirmationLine = articles.length > 0
-            ? `Your report is in the assistant dialog. When the person confirms the result there, `
-            + `${articles.length === 1 ? 'the article' : 'the articles'} you wrote or added to `
-            + `(${articles.join(', ')}) ${articles.length === 1 ? 'moves' : 'move'} one rung up.`
-            : 'Your report is in the assistant dialog.';
-
-        return textResult(`Task ${task.id} is closed.\n${confirmationLine}`);
+        return textResult(`Task ${task.id} is closed.\nYour report is in the AI Assist dialog.`);
     }
 
     /**
@@ -1208,8 +1158,8 @@ function createAgentTools({
         // over by whichever call is waiting when it lands.
         entry.done = callPlugin('agent_execute_script', payload, TIMEOUT_INTERACTIVE_SCRIPT_MS)
             .then(
-                answer => settleDialog(entry, task, { answer }, releaseWait),
-                error => settleDialog(entry, task, { error }, releaseWait)
+                answer => settleDialog(entry, { answer }, releaseWait),
+                error => settleDialog(entry, { error }, releaseWait)
             );
         pendingDialog = entry;
 
@@ -1279,16 +1229,12 @@ function createAgentTools({
      * Store the plugin's final answer to an interactive script.
      *
      * @param {object} entry - The pending dialog.
-     * @param {object} task - Its task.
      * @param {object} outcome - { answer } or { error }.
      * @param {Function} releaseWait - Lets the task idle out again.
      */
-    function settleDialog(entry, task, outcome, releaseWait) {
+    function settleDialog(entry, outcome, releaseWait) {
         entry.outcome = outcome;
         releaseWait();
-        // The snapshot is recorded now rather than on delivery, so a task closed before the
-        // agent picked the result up still knows its rollback point.
-        if (outcome.answer) rememberSnapshot(task, outcome.answer);
         // Once the first answer said "still open", the agent may never come back for the
         // result — its client may even have dropped it. The journal gets it regardless.
         // Only while the task is still open: its journal file closes with it, and the line
@@ -1325,7 +1271,6 @@ function createAgentTools({
         if (outcome.error) throw explainRejectedCommandsInError(outcome.error, { interactive });
 
         const answer = outcome.answer || {};
-        rememberSnapshot(task, answer);
         const { text, rejected } = renderScriptAnswer(answer, interactive);
         // The script ran to the end, but Photoshop refused some of its commands. It is not
         // marked as an error: the rest of the script may well have changed the document,
@@ -1346,17 +1291,6 @@ function createAgentTools({
         const rejected = formatRejectedCommands(answer.rejectedCommands, { interactive });
         const body = rejected ? `Returned: ${text}\n\n${rejected}` : `Returned: ${text}`;
         return { text: withStatus(body, answer.status), rejected: Boolean(rejected) };
-    }
-
-    /**
-     * @param {object} task - The task.
-     * @param {object} answer - The plugin's answer, which may carry the snapshot it made.
-     */
-    function rememberSnapshot(task, answer) {
-        if (!answer || !answer.snapshot) return;
-        task.snapshotCreated = task.snapshotCreated || Boolean(answer.snapshot.created);
-        task.snapshotHistoryId = answer.snapshot.historyStateId || task.snapshotHistoryId;
-        task.snapshotName = answer.snapshot.name || task.snapshotName;
     }
 
     /**
@@ -1525,15 +1459,16 @@ function createAgentTools({
         });
 
         if (written.ok) {
-            tasks.noteArticle(task.id, written.id);
+            tasks.noteContribution(task.id, written.id);
             note(task.id, `wrote the article "${written.id}"`, 'ps_kb_contribute');
         }
         return textResult(written.message, !written.ok);
     }
 
     /**
-     * @param {object} args - Tool arguments. Only task_id and article_id are read: a note
-     *   sent anyway by a client that ignores the schema is dropped, never written.
+     * Record that a knowledge article worked exactly as written for this agent.
+     *
+     * @param {object} args - Tool arguments.
      * @returns {object} MCP tool result.
      */
     function kbMarkHelped(args) {
@@ -1541,15 +1476,16 @@ function createAgentTools({
         const marked = knowledgeBase.markHelped({ id: args.article_id });
 
         if (marked.ok) {
-            // Only a counter moved. The article was not written to, so it is not one the
-            // person's confirmation should lift, and it is not "something written down" for
-            // the struggle question in ps_finish_task.
+            // A helped mark is only evidence about one use. It neither changes manual
+            // confidence nor counts as a new contribution for the struggle reminder.
             note(task.id, `marked the article "${marked.id}" as helped`, 'ps_kb_mark_helped');
         }
         return textResult(marked.message, !marked.ok);
     }
 
     /**
+     * Record that a knowledge article failed or needed a change for this agent.
+     *
      * @param {object} args - Tool arguments.
      * @returns {object} MCP tool result.
      */
@@ -1562,7 +1498,9 @@ function createAgentTools({
         });
 
         if (marked.ok) {
-            tasks.noteArticle(task.id, marked.id, { failed: true });
+            // The failure note is reusable knowledge, so it satisfies the same struggle
+            // reminder as a newly contributed article. It still does not affect confidence.
+            tasks.noteContribution(task.id, marked.id);
             note(task.id, `marked the article "${marked.id}" as failed, with a note`, 'ps_kb_mark_failed');
         }
         return textResult(marked.message, !marked.ok);

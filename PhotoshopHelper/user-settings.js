@@ -37,7 +37,10 @@ const storePromise = import('electron-store').then(StoreModule => {
             // The document agent writes every MCP call it receives to disk when this is on.
             // Off by default in a built Helper: it is a diagnostic tool, not part of normal
             // use. A development run writes the journal regardless of this setting.
-            agentJournalEnabled: false
+            agentJournalEnabled: false,
+            // Set once the first MCP agent starts a task. Until then AI Assist shows how to
+            // connect an agent; afterwards those instructions stay folded away.
+            agentSeen: false
         }
     });
 });
@@ -228,6 +231,26 @@ async function setAgentJournalEnabled(enabled) {
 }
 
 /**
+ * Whether any MCP agent has ever started a task on this machine.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function isAgentSeen() {
+    const store = await storePromise;
+    return store.get('agentSeen') === true;
+}
+
+/**
+ * Remember that an MCP agent has started a task, so AI Assist can fold its setup away.
+ *
+ * @returns {Promise<void>}
+ */
+async function markAgentSeen() {
+    const store = await storePromise;
+    store.set('agentSeen', true);
+}
+
+/**
  * Save a token to the current user's OS environment variables.
  *
  * On Windows, writes to HKCU\Environment via PowerShell and broadcasts WM_SETTINGCHANGE.
@@ -336,6 +359,8 @@ module.exports = {
     getTokenFromUserEnvironment,
     isAgentJournalEnabled,
     setAgentJournalEnabled,
+    isAgentSeen,
+    markAgentSeen,
     INITIAL_DONATION_THRESHOLD,
     DONATED_THRESHOLD: DONATED_NEW_DONATION_THRESHOLD,
     HARDCORE_UNPAID_THRESHOLD,

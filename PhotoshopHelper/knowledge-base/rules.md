@@ -24,14 +24,14 @@ JavaScript", or ask the person to do that for you.
 
 **The knowledge base is used only through the tools of this server — never by reading or
 writing its files.** `ps_kb_list` gives one line per article, `ps_kb_read` gives one
-article (or up to 4 via `article_ids`). To write, use `ps_kb_contribute`,
-`ps_kb_mark_helped` and `ps_kb_mark_failed`: they keep the header, the counters and the
-two layers straight.
+article (or up to 4 via `article_ids`). To write a new technical article, use
+`ps_kb_contribute`. After applying an existing article, use `ps_kb_mark_helped` or
+`ps_kb_mark_failed`. These tools keep the article header, usage counters, failure notes,
+and the two layers straight.
 
-**Everything you write into the knowledge base is in English** — a new article and the
-note on a failed mark alike — whatever language the person talks to you in. Every agent
-after you reads the base, and one language keeps its index and articles easy to match
-against a problem.
+**Everything you write into the knowledge base is in English**, whatever language the
+person talks to you in. Every agent after you reads the base, and one language keeps its
+index and articles easy to match against a problem.
 
 **Look at the knowledge base before your first change to the document, and before you
 write a new article. Read it from a sub-agent, not in your main context.** This holds
@@ -41,36 +41,53 @@ context is sent again with every later call until the task ends.
 
 Send a sub-agent with the problem. Let it open every article whose index line looks like
 that problem — several at once through `article_ids` — and nothing else, and have it bring
-back the recipe and the article id it came from. You need the id later to mark the article.
-The sub-agent needs this server's `ps_kb_` tools and the task id; if your sub-agents cannot
-call MCP tools, read the base yourself through the tools.
+back the recipe and the article id it came from. The sub-agent needs this server's `ps_kb_`
+tools and the task id; keep the id because the article must be marked after use. If your
+sub-agents cannot call MCP tools, read the base yourself through the tools.
 
 If starting a sub-agent needs the person to allow it, ask them for that in one short line.
+
+## Manual confidence labels
+
+`confidence` is descriptive front matter maintained through deliberate review. It is not
+a task score, usage statistic, or value that Helper changes automatically:
+
+- `agent-written` — an agent contributed the article, but a person has not deliberately
+  reviewed and accepted its contents;
+- `user-confirmed` — a user deliberately checked the article and accepted it for their
+  own knowledge-base layer;
+- `author-verified` — the author deliberately reviewed the article, may have edited it,
+  and accepts it as a maintained article shipped with Helper.
+
+Do not promote your own article because a command happened to succeed or because the
+person liked the overall task. A person or the author changes this field deliberately
+after reviewing the article itself. Regardless of the label, verify the recipe against the
+current document and Photoshop version.
 
 ## The knowledge base is a hint, not the truth
 
 An article can be wrong, out of date, or written for another version of Photoshop. After
-following one, check the result. Trust an article more when its rung is higher
-(`agent-written` → `user-confirmed` → `author-verified`), when it has few failures, and
-when its Photoshop version matches the one you are working in.
+following one, check the result. A higher manual confidence label is useful provenance,
+not proof that the recipe fits this document. Pay particular attention to whether its
+Photoshop version matches the one you are working in.
 
 If there is nothing in the base, or the article did not fit, work it out yourself.
 
 ## Say how the articles you used went
 
-Every article you actually followed gets a mark before you finish. Do this every time, even
-when you write nothing else. It is one call, and those counts are how the next agent
-decides how far to trust the article.
+Every article you actually followed gets one agent mark before you finish. This is not a
+person rating the task and it never changes `confidence`; it records whether that specific
+recipe worked when an agent applied it:
 
-- **It worked as written:** `ps_kb_mark_helped`. It only counts; there is nothing to write.
-- **It did not work, or worked only after you changed or added something** — a step,
-  a value, a key: `ps_kb_mark_failed`, with a note saying in what task, why, and what
-  helped instead. An article that needed a change is inaccurate, and your note is how the
-  next agent finds out. Never delete an article and never quietly correct it: the next
-  agent needs to see the whole history.
+- **It worked as written:** call `ps_kb_mark_helped`. This increments only the helped
+  counter; there is no note to write.
+- **It did not work, or worked only after you changed or added something:** call
+  `ps_kb_mark_failed` with an English note saying what failed, in which task, and what
+  worked instead. A recipe that needs an unrecorded extra step did not work as written.
 
-Marking an article and writing a new one are separate decisions. The first is always
-wanted. The second only when it passes the test below.
+Marking an article and writing a new article are separate decisions. The mark is wanted
+for every article actually followed. A new article is wanted only when it passes the test
+below. Never turn `helped` or `failed` into a vote about the overall task or visual taste.
 
 ## What is worth writing down
 
@@ -125,10 +142,11 @@ always turns out to be.
 
 **Before you write a new article, look at what is already there.** If an article on the
 same problem exists, do not put a near-copy beside it. If you followed it and it needed a
-change to work, that change goes onto it with `ps_kb_mark_failed`; if it worked as written,
-there is nothing to write. Only a different problem gets its own article, with an id and an
-index line that say how it differs. A base of three hundred almost-identical articles is
-worse than a base of thirty good ones — nobody, including you, will find anything in it.
+change to work, preserve that evidence with `ps_kb_mark_failed`; if it worked as written,
+there is nothing to add to its body. Only a different problem gets its own article, with
+an id and an index line that say how it differs. A base
+of three hundred almost-identical articles is worse than a base of thirty good ones —
+nobody, including you, will find anything in it.
 
 ## Look, change, check
 
@@ -200,9 +218,9 @@ complement each other, they just have different places.
   click and get their agreement.
 - The same screen has a person working on it. Taking the pointer away from them spoils
   their work and yours: Photoshop will accept the click somewhere you did not aim.
-- Anything done with the mouse is not undone by the "Before the task" snapshot and does
-  not appear in the report. Do not change the application preferences, do not save files,
-  do not touch other programs.
+- Anything done with the mouse sits outside the agent's named History step and may not
+  appear in the report. Do not change the application preferences, do not save files, do
+  not touch other programs.
 - If the person asks you to click something, that is fine. Say beforehand what you are
   about to do, and afterwards what you did.
 

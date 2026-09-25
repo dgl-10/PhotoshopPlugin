@@ -1,17 +1,18 @@
 'use strict';
 
 /**
- * Path 1: Helper launches the person's own CLI agent.
+ * Reusable executor for launching a configured command-line agent.
  *
  * The MCP server is already registered on this machine (see mcp-setup.js) — it is not
  * handed over on every launch, and the person's other MCP servers are left switched on.
- * What this module does is start the CLI on the person's subscription, with permissions
- * wide enough that it does not stop to ask about every step, and keep the session so the
- * next message in the same chat continues the same conversation.
+ * This module starts the CLI on the person's subscription, gives the caller the result and
+ * any reusable session id, and can stop a long-running process. It deliberately knows
+ * nothing about a particular UI or product workflow, so WebHelper and later prompt tools
+ * can reuse the researched process-management code.
  *
- * Only the CLI path lives here. The path through an API key is a separate stage, and this
- * module refuses to run when Helper is configured for API mode, so that a button in the
- * panel can never turn into a paid request.
+ * Only the CLI path lives here. The path through an API key is separate, and this module
+ * refuses to run when Helper is configured for API mode so a local action cannot silently
+ * turn into a paid request.
  */
 
 const { spawn } = require('node:child_process');
@@ -22,10 +23,9 @@ const crypto = require('node:crypto');
 
 const { SERVER_NAME } = require('./mcp-setup');
 
-// Helper launches this CLI. Antigravity is not included in LAUNCHABLE_CLIS yet because automated
-// programmatic launch from the assistant panel is still pending implementation. Note that while
-// Antigravity does not support passing ephemeral per-run MCP servers on the command line, it works
-// persistently once registered via `agy mcp add` in the user's terminal or IDE.
+// Antigravity is not included because its supported workflow does not expose the same
+// non-interactive execution contract. It can still use the MCP server after persistent
+// registration with `agy mcp add` in the user's terminal or IDE.
 const LAUNCHABLE_CLIS = new Set(['claude', 'codex', 'grok']);
 
 // The agent may work for a long time — a task is many tool calls and a person watching.
@@ -49,8 +49,8 @@ function readAgentConfig() {
     const problems = [];
     if (mode !== 'cli') {
         problems.push(
-            'LLM_MODE must be "cli" to run the agent from the panel. The path through an API '
-            + 'key is not part of this feature yet.'
+            'LLM_MODE must be "cli" to run a command-line agent. API-key execution is a '
+            + 'separate path.'
         );
     }
     if (!LAUNCHABLE_CLIS.has(cli)) {
@@ -100,7 +100,7 @@ function buildArgs({ cli, model, prompt, sessionId, cwd, outputFile }) {
         case 'codex': {
             const args = ['exec'];
             // `resume` is an exec subcommand. Exec-only options such as `--color` and `-C`
-            // must be parsed before that subcommand, otherwise Codex rejects a continued chat.
+            // must be parsed before that subcommand, otherwise Codex rejects a resumed run.
             args.push(
                 '--dangerously-bypass-approvals-and-sandbox',
                 '--skip-git-repo-check',
@@ -245,7 +245,7 @@ function parseFirstJson(text) {
 }
 
 /**
- * Remove anything that looks like a secret from text on its way to the panel.
+ * Remove anything that looks like a secret before text reaches a caller or log.
  *
  * @param {string} text - Raw text.
  * @returns {string}
@@ -262,7 +262,7 @@ function sanitize(text) {
  * Create the runner.
  *
  * @param {object} options
- * @param {string} options.workDir - The agent's own folder, shared by every task.
+ * @param {string} options.workDir - Default working folder for CLI runs.
  * @param {Console} [options.logger] - Destination for diagnostics.
  * @returns {object} The runner.
  */
@@ -284,7 +284,7 @@ function createCliRunner({ workDir, logger = console }) {
     function getRunning() {
         if (!running) return null;
         return {
-            chatId: running.chatId,
+            runId: running.runId,
             cli: running.cli,
             startedAt: running.startedAt,
             stopping: Boolean(running.stopping)
@@ -292,14 +292,15 @@ function createCliRunner({ workDir, logger = console }) {
     }
 
     /**
-     * Send one message to the agent and wait for its answer.
+     * Run one prompt and wait for the CLI result.
      *
      * @param {object} params
-     * @param {object} params.chat - The chat this belongs to.
      * @param {string} params.prompt - What to say to the agent.
+     * @param {string|null} [params.sessionId] - Existing CLI session to resume.
+     * @param {string|null} [params.runId] - Caller-owned identifier for diagnostics.
      * @returns {Promise<{ok: boolean, text: string, sessionId: string|null, error?: string}>}
      */
-    function send({ chat, prompt }) {
+    function run({ prompt, sessionId = null, runId = null }) {
         const config = readAgentConfig();
         if (!config.configured) {
             return Promise.resolve({
@@ -315,7 +316,7 @@ function createCliRunner({ workDir, logger = console }) {
                 ok: false,
                 text: '',
                 sessionId: null,
-                error: 'The agent is already working. Wait for it, or press Stop.'
+                error: 'A command-line agent is already running. Wait for it or stop that run.'
             });
         }
 
@@ -328,13 +329,14 @@ function createCliRunner({ workDir, logger = console }) {
             cli: config.cli,
             model: config.model,
             prompt,
-            sessionId: chat.sessionId,
+            sessionId,
             cwd,
             outputFile
         });
 
-        logger.info(`[agent-cli] Launching ${binary} for chat ${chat.id}`
-            + `${chat.sessionId ? ' (continuing its session)' : ''}`);
+        const effectiveRunId = runId || `run-${crypto.randomUUID()}`;
+        logger.info(`[agent-cli] Launching ${binary} for ${effectiveRunId}`
+            + `${sessionId ? ' (resuming a session)' : ''}`);
 
         return new Promise((resolve) => {
             let stdout = '';
@@ -342,9 +344,8 @@ function createCliRunner({ workDir, logger = console }) {
             let settled = false;
 
             // A visible window is a setting, not a problem: there is nothing wrong with the
-            // person seeing the agent's window and talking to it themselves. Helper cannot
-            // read what a detached console prints, so in that mode the panel shows the
-            // progress that comes back through MCP and not the agent's own words.
+            // person seeing the agent's window and using it directly. Helper cannot read
+            // what a detached console prints, so the returned text explains that limitation.
             const child = config.window === 'visible' && process.platform === 'win32'
                 ? spawn('cmd', ['/c', 'start', '', '/wait', binary, ...args], {
                     cwd,
@@ -364,7 +365,7 @@ function createCliRunner({ workDir, logger = console }) {
 
             running = {
                 child,
-                chatId: chat.id,
+                runId: effectiveRunId,
                 cli: config.cli,
                 startedAt: Date.now(),
                 stopping: false,
@@ -411,9 +412,8 @@ function createCliRunner({ workDir, logger = console }) {
                     finish({
                         ok: false,
                         text: sanitize(parsed.text || ''),
-                        sessionId: parsed.sessionId || chat.sessionId || null,
-                        error: `The agent was stopped: ${stopped}. Its conversation is kept — `
-                            + 'the next message continues it.'
+                        sessionId: parsed.sessionId || sessionId || null,
+                        error: `The agent was stopped: ${stopped}.`
                     });
                     return;
                 }
@@ -422,9 +422,8 @@ function createCliRunner({ workDir, logger = console }) {
                     finish({
                         ok: true,
                         text: 'The agent ran in its own window. Helper cannot read what a separate '
-                            + 'console prints, so its answer is in that window; the steps it took '
-                            + 'through Photoshop are in the progress list.',
-                        sessionId: chat.sessionId || null
+                            + 'console prints, so its answer remains in that window.',
+                        sessionId: sessionId || null
                     });
                     return;
                 }
@@ -459,9 +458,8 @@ function createCliRunner({ workDir, logger = console }) {
      * Stop the agent.
      *
      * A running command-line agent has no Escape key the way a live session does. What we
-     * can do is end this run while keeping the session id, so the conversation is not lost
-     * and the person's next message picks it up where it left off. The process is asked to
-     * close first and only killed if it ignores that.
+     * can do is end this run and return whichever session id is available to the caller.
+     * The process is asked to close first and only killed if it ignores that.
      *
      * @param {string} [reason] - What to tell the person.
      * @returns {boolean} True when something was running.
@@ -501,7 +499,7 @@ function createCliRunner({ workDir, logger = console }) {
         return true;
     }
 
-    return { send, stop, getRunning, readAgentConfig, ensureWorkDir };
+    return { run, stop, getRunning, readAgentConfig, ensureWorkDir };
 }
 
 module.exports = {

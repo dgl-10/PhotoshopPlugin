@@ -79,7 +79,7 @@ const { createCatalogUpdater } = require('./providers-updater');
 const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
 const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest, maskAuthorizationHeader } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
-const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment, isAgentJournalEnabled, setAgentJournalEnabled } = require('./user-settings');
+const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment, isAgentJournalEnabled, setAgentJournalEnabled, isAgentSeen, markAgentSeen } = require('./user-settings');
 const { getLlmConfig, getLlmCapabilities, checkConnection: checkLlmConnection, sendLlmQuery } = require('./llm-engine');
 const { createWsBridgeServer } = require('./ws-bridge');
 const { createMcpRouter } = require('./mcp-server');
@@ -168,13 +168,17 @@ let pairingRefreshTimer = null;
 const WS_BRIDGE_PORT = 18346;
 let wsBridgeServer = null;
 
-// The document agent: the MCP tools an AI agent calls, and what the assistant panel in
-// the plugin talks to. Created once the config paths are known.
+// The document agent: MCP tools plus the task state shown by AI Assist in the plugin.
+// Created once the config paths are known.
 let agentService = null;
 
 // Whether the agent's journal of MCP calls is written to disk. A development run always
 // writes it; a built Helper only when the user asks, from the tray menu.
 let agentJournalChecked = false;
+
+// Whether an MCP agent has ever started a task here. Read from user settings when the
+// service is built; AI Assist uses it to decide whether to show its setup instructions.
+let agentSeenChecked = false;
 
 /**
  * Build the document agent service.
@@ -193,10 +197,19 @@ function initAgentService() {
         agentJournalChecked = true;
     }
 
+    isAgentSeen()
+        .then(seen => { agentSeenChecked = agentSeenChecked || seen; })
+        .catch(() => { /* Keep the setup visible when the setting cannot be read. */ });
+
     agentService = createAgentService({
         getBridge: () => wsBridgeServer,
         paths: resolveAgentPaths(getConfigPaths()),
         isJournalEnabled: () => agentJournalChecked,
+        isAgentSeen: () => agentSeenChecked,
+        onAgentSeen: () => {
+            agentSeenChecked = true;
+            markAgentSeen().catch(error => log.warn(`Could not remember the first agent: ${error.message}`));
+        },
         logger: log
     });
 
@@ -927,13 +940,11 @@ function startHttpServer() {
         tools: agentService.tools
     }));
 
-    // The assistant panel inside the plugin. The plugin token is the right secret here:
-    // these routes drive Photoshop and the person's own CLI subscription, and the runner
-    // refuses to work unless Helper is set to a CLI, so no paid API sits behind them.
+    // AI Assist inside the plugin. These routes expose task state, explicit task close,
+    // and MCP setup text; the plugin token is the correct secret for all of them.
     expressApp.use('/api/agent', requirePluginToken, createAgentRouter({
         service: agentService,
-        port: PORT,
-        logger: log
+        port: PORT
     }));
 
     // Mount the local service-to-service generation API over the existing provider
@@ -1692,9 +1703,10 @@ function startHttpServer() {
                 token: pluginToken,
                 logger: log,
                 onClientChange: (event) => {
-                    // A closed dialog is recoverable. The agent service keeps the task paused
-                    // and uses the runtime identity to distinguish a harmless reconnect from
-                    // a full UXP reload that needs an explicit document rebind.
+                    // A closed AI Assist dialog intentionally tears down the WebSocket but
+                    // must not tear down its task. The agent service keeps the task paused
+                    // and uses the runtime identity to distinguish a harmless reopen (resume
+                    // automatically) from a full UXP reload (explicit document rebind).
                     if (agentService) {
                         agentService.handlePluginConnectionChange(event);
                     }

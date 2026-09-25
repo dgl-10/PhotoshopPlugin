@@ -3,11 +3,10 @@
 /**
  * The task frame of the document agent.
  *
- * Every agent — the one Helper launches itself and the one the user opens in their own
- * terminal — has to go through the same door: `ps_start_task` hands out the task id, the
- * working rules and the knowledge base index, and every other tool refuses to work
- * without that id. Tool descriptions are read unevenly by different agents, but a refusal
- * cannot be skipped, so the refusal is what actually delivers the rules.
+ * Every MCP agent has to go through the same door: `ps_start_task` hands out the task id,
+ * the working rules and the knowledge base index, and every other tool refuses to work
+ * without that id. Tool descriptions are read unevenly by different agents, but a
+ * refusal cannot be skipped, so the refusal is what actually delivers the rules.
  *
  * Only one task runs at a time. A task is bound to the document it started on, so the
  * user is free to switch documents while the agent works.
@@ -120,12 +119,10 @@ function createTaskSession(options = {}) {
      * @param {object} params
      * @param {string} params.intent - What the agent says it is about to do.
      * @param {object} [params.document] - { id, name } of the working document.
-     * @param {string} [params.origin] - 'panel' or 'external', for the journal and the panel.
-     * @param {string|null} [params.ownerChatId] - Built-in chat that owns the task.
      * @returns {object} The new task.
      * @throws {TaskError} When another task is still running.
      */
-    function start({ intent, document, origin = 'external', ownerChatId = null }) {
+    function start({ intent, document }) {
         expireIfIdle();
 
         if (current && ['running', 'suspended'].includes(current.state)) {
@@ -146,8 +143,6 @@ function createTaskSession(options = {}) {
         current = {
             id: generateId(),
             intent: String(intent || '').trim() || 'unnamed task',
-            origin,
-            ownerChatId,
             state: 'running',
             startedAt: timestamp,
             lastActivityAt: timestamp,
@@ -156,9 +151,6 @@ function createTaskSession(options = {}) {
             documentName: document ? document.name || null : null,
             documentPath: document ? document.path || null : null,
             photoshopVersion: null,
-            snapshotName: null,
-            snapshotCreated: false,
-            snapshotHistoryId: null,
             suspendedAt: null,
             suspension: null,
             // How many calls are waiting right now for the person to finish in a dialog
@@ -178,14 +170,11 @@ function createTaskSession(options = {}) {
             // ps_finish_task asks once for a contribution when the task was hard and
             // nothing was written. Counting the attempts keeps that from becoming a loop.
             finishAttempts: 0,
-            // Articles this task wrote or added to. They are the ones promoted when the
-            // user confirms the result in ps_finish_task.
-            touchedArticles: [],
-            // The part of touchedArticles this task marked as failed. They are still lifted
-            // on confirmation, for the note, but not counted as having helped.
-            failedArticles: [],
-            report: null,
-            confirmed: null
+            // Article ids for which this task wrote reusable knowledge: either a new
+            // article or a failure note on an existing one. This only suppresses the
+            // one-time struggle reminder; helped marks and confidence are unaffected.
+            contributedArticles: [],
+            report: null
         };
 
         emit('started', current);
@@ -367,22 +356,15 @@ function createTaskSession(options = {}) {
     }
 
     /**
-     * Remember that the task wrote to a knowledge base article.
+     * Remember that the task contributed a new article or a reusable failure note.
      *
      * @param {string} taskId - Running task id.
      * @param {string} articleId - Article id.
-     * @param {object} [options]
-     * @param {boolean} [options.failed] - What was written is a note that the article did not
-     *   work. The person's confirmation then vouches for the note, not for the article, so
-     *   the article must not be counted as having helped.
      */
-    function noteArticle(taskId, articleId, { failed = false } = {}) {
+    function noteContribution(taskId, articleId) {
         if (!current || current.id !== taskId) return;
-        if (!current.touchedArticles.includes(articleId)) {
-            current.touchedArticles.push(articleId);
-        }
-        if (failed && !current.failedArticles.includes(articleId)) {
-            current.failedArticles.push(articleId);
+        if (!current.contributedArticles.includes(articleId)) {
+            current.contributedArticles.push(articleId);
         }
     }
 
@@ -463,7 +445,7 @@ function createTaskSession(options = {}) {
         addStep,
         waitForPerson,
         noteFailure,
-        noteArticle,
+        noteContribution,
         getCurrent,
         getLastClosed,
         expireIfIdle,

@@ -10,7 +10,7 @@
  * place — for instance when a task is allowed to span several documents.
  */
 
-const { app, action, core } = require('photoshop');
+const { app, core } = require('photoshop');
 
 // Photoshop hands out one modal scope at a time and gives up after a second by default.
 // The person is working in the same document, so it is worth queuing for longer.
@@ -23,27 +23,6 @@ const taskContexts = new Map();
 // Prefix that lets Helper recognise "the document went away" in an error that crossed the
 // channel as plain text, and close the task rather than wait for it to time out.
 const DOCUMENT_CLOSED_MARKER = '[document-closed]';
-
-/**
- * Descriptor recorded from the Actions panel ("Copy As JavaScript") for New Snapshot.
- * Photoshop's scripting documentation does not cover snapshot creation, and the DOM has
- * no call for it, so this is the one place in the agent code that depends on a recorded
- * descriptor. Everything still works without it: the rollback point is the history state
- * captured through the documented DOM property, and the snapshot is what makes that point
- * survive Photoshop trimming the history and visible in the History panel.
- *
- * @param {string} name - Snapshot name shown in the History panel.
- * @returns {object} A batchPlay descriptor.
- */
-function makeSnapshotDescriptor(name) {
-    return {
-        _obj: 'make',
-        _target: [{ _ref: 'snapshotClass' }],
-        from: { _ref: 'historyState', _property: 'currentHistoryState' },
-        name,
-        using: { _enum: 'historyState', _value: 'fullDocument' }
-    };
-}
 
 /**
  * The version of Photoshop we are running inside.
@@ -122,7 +101,7 @@ function describeChangesSinceLastCall(context, doc) {
         } else if (added < 0) {
             notes.push(
                 `the history got shorter and now stands at "${position.name}" — the person `
-                + 'stepped back or went to a snapshot. Do not repeat your work blindly: work '
+                + 'stepped back or selected an earlier state. Do not repeat your work blindly: work '
                 + 'out what happened or ask.'
             );
         } else if (position.id !== previous.id && position.id !== context.lastOwnHistoryId) {
@@ -141,17 +120,15 @@ function describeChangesSinceLastCall(context, doc) {
  * Bind a task to the document that is active right now.
  *
  * Nothing is written to the document here. A task that only looks — describing a picture,
- * reading a layer — or one that turned out to be a plain question must leave the History
- * panel exactly as it found it. A Photoshop snapshot stays until the document is closed
- * and has to be deleted by hand, so putting one there for a question is litter in the
- * person's own work.
+ * reading a layer — or one that turned out to be a plain question leaves the History panel
+ * exactly as it found it. Later mutations are grouped into named history steps by the
+ * script command itself.
  *
  * @param {object} params
  * @param {string} params.taskId - Task id issued by Helper.
- * @param {string} params.intent - What the agent is about to do, used for the snapshot name.
  * @returns {Promise<object>} Document facts and the state line.
  */
-async function startTask({ taskId, intent }) {
+async function startTask({ taskId }) {
     const doc = app.activeDocument;
     if (!doc) {
         return { document: null };
@@ -161,12 +138,6 @@ async function startTask({ taskId, intent }) {
         taskId,
         documentId: doc.id,
         documentName: doc.name,
-        // Named now, created on the first change. See ensureRollbackPoint.
-        // The task id keeps recovery unambiguous when several tasks have the same intent.
-        plannedSnapshotName: `Before task ${taskId}: ${String(intent || '').slice(0, 40)}`,
-        snapshotName: null,
-        snapshotHistoryId: null,
-        startHistoryId: null,
         lastOwnHistoryId: null,
         lastSeenHistory: readHistoryPosition(doc),
         activeDocumentChangedLastCall: false
@@ -180,7 +151,6 @@ async function startTask({ taskId, intent }) {
         // of Photoshop can be wrong in the next, so this is the one piece of an article's
         // header that must not be left to the agent to type from memory.
         photoshopVersion: readHostVersion(),
-        snapshot: { created: false, deferred: true, name: context.plannedSnapshotName },
         status: buildStatus(taskId, { skipChangeCheck: true })
     };
 }
@@ -219,9 +189,9 @@ function findDocumentForResume(params) {
 
 /**
  * Rebuild the plugin-side context for a task after the whole UXP runtime was unloaded.
- * The named History snapshot is the durable rollback point: unlike this module's maps,
- * it lives in the Photoshop document. If no change happened before the disconnect there
- * is no snapshot to recover and rebinding at the current History state is safe.
+ * Helper supplies the original document identity. Once it is matched unambiguously, the
+ * current history position becomes the comparison baseline and the agent is told to
+ * inspect the document before it repeats any interrupted operation.
  *
  * @param {object} params - Persisted task metadata from Helper.
  * @returns {Promise<object>} Rebound document facts and recovery status.
@@ -238,7 +208,6 @@ async function resumeTask(params) {
         }
         return {
             document: describeDocumentBriefly(existingDocument),
-            recoveredSnapshot: Boolean(existing.snapshotHistoryId),
             status: buildStatus(params.taskId, { skipChangeCheck: true })
         };
     }
@@ -251,40 +220,11 @@ async function resumeTask(params) {
         };
     }
 
-    let snapshotHistoryId = null;
-    if (params.snapshotName) {
-        try {
-            for (const state of doc.historyStates) {
-                if (state.snapshot && state.name === params.snapshotName) {
-                    snapshotHistoryId = state.id;
-                    break;
-                }
-            }
-        } catch (error) {
-            console.warn('[agent-document] Could not inspect History snapshots while resuming:', error.message);
-        }
-    }
-
-    if (params.snapshotCreated && snapshotHistoryId === null) {
-        return {
-            document: describeDocumentBriefly(doc),
-            error: `The rollback snapshot "${params.snapshotName}" is no longer in the History panel. `
-                + 'The task was not rebound automatically because its safe starting point cannot be verified.'
-        };
-    }
-
     const position = readHistoryPosition(doc);
     taskContexts.set(params.taskId, {
         taskId: params.taskId,
         documentId: doc.id,
         documentName: doc.name,
-        plannedSnapshotName: params.snapshotName
-            || `Before task ${params.taskId}: ${String(params.intent || '').slice(0, 40)}`,
-        snapshotName: snapshotHistoryId === null ? null : params.snapshotName,
-        snapshotHistoryId,
-        // When no mutation was confirmed before the disconnect, the current state is the
-        // correct deferred rollback point. A recovered snapshot takes precedence later.
-        startHistoryId: snapshotHistoryId === null ? null : position.id,
         lastOwnHistoryId: position.id,
         lastSeenHistory: position,
         activeDocumentChangedLastCall: false
@@ -292,60 +232,8 @@ async function resumeTask(params) {
 
     return {
         document: describeDocumentBriefly(doc),
-        recoveredSnapshot: snapshotHistoryId !== null,
         status: buildStatus(params.taskId, { skipChangeCheck: true })
     };
-}
-
-/**
- * Put the rollback point in place, once, just before the task's first change.
- *
- * Doing it here rather than at the start of the task is also more correct than it looks:
- * anything the person did by hand between starting the task and this first change is
- * inside the snapshot, so rolling back removes the agent's work and keeps theirs.
- *
- * @param {string} taskId - Task id.
- * @param {object} doc - The task's working document.
- * @returns {Promise<object|null>} The snapshot that was just created, or null if there
- *   already was one or Photoshop refused.
- */
-async function ensureRollbackPoint(taskId, doc) {
-    const context = taskContexts.get(taskId);
-    if (!context || context.startHistoryId !== null) return null;
-
-    const name = context.plannedSnapshotName;
-    let created = false;
-
-    await core.executeAsModal(async () => {
-        const before = readHistoryPosition(doc);
-        context.startHistoryId = before.id;
-
-        try {
-            await action.batchPlay([makeSnapshotDescriptor(name)], {});
-            created = true;
-        } catch (error) {
-            // Not fatal: the rollback point is the history state read above.
-            console.warn('[agent-document] Could not create a History snapshot:', error.message);
-        }
-
-        if (created) {
-            try {
-                for (const state of doc.historyStates) {
-                    if (state.snapshot && state.name === name) {
-                        context.snapshotHistoryId = state.id;
-                    }
-                }
-            } catch (error) {
-                console.warn('[agent-document] Could not find the new snapshot:', error.message);
-            }
-            context.snapshotName = name;
-        }
-
-        context.lastSeenHistory = readHistoryPosition(doc);
-        context.lastOwnHistoryId = context.lastSeenHistory.id;
-    }, { commandName: 'Agent: before the task', timeOut: MODAL_TIMEOUT_MS });
-
-    return { created, name, historyStateId: context.snapshotHistoryId };
 }
 
 /**
@@ -526,65 +414,15 @@ function noteOwnHistoryStep(taskId) {
     context.lastOwnHistoryId = position.id;
 }
 
-/**
- * Go back to the point the task started from.
- *
- * Uses the snapshot when there is one, because a snapshot survives Photoshop dropping old
- * history steps; otherwise the history state read at the start.
- *
- * @param {string} taskId - Task id.
- * @returns {Promise<{ok: boolean, message: string}>}
- */
-async function rollbackToStart(taskId) {
-    const context = taskContexts.get(taskId);
-    if (!context) {
-        return { ok: false, message: 'There is nothing to roll back: this task is not known here.' };
-    }
-
-    const doc = findDocumentById(context.documentId);
-    if (!doc) {
-        return { ok: false, message: `The document "${context.documentName}" is closed.` };
-    }
-
-    const targetId = context.snapshotHistoryId !== null ? context.snapshotHistoryId : context.startHistoryId;
-    if (targetId === null) {
-        // Nothing was ever changed, so no rollback point was laid down and none is needed.
-        return { ok: false, message: 'This task has not changed anything, so there is nothing to roll back.' };
-    }
-
-    let done = false;
-    await core.executeAsModal(async () => {
-        for (const state of doc.historyStates) {
-            if (state.id === targetId) {
-                doc.activeHistoryState = state;
-                done = true;
-                break;
-            }
-        }
-    }, { commandName: 'Agent: back to the start of the task', timeOut: MODAL_TIMEOUT_MS });
-
-    if (done) noteOwnHistoryStep(taskId);
-
-    return done
-        ? { ok: true, message: `"${context.documentName}" is back where the task started.` }
-        : {
-            ok: false,
-            message: 'The starting point is no longer in the History panel. Photoshop keeps a '
-                + 'limited number of steps; go back by hand.'
-        };
-}
-
 module.exports = {
     DOCUMENT_CLOSED_MARKER,
     startTask,
     resumeTask,
-    ensureRollbackPoint,
     finishTask,
     resolveWorkingDocument,
     withWorkingDocument,
     buildStatus,
     noteOwnHistoryStep,
-    rollbackToStart,
     describeDocumentBriefly,
     // Exported for testing only; the rest of the plugin goes through the functions above.
     _taskContexts: taskContexts

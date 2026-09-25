@@ -94,19 +94,19 @@ function buildInstallCommands({ port }) {
  */
 function buildAgentInstructions({ port }) {
     return [
-        'Please register this MCP server, then tell me to restart you so the tools load:',
+        'Please register this MCP server in your configuration according to your documentation:',
         '',
         `  name:      ${SERVER_NAME}`,
         '  transport: http',
         `  url:       http://127.0.0.1:${port}/mcp`,
         `  header:    Authorization: Bearer \${${TOKEN_ENV_VAR}}`,
         '',
-        `The token is in the ${TOKEN_ENV_VAR} environment variable — write the reference to the`,
-        'variable into the configuration, not the token itself (Note: if you are Google Antigravity,',
-        'read the variable and write the actual token value, since Antigravity does not expand env vars in headers).',
-        'If the variable is empty, ask me to save the token first: PhotoshopHelper tray menu > Access Tokens >',
-        'Save Token to User Environment, and restart you afterwards. Do not turn off my other MCP servers.'//,,
-        //'After restarting, the tools are named ps_*; call ps_start_task first.'
+        `The token is already set in the OS environment variable ${TOKEN_ENV_VAR}.`,
+        '- Check your documentation/tools on how your platform registers HTTP MCP servers with headers (prefer using your native CLI command like `claude mcp add` if available).',
+        '- Do NOT create or edit local settings files (like .claude/settings*.json or .env) to declare this variable — empty stubs override and break the OS environment.',
+        '- If your platform expands env vars in MCP headers (e.g., Claude Code in .mcp.json), write the variable reference. If not (e.g., Google Antigravity), read the token from the environment and write its actual value.',
+        '- If the environment variable is not set yet, ask me to save it first via PhotoshopHelper tray menu: Access Tokens > Save Token to User Environment, then restart the agent.',
+        'Do not remove or modify any other registered MCP servers. Tell me when to restart you to load the tools.'
     ].join('\n');
 }
 

@@ -3,10 +3,9 @@
 /**
  * The agent's knowledge base.
  *
- * It lives in Helper's data folder, next to the provider list, and never in the agent's
- * working folder: an external agent is opened wherever the user happens to be, and would
- * never look there. Everything is handed out through MCP, so both ways of reaching the
- * agent get the same knowledge.
+ * It lives in Helper's data folder, next to the provider list. Agents reach it through
+ * MCP rather than through filesystem paths, so the same article API works regardless of
+ * where the MCP client was started or which local folders it may read.
  *
  * Two layers, following the providers pattern:
  *   author  ships with Helper and is never written to from here;
@@ -18,6 +17,26 @@
  * front matter, and the index is assembled from those lines on every read. A hand-kept
  * index file would be a second place to forget to update, and an article written by the
  * agent has to appear in the index without a second write.
+ *
+ * Planned article classes (design note, not an implemented taxonomy):
+ *
+ * The current base contains technical recipes: exact DOM, Imaging API, or action
+ * descriptor operations whose result can be checked directly in Photoshop. For example,
+ * a filter either ran with the documented descriptor, a mask was created, or a selection
+ * was restored. An agent can normally verify this kind of knowledge itself by inspecting
+ * the resulting document state.
+ *
+ * A later class may contain visual/CV workflows rather than exact API recipes. Examples
+ * include how to approach colour correction, which Photoshop tools to choose and in what
+ * order, and how to align or blend generated content with the original image at pixel
+ * level. A command succeeding does not prove that this kind of result is good, so these
+ * articles will need a more meaningful qualitative review model.
+ *
+ * Real usage may reveal a third class as well. This classification currently exists only
+ * in the product author's plans: there is no class field, CV article format, or evaluation
+ * workflow in the code yet. Do not build generic scoring around the idea until real
+ * non-technical articles exist and it is clear who reviews them, what evidence is useful,
+ * and how feedback leads to a concrete correction of an article.
  */
 
 const fs = require('node:fs');
@@ -25,9 +44,9 @@ const path = require('node:path');
 
 const { writeFileAtomic } = require('../atomic-write');
 
-// How sure we are about an article. An agent writes at the bottom rung; a confirmed
-// result in ps_finish_task lifts it one step; the top rung exists only in the author's
-// layer and is set by the author by hand.
+// Confidence is descriptive article metadata, not a score calculated by Helper. The
+// value changes only when a person deliberately edits/reviews the article; no task result,
+// usage counter, or MCP call promotes it automatically.
 const CONFIDENCE_LEVELS = ['agent-written', 'user-confirmed', 'author-verified'];
 
 const ARTICLE_EXTENSION = '.md';
@@ -137,8 +156,14 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
-     * @returns {object} Per-article usage counters, kept in the user layer so that
-     *   articles from the author's read-only layer can be counted too.
+     * Read agent-reported outcomes for individual article uses.
+     *
+     * The sidecar lives in the user layer so Helper can count uses of shipped author
+     * articles without ever modifying the read-only files that came with the application.
+     * These counters are evidence from agents applying a specific article, not a person's
+     * rating of the overall task.
+     *
+     * @returns {object} Counters keyed by `<layer>:<article-id>`.
      */
     function readStats() {
         const file = path.join(userDir, STATS_FILENAME);
@@ -153,7 +178,9 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
-     * @param {object} stats - Counters to store.
+     * Persist agent-reported article outcomes atomically.
+     *
+     * @param {object} stats - Counters keyed by layer and article id.
      */
     function writeStats(stats) {
         ensureUserLayer();
@@ -179,7 +206,7 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
-     * Every article in both layers, with its marks and counters.
+     * Every article in both layers, with the descriptive metadata needed to find it.
      *
      * @returns {object[]} Entries sorted by id, author layer first for a shared id.
      */
@@ -214,6 +241,7 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
                     photoshop: article.meta.photoshop || 'unknown',
                     date: article.meta.date || '',
                     task: article.meta.task || '',
+                    agent: article.meta.agent || '',
                     helped: Number(article.meta.helped || 0) + Number(counters.helped || 0),
                     failed: Number(article.meta.failed || 0) + Number(counters.failed || 0)
                 });
@@ -269,11 +297,14 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
 
             parts.push(
                 `=== ${id} (${layer.name} layer) ===\n`
-                + `confidence: ${article.meta.confidence || 'agent-written'}\n`
+                + `confidence: ${CONFIDENCE_LEVELS.includes(article.meta.confidence)
+                    ? article.meta.confidence
+                    : 'agent-written'}\n`
                 + `written by: ${article.meta.agent || 'unknown'}\n`
                 + `written on task: ${article.meta.task || 'unknown'}\n`
                 + `Photoshop: ${article.meta.photoshop || 'unknown'}, date: ${article.meta.date || 'unknown'}\n`
-                + `helped ${helped} times, did not work ${failed} times\n\n`
+                + `helped ${helped} times, did not work ${failed} times\n`
+                + '\n'
                 + article.body
             );
         }
@@ -334,8 +365,8 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
                 id,
                 message: `An article "${id}" already exists in the user layer. Do not overwrite it. `
                     + 'If you followed it and it needed a change to work, put that on it with '
-                    + 'ps_kb_mark_failed, which keeps the history the next agent reads. If yours is '
-                    + 'a different problem, give it another id.'
+                    + 'ps_kb_mark_failed, which keeps the history the next agent reads. If yours '
+                    + 'is a different problem, give it another id.'
             };
         }
 
@@ -343,11 +374,15 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
             id,
             title: title || id,
             problem: problem || title || id,
+            // A new contribution starts as agent-written. Deliberate human review can
+            // change this field in the Markdown later; Helper never promotes it itself.
             confidence: 'agent-written',
             agent: agent || 'unknown',
             task: taskId || '',
             photoshop: photoshopVersion || 'unknown',
             date: new Date().toISOString().slice(0, 10),
+            // Baseline counters make the article format self-describing. Later outcomes
+            // are kept in the user-layer sidecar so shipped articles stay read-only.
             helped: 0,
             failed: 0
         };
@@ -362,9 +397,9 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
-     * Find an article the agent wants to mark, in either layer.
+     * Find an article an agent wants to mark in either knowledge-base layer.
      *
-     * @param {string} rawId - Article id as the agent gave it.
+     * @param {string} rawId - Article id as supplied by the agent.
      * @returns {{ok: true, id: string, inAuthor: object|null, inUser: object|null}
      *   |{ok: false, id: string, message: string}}
      */
@@ -388,14 +423,11 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
-     * Mark an article the agent followed as having worked as written.
+     * Record that one article worked exactly as written.
      *
-     * There is deliberately no text here. Agents are asked to mark every article they
-     * follow, and a free-text field on this mark was filled every time with "worked
-     * reliably" by agents that fill whatever field exists: each use made the article
-     * longer and gave an author article a user-layer twin. So a helped mark only moves
-     * the counter. Anything worth writing — an extra step, another value — means the
-     * article was not right as written, and goes through markFailed.
+     * A helped mark deliberately has no free-text note. Earlier experiments showed that
+     * agents fill any available note field with repetitive text; a pure counter captures
+     * the useful signal without growing a duplicate user-layer article.
      *
      * @param {object} params
      * @param {string} params.id - Article id.
@@ -410,20 +442,16 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
-     * Mark an article the agent followed as failed, and keep the agent's note with it.
+     * Record that an article failed or required a change, preserving the explanation.
      *
-     * "Failed" covers an article that worked only after a change: it is then inaccurate,
-     * and the note is how the next agent finds out.
-     *
-     * An article that did not work is never deleted and never quietly corrected: the next
-     * agent has to be able to see the whole history. When the article lives only in the
-     * author's read-only layer, the note is written into a user-layer article with the
-     * same id, and the agent is then shown both.
+     * The author layer remains immutable. If only an author article exists, its failure
+     * note becomes a same-id article in the user layer, so future agents see the shipped
+     * recipe and its local correction history side by side.
      *
      * @param {object} params
      * @param {string} params.id - Article id.
-     * @param {string} params.note - In what task it failed, why, and what helped instead.
-     * @param {string} [params.taskId] - Task it came from.
+     * @param {string} params.note - What failed and what worked instead.
+     * @param {string} [params.taskId] - Task that produced the evidence.
      * @returns {{ok: boolean, id: string, message: string}}
      */
     function markFailed({ id: rawId, note, taskId }) {
@@ -445,12 +473,9 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
         const addition = `### Did not work — ${stamp}, task ${taskId || 'unknown'}\n\n${String(note).trim()}`;
 
         if (inUser) {
-            const meta = { ...inUser.meta };
-            meta.id = meta.id || id;
+            const meta = { ...inUser.meta, id: inUser.meta.id || id };
             writeFileAtomic(file, formatArticle(meta, `${inUser.body}\n\n${addition}`));
         } else {
-            // The article itself belongs to the author's layer, which Helper never writes
-            // to. The note becomes a user-layer article of the same id, shown next to it.
             const meta = {
                 id,
                 title: inAuthor.meta.title || id,
@@ -459,7 +484,9 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
                 task: taskId || '',
                 photoshop: inAuthor.meta.photoshop || 'unknown',
                 date: stamp,
-                note_on: 'author-layer article of the same id'
+                note_on: 'author-layer article of the same id',
+                helped: 0,
+                failed: 0
             };
             writeFileAtomic(file, formatArticle(meta, addition));
         }
@@ -469,16 +496,14 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
-     * Count one use of an article. Counters live in the user layer for both layers'
-     * articles, because the author's layer is never written to.
+     * Increment exactly one agent-reported outcome for one article use.
      *
-     * One use moves exactly one counter. A mark carries only the id, and when the id
-     * exists in both layers the user-layer file is, whenever Helper made it, the twin
-     * holding notes on the author's article — so the use belongs to the author's article.
-     * Counting it in both layers showed one use twice, once on each index line.
+     * When the id exists in both layers, the author layer wins because the user-layer twin
+     * normally contains failure notes about that shipped article. Counting both would make
+     * one use appear twice in the index.
      *
      * @param {string} rawId - Article id.
-     * @param {'helped'|'failed'} outcome - How it went.
+     * @param {'helped'|'failed'} outcome - Result of applying the article.
      */
     function recordUsage(rawId, outcome) {
         const id = normalizeArticleId(rawId);
@@ -494,38 +519,6 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
         else counters.helped = Number(counters.helped || 0) + 1;
         stats[key] = counters;
         writeStats(stats);
-    }
-
-    /**
-     * Lift an article one rung after the user confirmed the result. No separate question
-     * is asked: confirming the task in ps_finish_task is the confirmation.
-     *
-     * The author's top rung is never reached this way — only the author sets it, and only
-     * in their own layer.
-     *
-     * @param {string[]} ids - Articles the task wrote or added to.
-     * @returns {string[]} Ids that actually moved up.
-     */
-    function promoteArticles(ids) {
-        const promoted = [];
-
-        for (const rawId of ids || []) {
-            const id = normalizeArticleId(rawId);
-            const article = readArticleFile(userDir, id);
-            if (!article) continue;
-
-            const current = CONFIDENCE_LEVELS.indexOf(article.meta.confidence);
-            if (current !== 0) continue; // Only agent-written moves up by confirmation.
-
-            const meta = { ...article.meta, confidence: 'user-confirmed' };
-            writeFileAtomic(
-                path.join(articlesDir(userDir), `${id}${ARTICLE_EXTENSION}`),
-                formatArticle(meta, article.body)
-            );
-            promoted.push(id);
-        }
-
-        return promoted;
     }
 
     /**
@@ -556,7 +549,6 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
         markHelped,
         markFailed,
         recordUsage,
-        promoteArticles,
         readRules,
         ensureUserLayer,
         // For Helper itself and the person (the "Open the Knowledge Base Folder" menu item).

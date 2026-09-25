@@ -3,10 +3,9 @@
 /**
  * The MCP server Helper publishes on its own HTTP server, on loopback only.
  *
- * Both ways of reaching the agent end up here: the CLI Helper launches itself, and the
- * agent the user opens in their own terminal. That is why the rules and the knowledge
- * base are handed out through this server and not through files in a working folder —
- * an external agent is opened wherever the user happens to be.
+ * The rules and knowledge base are handed out through this server rather than through
+ * files in a project folder. An MCP client may be started from any working directory and
+ * may not have filesystem access to Helper's data folder.
  *
  * Transport: Streamable HTTP, POST with JSON-RPC 2.0. Notifications (no `id`) are
  * answered with HTTP 202 and an empty body, which Codex's Rust client requires.
@@ -41,8 +40,9 @@ const SERVER_INSTRUCTIONS =
     + 'instead of deciding from numbers. If you cannot see an image, say so — do not guess '
     + 'what is in the document from layer names.\n'
     + 'If a tool says the Photoshop connection was lost, tell the person to reopen FromPS / '
-    + 'ToPS AI. A paused task keeps its id: continue it with ps_resume_task when requested, '
-    + 'and never repeat an uncertain change blindly.\n'
+    + 'ToPS AI. Closing only that window pauses rather than cancels the task. Reopening it in '
+    + 'the same plugin runtime resumes the same task automatically; use ps_resume_task only '
+    + 'when the tool says the plugin runtime restarted. Never repeat an uncertain change blindly.\n'
     + 'Finish with ps_finish_task.';
 
 /**

@@ -6,16 +6,17 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { createAgentService, resolveAgentPaths, buildPrompt } = require('../agent');
+const { createAgentService, resolveAgentPaths } = require('../agent');
 
 /**
- * Build the whole service over throwaway folders and a fake plugin channel.
+ * Build the whole service over throwaway folders and an optional fake plugin channel.
  *
  * @param {import('node:test').TestContext} context - Active test context.
- * @param {object} [bridge] - Stand-in for the plugin channel.
- * @returns {object} { service, root }
+ * @param {object|null} [bridge] - Stand-in for the plugin channel.
+ * @param {object} [options] - Extra createAgentService options.
+ * @returns {object} Service and temporary root.
  */
-function makeService(context, bridge = null) {
+function makeService(context, bridge = null, options = {}) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-agent-'));
     context.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -23,77 +24,74 @@ function makeService(context, bridge = null) {
         getBridge: () => bridge,
         paths: resolveAgentPaths({ resourcesPath: root, userDataPath: root }),
         isJournalEnabled: () => true,
-        logger: { info() {}, warn() {}, error() {} }
+        logger: { info() {}, warn() {}, error() {} },
+        ...options
     });
 
     return { service, root };
 }
 
-test('the paths put the author layer with Helper and the user layer in the data folder', () => {
+/**
+ * Return the standard plugin response used when a task starts.
+ *
+ * @returns {object} Minimal document and state payload.
+ */
+function startAnswer() {
+    return {
+        document: {
+            id: 1,
+            name: 'test.psd',
+            width: 100,
+            height: 100,
+            resolution: 72,
+            colorMode: 'RGB',
+            bitsPerChannel: 8,
+            layerCount: 1
+        },
+        status: null
+    };
+}
+
+test('the paths contain only the knowledge-base layers and journal', () => {
     const paths = resolveAgentPaths({ resourcesPath: '/res', userDataPath: '/data' });
 
-    assert.equal(paths.authorKnowledgeDir, path.resolve('/res', 'knowledge-base'));
-    assert.equal(paths.userKnowledgeDir, path.resolve('/data', 'knowledge-base.user'));
-    assert.equal(paths.workDir, path.resolve('/data', 'agent-workspace'));
+    assert.deepEqual(paths, {
+        authorKnowledgeDir: path.resolve('/res', 'knowledge-base'),
+        userKnowledgeDir: path.resolve('/data', 'knowledge-base.user'),
+        journalDir: path.resolve('/data', 'agent-journal')
+    });
 });
 
 test('the knowledge base folders are absolute, whatever folder Helper runs from', () => {
-    // The agent is not told these folders, but Helper and the person's menu item open them,
-    // and a relative path would depend on where Helper happened to start.
     const paths = resolveAgentPaths({ resourcesPath: '.', userDataPath: './data' });
 
     assert.ok(path.isAbsolute(paths.authorKnowledgeDir));
     assert.ok(path.isAbsolute(paths.userKnowledgeDir));
 });
 
-test('the service starts up and reports a usable state', context => {
+test('the service state contains the MCP task surface only', context => {
     const { service } = makeService(context);
     const state = service.getState();
 
     assert.equal(state.channel.connected, false);
     assert.equal(state.task, null);
-    assert.equal(state.agentRunning, null);
     assert.ok(Array.isArray(state.progress));
     assert.ok(state.knowledgeBase.userDir);
+    assert.equal('cli' in state, false);
+    assert.equal('rollback' in service, false, 'the removed rollback surface must not return');
 });
 
-test('an external agent works with nothing configured for launching one', async context => {
-    // Someone who only ever uses their own agent has no reason to fill in LLM_MODE, a CLI
-    // or a key. That must not close the door on them: the MCP server and the channel to
-    // Photoshop have nothing to do with Helper launching anything.
-    const saved = { ...process.env };
-    delete process.env.LLM_MODE;
-    delete process.env.LLM_CLI_TYPE;
-    delete process.env.LLM_CLI_MODEL;
-    context.after(() => {
-        process.env.LLM_MODE = saved.LLM_MODE;
-        process.env.LLM_CLI_TYPE = saved.LLM_CLI_TYPE;
-        process.env.LLM_CLI_MODEL = saved.LLM_CLI_MODEL;
-    });
-
+test('MCP work requires no configuration for launching a command-line agent', async context => {
     const bridge = {
         getConnectedClients: () => 1,
-        sendCommandAndWait: async () => ({
-            document: {
-                id: 1, name: 'test.psd', width: 100, height: 100,
-                resolution: 72, colorMode: 'RGB', bitsPerChannel: 8, layerCount: 1
-            },
-            snapshot: { created: true, name: 'Before the task: x' },
-            status: null
-        }),
+        sendCommandAndWait: async () => startAnswer(),
         sendCommand: () => 'id'
     };
-
     const { service } = makeService(context, bridge);
 
     const started = await service.tools.call('ps_start_task', { intent: 'describe the picture' });
-    assert.ok(!started.isError, 'the task must start with no LLM configuration at all');
+    assert.ok(!started.isError);
     assert.match(started.content[0].text, /Task task-/);
-
-    // The panel, on the other hand, says plainly that it cannot launch anything.
-    const state = service.getState();
-    assert.equal(state.cli.configured, false);
-    assert.ok(state.cli.problems.length > 0);
 });
 
 test('the tool layer is wired to the service', async context => {
@@ -101,26 +99,18 @@ test('the tool layer is wired to the service', async context => {
 
     assert.equal(service.tools.list().length, 13);
 
-    // With no channel the answer is the sentence the agent is meant to relay.
+    // With no channel the answer is the sentence the MCP agent is meant to relay.
     const result = await service.tools.call('ps_start_task', { intent: 'anything' });
     assert.equal(result.isError, true);
     assert.match(result.content[0].text, /AI Assist/);
 });
 
-test('progress from the tools reaches the panel state', async context => {
+test('progress from the tools reaches the plugin state', async context => {
     const bridge = {
         getConnectedClients: () => 1,
-        sendCommandAndWait: async () => ({
-            document: {
-                id: 1, name: 'test.psd', width: 100, height: 100,
-                resolution: 72, colorMode: 'RGB', bitsPerChannel: 8, layerCount: 1
-            },
-            snapshot: { created: true, name: 'Before the task: x' },
-            status: null
-        }),
+        sendCommandAndWait: async () => startAnswer(),
         sendCommand: () => 'id'
     };
-
     const { service } = makeService(context, bridge);
     await service.tools.call('ps_start_task', { intent: 'tidy up' });
 
@@ -134,14 +124,7 @@ test('a dialog disconnect pauses the task and the same runtime resumes it', asyn
     let connectedClients = 1;
     const bridge = {
         getConnectedClients: () => connectedClients,
-        sendCommandAndWait: async () => ({
-            document: {
-                id: 1, name: 'test.psd', width: 100, height: 100,
-                resolution: 72, colorMode: 'RGB', bitsPerChannel: 8, layerCount: 1
-            },
-            snapshot: { created: false, name: 'Before the task: recover' },
-            status: null
-        }),
+        sendCommandAndWait: async () => startAnswer(),
         sendCommand: () => 'id'
     };
     const { service } = makeService(context, bridge);
@@ -152,7 +135,7 @@ test('a dialog disconnect pauses the task and the same runtime resumes it', asyn
         type: 'disconnected',
         clients: 0,
         reasonCode: 'assistant-dialog-closed',
-        reason: 'Assistant panel closed',
+        reason: 'AI Assist closed',
         runtimeId: 'runtime-1',
         at: Date.now()
     });
@@ -173,47 +156,103 @@ test('a dialog disconnect pauses the task and the same runtime resumes it', asyn
     assert.equal(service.getState().task.state, 'running');
 });
 
-test('Stop closes the task and lets the document side know', async context => {
+test('Abort task closes the task and releases the document side', async context => {
     const sent = [];
     const bridge = {
         getConnectedClients: () => 1,
-        sendCommandAndWait: async () => ({
-            document: {
-                id: 1, name: 'test.psd', width: 100, height: 100,
-                resolution: 72, colorMode: 'RGB', bitsPerChannel: 8, layerCount: 1
-            },
-            snapshot: { created: false },
-            status: null
-        }),
-        sendCommand: (action, payload) => { sent.push({ action, payload }); return 'id'; }
+        sendCommandAndWait: async () => startAnswer(),
+        sendCommand: (action, payload) => {
+            sent.push({ action, payload });
+            return 'id';
+        }
     };
-
     const { service } = makeService(context, bridge);
     await service.tools.call('ps_start_task', { intent: 'work' });
 
     const stopped = service.stop();
-
     assert.equal(stopped.stopped, true);
     assert.equal(service.tasks.getCurrent(), null);
     assert.equal(sent.at(-1).action, 'agent_finish_task');
+
+    // AI Assist shows the aborted task, and says "aborted by you" for exactly this reason.
+    const finished = service.getState().lastFinishedTask;
+    assert.equal(finished.state, 'aborted');
+    assert.equal(finished.abortReason, 'the person pressed Abort task');
+    assert.equal(finished.intent, 'work');
+    assert.ok(finished.startedAt <= finished.finishedAt);
 });
 
-test('confirming a finished task lifts the articles it wrote', async context => {
-    const bridge = {
+/**
+ * A plugin channel that answers every task call, enough to start and finish tasks.
+ *
+ * @returns {object} Fake bridge.
+ */
+function workingBridge() {
+    return {
         getConnectedClients: () => 1,
-        sendCommandAndWait: async (action) => (action === 'agent_start_task'
-            ? {
-                document: {
-                    id: 1, name: 'test.psd', width: 100, height: 100,
-                    resolution: 72, colorMode: 'RGB', bitsPerChannel: 8, layerCount: 1
-                },
-                snapshot: { created: false },
-                status: null
-            }
+        sendCommandAndWait: async action => (action === 'agent_start_task'
+            ? startAnswer()
             : { status: null }),
         sendCommand: () => 'id'
     };
+}
 
+/**
+ * @param {object} result - MCP tool result of ps_start_task.
+ * @returns {string} The task id it hands out.
+ */
+function taskIdOf(result) {
+    return result.content[0].text.match(/(task-[a-f0-9]+)/)[1];
+}
+
+test('a new task clears the previous report and its steps', async context => {
+    const { service } = makeService(context, workingBridge());
+    const first = await service.tools.call('ps_start_task', { intent: 'first' });
+    await service.tools.call('ps_finish_task', { task_id: taskIdOf(first), summary: 'done' });
+    assert.equal(service.getState().lastFinishedTask.intent, 'first');
+
+    await service.tools.call('ps_start_task', { intent: 'second' });
+    const state = service.getState();
+    assert.equal(state.lastFinishedTask, null);
+    assert.equal(state.task.intent, 'second');
+    assert.ok(state.progress.every(step => step.taskId === state.task.id));
+});
+
+test('the first task of a run marks the agent as seen, once', async context => {
+    let seen = 0;
+    const { service } = makeService(context, workingBridge(), { onAgentSeen: () => { seen += 1; } });
+    assert.equal(service.getState().agentSeen, false);
+
+    await service.tools.call('ps_start_task', { intent: 'one' });
+    service.stop();
+    await service.tools.call('ps_start_task', { intent: 'two' });
+
+    assert.equal(seen, 1);
+    assert.equal(service.getState().agentSeen, true);
+});
+
+test('an agent remembered from an earlier run counts as seen', context => {
+    const { service } = makeService(context, null, { isAgentSeen: () => true });
+    assert.equal(service.getState().agentSeen, true);
+});
+
+test('a running task tells the dialog when the agent last acted', async context => {
+    const { service } = makeService(context, workingBridge());
+    await service.tools.call('ps_start_task', { intent: 'look' });
+
+    const task = service.getState().task;
+    assert.ok(task.lastActivityAt >= task.startedAt);
+    assert.equal(task.waitingForPerson, false);
+});
+
+test('a finished task leaves an informational report and does not alter its article', async context => {
+    const bridge = {
+        getConnectedClients: () => 1,
+        sendCommandAndWait: async action => (action === 'agent_start_task'
+            ? startAnswer()
+            : { status: null }),
+        sendCommand: () => 'id'
+    };
     const { service } = makeService(context, bridge);
     const started = await service.tools.call('ps_start_task', { intent: 'curves' });
     const taskId = started.content[0].text.match(/(task-[a-f0-9]+)/)[1];
@@ -227,99 +266,21 @@ test('confirming a finished task lifts the articles it wrote', async context => 
     });
     await service.tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
 
-    const awaiting = service.getState().lastFinishedTask;
-    assert.deepEqual(awaiting.articles, ['clipped-curves']);
-    assert.equal(awaiting.confirmed, null);
-
-    const confirmed = service.confirmLastTask(true);
-    assert.deepEqual(confirmed.promoted, ['clipped-curves']);
-    assert.match(service.knowledgeBase.readArticle('clipped-curves').text, /user-confirmed/);
+    const state = service.getState();
+    assert.equal(state.lastFinishedTask.report.summary, 'done');
+    const article = service.knowledgeBase.readArticle('clipped-curves').text;
+    assert.match(article, /confidence: agent-written/);
+    assert.match(article, /the descriptor that worked/);
 });
 
-test('confirming lifts a failure note, but does not count the failed article as helped', async context => {
+test('the journal records calls and keeps image bytes out of it', async context => {
     const bridge = {
         getConnectedClients: () => 1,
-        sendCommandAndWait: async (action) => (action === 'agent_start_task'
-            ? {
-                document: {
-                    id: 1, name: 'test.psd', width: 100, height: 100,
-                    resolution: 72, colorMode: 'RGB', bitsPerChannel: 8, layerCount: 1
-                },
-                snapshot: { created: false },
-                status: null
-            }
-            : { status: null }),
-        sendCommand: () => 'id'
-    };
-
-    const { service } = makeService(context, bridge);
-    service.knowledgeBase.writeArticle({ id: 'old-recipe', title: 'Old', problem: 'p', body: 'b' });
-    const started = await service.tools.call('ps_start_task', { intent: 'x' });
-    const taskId = started.content[0].text.match(/(task-[a-f0-9]+)/)[1];
-
-    await service.tools.call('ps_kb_mark_failed', {
-        task_id: taskId, article_id: 'old-recipe', note: 'rejected in 27.1; the DOM call worked'
-    });
-    await service.tools.call('ps_kb_contribute', {
-        task_id: taskId, article_id: 'new-recipe', title: 'New', problem: 'q', body: 'b'
-    });
-    await service.tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
-
-    const confirmed = service.confirmLastTask(true);
-    assert.deepEqual(confirmed.promoted.sort(), ['new-recipe', 'old-recipe']);
-
-    const failedArticle = service.knowledgeBase.readArticle('old-recipe').text;
-    assert.match(failedArticle, /user-confirmed/);
-    assert.match(failedArticle, /helped 0 times, did not work 1 times/);
-    // An article the task wrote itself is still counted once when the person confirms.
-    assert.match(service.knowledgeBase.readArticle('new-recipe').text, /helped 1 times/);
-});
-
-test('saying the result was not good lifts nothing', async context => {
-    const bridge = {
-        getConnectedClients: () => 1,
-        sendCommandAndWait: async (action) => (action === 'agent_start_task'
-            ? {
-                document: {
-                    id: 1, name: 'test.psd', width: 100, height: 100,
-                    resolution: 72, colorMode: 'RGB', bitsPerChannel: 8, layerCount: 1
-                },
-                snapshot: { created: false },
-                status: null
-            }
-            : { status: null }),
-        sendCommand: () => 'id'
-    };
-
-    const { service } = makeService(context, bridge);
-    const started = await service.tools.call('ps_start_task', { intent: 'x' });
-    const taskId = started.content[0].text.match(/(task-[a-f0-9]+)/)[1];
-
-    await service.tools.call('ps_kb_contribute', {
-        task_id: taskId, article_id: 'a', title: 'A', problem: 'p', body: 'b'
-    });
-    await service.tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
-
-    assert.deepEqual(service.confirmLastTask(false).promoted, []);
-    assert.match(service.knowledgeBase.readArticle('a').text, /agent-written/);
-});
-
-test('the journal records the calls and keeps images out of it', async context => {
-    const bridge = {
-        getConnectedClients: () => 1,
-        sendCommandAndWait: async (action) => (action === 'agent_start_task'
-            ? {
-                document: {
-                    id: 1, name: 'test.psd', width: 100, height: 100,
-                    resolution: 72, colorMode: 'RGB', bitsPerChannel: 8, layerCount: 1
-                },
-                snapshot: { created: false },
-                status: null
-            }
+        sendCommandAndWait: async action => (action === 'agent_start_task'
+            ? startAnswer()
             : { base64: 'AAAA'.repeat(1000), mimeType: 'image/png', caption: 'a look', status: null }),
         sendCommand: () => 'id'
     };
-
     const { service, root } = makeService(context, bridge);
     const started = await service.tools.call('ps_start_task', { intent: 'look' });
     const taskId = started.content[0].text.match(/(task-[a-f0-9]+)/)[1];
@@ -332,44 +293,5 @@ test('the journal records the calls and keeps images out of it', async context =
     const contents = fs.readFileSync(path.join(dir, files[0]), 'utf8');
     assert.match(contents, /"tool":"ps_get_image"/);
     assert.match(contents, /image not stored in the journal/);
-    assert.doesNotMatch(contents, /AAAAAAAA/, 'the picture itself must not be written down');
-});
-
-test('the prompt from the panel sends the agent through ps_start_task', () => {
-    const prompt = buildPrompt('hide the text layers');
-
-    assert.match(prompt, /ps_start_task/);
-    assert.match(prompt, /photoshop-helper/);
-    assert.match(prompt, /hide the text layers/);
-    // A plain question should not become a task: it costs the person a snapshot in their
-    // History panel that they then have to delete by hand.
-    assert.match(prompt, /only a question/);
-});
-
-test('a continued panel chat reuses its existing Photoshop task', () => {
-    const prompt = buildPrompt('continue', {
-        task: {
-            id: 'task-123',
-            state: 'suspended',
-            documentName: 'poster.psd'
-        }
-    });
-
-    assert.match(prompt, /Task task-123 is paused/);
-    assert.match(prompt, /ps_resume_task/);
-    assert.doesNotMatch(prompt, /call ps_start_task first/);
-});
-
-test('chats remember their CLI session so the next message continues it', context => {
-    const { service } = makeService(context);
-
-    const chat = service.chats.createChat({ cli: 'claude', model: 'haiku' });
-    service.chats.addMessage(chat.id, { role: 'user', text: 'hide the text layers' });
-    service.chats.setSession(chat.id, { sessionId: 's-1' });
-
-    const listed = service.chats.listChats();
-    assert.equal(listed.length, 1);
-    assert.equal(listed[0].hasSession, true);
-    // The first thing the person says names the chat, so the list reads as a history.
-    assert.equal(listed[0].title, 'hide the text layers');
+    assert.doesNotMatch(contents, /AAAAAAAA/);
 });
