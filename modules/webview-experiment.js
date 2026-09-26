@@ -105,6 +105,24 @@ function ensureInitialized() {
         });
     }
 
+    // Webview lifecycle events for panel-embedded instance
+    const panelWebview = document.getElementById('webview-test-panel-element');
+    const panelStatus = document.getElementById('webview-panel-status');
+    if (panelWebview) {
+        panelWebview.addEventListener('loadstart', (e) => {
+            console.log(`[webview-test:panel] loadstart: URL=${e.url}`);
+            if (panelStatus) panelStatus.textContent = 'Loading...';
+        });
+        panelWebview.addEventListener('loadstop', (e) => {
+            console.log(`[webview-test:panel] loadstop: URL=${e.url}`);
+            if (panelStatus) panelStatus.textContent = 'Loaded';
+        });
+        panelWebview.addEventListener('loaderror', (e) => {
+            console.error(`[webview-test:panel] loaderror: URL=${e.url}, code=${e.code}, message=${e.message}`);
+            if (panelStatus) panelStatus.textContent = `Error (${e.code})`;
+        });
+    }
+
     // Listen to messages from WebView (MessageBridge)
     if (!messageListenerWired) {
         window.addEventListener('message', (event) => {
@@ -154,7 +172,6 @@ function showWebviewNonModal() {
     if (!dialog || !webview) return;
 
     activeDialog = dialog;
-    webview.src = HELPER_WEBVIEW_URL;
 
     console.log('[webview-test] Opening non-modal dialog.show()...');
     try {
@@ -165,7 +182,17 @@ function showWebviewNonModal() {
             dialog.show();
         } catch (err2) {
             console.error('[webview-test] dialog.show() completely failed:', err2);
+            return;
         }
+    }
+
+    // Set src after the dialog window is displayed so the native window handle is ready
+    if (webview.src !== HELPER_WEBVIEW_URL) {
+        webview.src = HELPER_WEBVIEW_URL;
+    } else if (typeof webview.reload === 'function') {
+        webview.reload();
+    } else {
+        webview.src = HELPER_WEBVIEW_URL;
     }
 }
 
@@ -179,7 +206,6 @@ function showWebviewModal() {
     if (!dialog || !webview) return;
 
     activeDialog = dialog;
-    webview.src = HELPER_WEBVIEW_URL;
 
     console.log('[webview-test] Opening modal dialog.showModal()...');
     try {
@@ -190,7 +216,17 @@ function showWebviewModal() {
             dialog.showModal();
         } catch (err2) {
             console.error('[webview-test] dialog.showModal() completely failed:', err2);
+            return;
         }
+    }
+
+    // Set src after the modal dialog window is displayed
+    if (webview.src !== HELPER_WEBVIEW_URL) {
+        webview.src = HELPER_WEBVIEW_URL;
+    } else if (typeof webview.reload === 'function') {
+        webview.reload();
+    } else {
+        webview.src = HELPER_WEBVIEW_URL;
     }
 }
 
@@ -198,6 +234,7 @@ function showWebviewModal() {
  * Toggle webview embedded inside the main panel
  */
 function togglePanelWebview() {
+    ensureInitialized();
     const container = document.getElementById('webview-test-panel-block');
     const webview = document.getElementById('webview-test-panel-element');
     if (!container || !webview) {
@@ -208,7 +245,7 @@ function togglePanelWebview() {
     if (container.style.display === 'none' || !container.style.display) {
         container.style.display = 'block';
         webview.src = HELPER_WEBVIEW_URL;
-        console.log('[webview-test] Embedded panel webview shown');
+        console.log('[webview-test] Embedded panel webview shown with URL:', HELPER_WEBVIEW_URL);
     } else {
         container.style.display = 'none';
         webview.src = 'about:blank';

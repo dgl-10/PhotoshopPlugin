@@ -63,10 +63,7 @@
         },
         "webview": {
             "allow": "yes",
-            "domains": [
-                "http://127.0.0.1:18345",
-                "http://localhost:18345"
-            ],
+            "domains": "all",
             "allowLocalRendering": "yes",
             "enableMessageBridge": "localAndRemote"
         }
