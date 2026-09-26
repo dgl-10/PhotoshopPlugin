@@ -947,6 +947,10 @@ function startHttpServer() {
         port: PORT
     }));
 
+    // Standalone experimental webview test routes (temporary stand)
+    const { registerWebviewTestRoutes } = require('./webview-test/server-routes');
+    registerWebviewTestRoutes(expressApp, checkIsLocal, PORT);
+
     // Mount the local service-to-service generation API over the existing provider
     // pipeline. Its token is deliberately distinct from the plugin token: the plugin's
     // secret is delivered as a file on disk, and must not unlock paid generation.

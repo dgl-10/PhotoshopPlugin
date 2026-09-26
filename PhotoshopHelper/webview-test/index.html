@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Assist Webview Stand</title>
+    <link rel="stylesheet" href="test-style.css">
+</head>
+<body>
+    <div class="header">
+        <div class="title-container">
+            <span class="title">AI Assist Stand</span>
+            <span class="badge badge-live">
+                <span class="badge-dot"></span>
+                <span>Server: Live</span>
+            </span>
+            <span id="bridge-badge" class="badge">
+                <span class="badge-dot"></span>
+                <span>Bridge: Checking</span>
+            </span>
+        </div>
+        <button id="close-dialog-btn" class="danger" title="Send close message to plugin">Close</button>
+    </div>
+
+    <!-- Section 1: Agent Setup UI (Exact reproduction of current poorly-rendering UI) -->
+    <div class="section">
+        <div class="section-title">
+            <span>Agent Setup Reproduction</span>
+            <span class="muted-text">Step-by-step layout</span>
+        </div>
+
+        <div class="step-item">
+            <span class="step-number">1</span>
+            <div class="step-body">
+                <div class="step-heading">Save the access key</div>
+                <div class="muted-text">PhotoshopHelper tray menu &rarr; Access Tokens &rarr; Save Token to User Environment.</div>
+            </div>
+        </div>
+
+        <div class="step-item">
+            <span class="step-number">2</span>
+            <div class="step-body">
+                <div class="step-heading">Add PhotoshopHelper to your agent</div>
+                <div class="controls-row">
+                    <select id="agent-select">
+                        <option value="claude" selected>Claude Code</option>
+                        <option value="codex">OpenAI Codex</option>
+                        <option value="grok">xAI Grok</option>
+                        <option value="agy">Google Antigravity</option>
+                    </select>
+                    <button id="copy-btn" class="primary">Copy Setup Text</button>
+                    <button id="toggle-text-btn" class="quiet">Hide text</button>
+                </div>
+                <div id="instruction-box" class="code-container">Loading configuration instructions...</div>
+            </div>
+        </div>
+
+        <div class="step-item">
+            <span class="step-number">3</span>
+            <div class="step-body">
+                <div class="step-heading">Restart the agent</div>
+                <div class="muted-text">Then ask it to work on the open document. The assistant dialog will update automatically.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Height & Scrolling Stress Test -->
+    <div class="section">
+        <div class="section-title">
+            <span>Scrolling & Dynamic Height Test</span>
+            <div class="controls-row" style="margin-top: 0;">
+                <button id="add-steps-btn">+5 Steps</button>
+                <button id="remove-steps-btn">-5 Steps</button>
+            </div>
+        </div>
+        <div class="muted-text">Test mouse wheel and scrollbar scrolling within this container:</div>
+        <div id="stress-list" class="scroll-stress-box"></div>
+    </div>
+
+    <!-- Section 3: Keyboard & Focus Test -->
+    <div class="section">
+        <div class="section-title">Keyboard & Focus Test</div>
+        <div class="muted-text" style="margin-bottom: 8px;">
+            Type in these inputs, then click canvas to verify PS hotkeys (V, B, Ctrl+Z, Space):
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            <input type="text" id="test-text-input" placeholder="Single-line input: test typing, Ctrl+A, Backspace...">
+            <textarea id="test-textarea" placeholder="Multi-line textarea: test Enter, Arrow keys, scrolling..."></textarea>
+        </div>
+    </div>
+
+    <!-- Section 4: Live Updates from Helper -->
+    <div class="section">
+        <div class="section-title">Live Backend Polling (Every 1.5s)</div>
+        <div class="live-grid">
+            <div class="live-card">
+                <div class="live-value" id="live-counter">0</div>
+                <div class="live-label">Request Ticks</div>
+            </div>
+            <div class="live-card">
+                <div class="live-value" id="live-uptime">0s</div>
+                <div class="live-label">Helper Uptime</div>
+            </div>
+            <div class="live-card">
+                <div class="live-value" id="live-clock">--:--:--</div>
+                <div class="live-label">Server Time</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 5: Message Bridge & External Links -->
+    <div class="section">
+        <div class="section-title">Bridge & External Links</div>
+        <div class="controls-row">
+            <button id="ping-btn">Ping Plugin</button>
+            <button id="open-via-bridge-btn">Open Docs via Bridge</button>
+            <a href="https://developer.adobe.com" target="_blank" style="font-size: 12px; margin-left: 6px;">
+                Direct target="_blank"
+            </a>
+        </div>
+        <div id="msg-log" class="log-box">Log: waiting for events...</div>
+    </div>
+
+    <!-- Diagnostics Footer -->
+    <div class="diag-footer">
+        <div class="diag-item"><strong>UA:</strong> <span id="diag-ua">Detecting...</span></div>
+        <div class="diag-item"><strong>Device Pixel Ratio (Scale):</strong> <span id="diag-dpr">Detecting...</span></div>
+        <div class="diag-item"><strong>Viewport Size:</strong> <span id="diag-viewport">Detecting...</span></div>
+        <div class="diag-item"><strong>Page Loaded At:</strong> <span id="diag-loaded-at">Detecting...</span></div>
+    </div>
+
+    <script src="test-page.js"></script>
+</body>
+</html>

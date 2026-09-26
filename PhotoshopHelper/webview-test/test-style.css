@@ -1,0 +1,335 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: #262626;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    padding: 16px;
+    user-select: text;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+::-webkit-scrollbar-thumb {
+    background: #4a4a4a;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #5a5a5a;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #3c3c3c;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+}
+
+.title-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.badge-live {
+    background: rgba(63, 191, 148, 0.18);
+    color: #7fdcb8;
+}
+.badge-live .badge-dot {
+    background: #3fbf94;
+}
+
+.badge-bridge {
+    background: rgba(75, 156, 245, 0.18);
+    color: #9cc8fb;
+}
+.badge-bridge .badge-dot {
+    background: #4b9cf5;
+}
+
+.section {
+    background: #2f2f2f;
+    border: 1px solid #3d3d3d;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 14px;
+}
+
+.section-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #aaa;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.muted-text {
+    color: #999;
+    font-size: 12px;
+}
+
+/* Steps layout */
+.step-item {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.step-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #404040;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.step-body {
+    flex: 1;
+}
+
+.step-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 3px;
+}
+
+/* Form controls */
+.controls-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+select, input[type="text"], textarea {
+    background: #1c1c1c;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #e0e0e0;
+    padding: 6px 10px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+select:focus, input[type="text"]:focus, textarea:focus {
+    border-color: #3875d7;
+}
+
+input[type="text"], textarea {
+    width: 100%;
+}
+
+textarea {
+    resize: vertical;
+    min-height: 50px;
+    font-family: inherit;
+}
+
+/* Buttons */
+button {
+    background: #3c3c3c;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #eee;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+button:hover {
+    background: #484848;
+    border-color: #666;
+}
+
+button.primary {
+    background: #2563eb;
+    border-color: #3b82f6;
+    color: #ffffff;
+}
+
+button.primary:hover {
+    background: #1d4ed8;
+}
+
+button.danger {
+    background: #7f1d1d;
+    border-color: #991b1b;
+    color: #fca5a5;
+}
+
+button.danger:hover {
+    background: #991b1b;
+}
+
+button.quiet {
+    background: transparent;
+    border-color: transparent;
+    color: #3b82f6;
+    text-decoration: underline;
+    padding: 4px 6px;
+}
+
+button.quiet:hover {
+    background: rgba(59, 130, 246, 0.1);
+}
+
+/* Instructions code block */
+.code-container {
+    margin-top: 8px;
+    background: #181818;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #cbd5e1;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+/* Scrollable stress list */
+.scroll-stress-box {
+    max-height: 140px;
+    overflow-y: auto;
+    background: #1e1e1e;
+    border: 1px solid #383838;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 8px;
+}
+
+.stress-row {
+    padding: 4px 6px;
+    border-bottom: 1px solid #2a2a2a;
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+}
+
+.stress-row:last-child {
+    border-bottom: none;
+}
+
+/* Live update display */
+.live-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.live-card {
+    background: #222;
+    border: 1px solid #383838;
+    border-radius: 4px;
+    padding: 8px;
+    text-align: center;
+}
+
+.live-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #38bdf8;
+}
+
+.live-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+}
+
+/* Message log */
+.log-box {
+    background: #181818;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #93c5fd;
+    max-height: 90px;
+    overflow-y: auto;
+    margin-top: 8px;
+}
+
+/* Diagnostics footer */
+.diag-footer {
+    border-top: 1px solid #383838;
+    padding-top: 12px;
+    margin-top: 20px;
+    font-size: 11px;
+    color: #777;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.diag-item {
+    word-break: break-all;
+}
+
+a {
+    color: #60a5fa;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}

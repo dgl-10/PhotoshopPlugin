@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Webview Test</title>
+    <style>
+        body {
+            background-color: #23272e;
+            color: #dcdfe4;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-size: 13px;
+            padding: 20px;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        .card {
+            background: #282c34;
+            border: 1px solid #3e4451;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .badge {
+            display: inline-block;
+            background: #98c379;
+            color: #1e1e1e;
+            font-weight: bold;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 16px;
+            color: #61afef;
+        }
+        p {
+            line-height: 1.5;
+            margin: 8px 0;
+        }
+        .diag-item {
+            font-family: monospace;
+            font-size: 11px;
+            background: #1e2227;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-top: 4px;
+            word-break: break-all;
+        }
+        button {
+            background: #4b5263;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 14px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-top: 8px;
+        }
+        button:hover {
+            background: #5c6370;
+        }
+        button.primary {
+            background: #61afef;
+            color: #1e1e1e;
+            font-weight: bold;
+        }
+        button.primary:hover {
+            background: #528bcc;
+        }
+        input {
+            width: 100%;
+            background: #1e2227;
+            border: 1px solid #3e4451;
+            color: #fff;
+            padding: 8px;
+            border-radius: 4px;
+            box-sizing: border-box;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <span class="badge">LOCAL PLUGIN SOURCE</span>
+        <h2>Local Webview Rendering Test (plugin:/...)</h2>
+        <p>This page is loaded directly from plugin storage via <code>plugin:/local-webview-test.html</code>.</p>
+        <p>This confirms that local webview rendering and permissions (UXP 8.0+) are functional.</p>
+    </div>
+
+    <div class="card">
+        <h3>Page Diagnostics</h3>
+        <div>Location:</div>
+        <div class="diag-item" id="diag-loc">Detecting...</div>
+        <div style="margin-top: 8px;">User Agent:</div>
+        <div class="diag-item" id="diag-ua">Detecting...</div>
+        <div style="margin-top: 8px;">DPR:</div>
+        <div class="diag-item" id="diag-dpr">Detecting...</div>
+        <div style="margin-top: 8px;">Loaded At:</div>
+        <div class="diag-item" id="diag-time">Detecting...</div>
+    </div>
+
+    <div class="card">
+        <h3>Focus & Keyboard Test</h3>
+        <input type="text" placeholder="Type here to test typing in local webview...">
+    </div>
+
+    <div class="card">
+        <h3>Bridge Actions</h3>
+        <button class="primary" id="btn-ping">Send Ping to Plugin</button>
+        <button id="btn-close">Close Dialog via Bridge</button>
+        <div id="log-box" style="margin-top: 10px; font-family: monospace; font-size: 11px; color: #98c379;">Log: waiting...</div>
+    </div>
+
+    <script>
+        const logBox = document.getElementById('log-box');
+        function log(msg) {
+            logBox.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        }
+
+        document.getElementById('diag-loc').textContent = window.location.href;
+        document.getElementById('diag-ua').textContent = navigator.userAgent;
+        document.getElementById('diag-dpr').textContent = window.devicePixelRatio;
+        document.getElementById('diag-time').textContent = new Date().toISOString();
+
+        document.getElementById('btn-ping').addEventListener('click', () => {
+            if (window.uxpHost && typeof window.uxpHost.postMessage === 'function') {
+                window.uxpHost.postMessage({ type: 'local-ping', time: Date.now() });
+                log('Sent local-ping to plugin');
+            } else {
+                log('window.uxpHost not found');
+            }
+        });
+
+        document.getElementById('btn-close').addEventListener('click', () => {
+            if (window.uxpHost && typeof window.uxpHost.postMessage === 'function') {
+                window.uxpHost.postMessage({ type: 'close-dialog' });
+                log('Sent close-dialog to plugin');
+            } else {
+                log('window.uxpHost not found');
+            }
+        });
+
+        window.addEventListener('message', (e) => {
+            log(`Received from plugin: ${JSON.stringify(e.data)}`);
+        });
+    </script>
+</body>
+</html>

@@ -12,6 +12,7 @@ const settings = require('./modules/settings.js');
 const helper = require('./modules/helper.js');
 const imageUtils = require('./modules/image-utils.js');
 const assistantPanel = require('./modules/agent-panel.js');
+const webviewExperiment = require('./modules/webview-experiment.js');
 
 const { entrypoints, versions } = require("uxp");
 
@@ -71,6 +72,11 @@ function init() {
                     "-",
                     { id: "aiAssistant", label: "FromPS / ToPS AI..." },
                     "-",
+                    { id: "testWebviewNonModal", label: "[TEST] Webview in Dialog (Non-modal)" },
+                    { id: "testWebviewModal", label: "[TEST] Webview in Dialog (Modal)" },
+                    { id: "testWebviewPanel", label: "[TEST] Webview in Panel (Toggle)" },
+                    { id: "testWebviewLocal", label: "[TEST] Webview Local Page (plugin:/...)" },
+                    "-",
                     { id: "settings", label: "Settings..." }
                 ],
                 invokeMenu(id) {
@@ -78,6 +84,8 @@ function init() {
                         handleClearAll();
                     } else if (id === "aiAssistant") {
                         showAssistantDialog();
+                    } else if (id.startsWith("testWebview")) {
+                        webviewExperiment.handleMenu(id);
                     } else if (id === "settings") {
                         settings.showSettingsDialog();
                     }
