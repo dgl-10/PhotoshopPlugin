@@ -1,11 +1,12 @@
 'use strict';
 
 /**
- * What the AI Assist dialog in the plugin talks to.
+ * What the FromPS / ToPS AI line in the plugin talks to.
  *
- * The dialog displays the MCP connection and task state, can explicitly close an active
- * Photoshop task, and provides MCP registration commands. These routes are protected by
- * the plugin token, like the rest of the plugin's privileged endpoints.
+ * These routes report the MCP connection and task state, can explicitly close an active
+ * Photoshop task, provide MCP registration commands, and can ask Helper to bring the AI
+ * Assist window to the front. All of them are protected by the plugin token, like the rest
+ * of the plugin's privileged endpoints.
  */
 
 const express = require('express');
@@ -18,9 +19,11 @@ const { buildInstallCommands, buildAgentInstructions, runInstall } = require('./
  * @param {object} options
  * @param {object} options.service - The agent service from agent/index.js.
  * @param {number} options.port - Helper's HTTP port, for the setup commands.
+ * @param {(options?: {section?: string}) => void} options.openAssistWindow - Opens or
+ *   focuses the AI Assist window; see agent/assist-window.js.
  * @returns {import('express').Router}
  */
-function createAgentRouter({ service, port }) {
+function createAgentRouter({ service, port, openAssistWindow }) {
     const router = express.Router();
 
     router.get('/state', (req, res) => {
@@ -48,6 +51,15 @@ function createAgentRouter({ service, port }) {
         // happens on an explicit press in the panel.
         const outcome = await runInstall({ cli, port });
         res.json(outcome);
+    });
+
+    // The line's window button and its "How to connect an agent" link both go through
+    // here: the line itself cannot open a window, only ask Helper — a background
+    // application — to bring its own window forward.
+    router.post('/open-window', (req, res) => {
+        const section = req.body && req.body.section;
+        openAssistWindow({ section });
+        res.json({ ok: true });
     });
 
     return router;

@@ -17,23 +17,23 @@
             },
             "minimumSize": {
                 "width": 260,
-                "height": 341
+                "height": 386
             },
             "maximumSize": {
                 "width": 596,
-                "height": 647
+                "height": 692
             },
             "preferredDockedSize": {
                 "width": 260,
-                "height": 647
+                "height": 692
             },
             "preferredFloatingSize": {
                 "width": 260,
-                "height": 647
+                "height": 692
             },
             "__horizonalSize": {
                 "width": 520,
-                "height": 341
+                "height": 386
             },
             "icons": [
                 {

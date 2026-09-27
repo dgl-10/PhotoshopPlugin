@@ -1,3 +1,5 @@
+'use strict';
+
 const { app } = require('electron');
 const path = require('node:path');
 
@@ -16,32 +18,41 @@ const path = require('node:path');
  * - userProvidersPath:   the user's own models and changes, laid over the shared list.
  * downloadedProvidersPath is where the downloaded shared list is saved; it is null in
  * development, where nothing is downloaded.
+ *
+ * The knowledge base is downloaded from the repository into downloadedKnowledgeBasePath
+ * (a folder, not a file). In development it is null: the agent reads the local
+ * knowledge-base/ folder from the project directory instead.
  */
 function getConfigPaths() {
     if (app && app.isPackaged) {
         const userDataPath = app.getPath('userData');
         const downloadedProvidersPath = path.join(userDataPath, 'providers.remote.json');
         return {
-            envPath:                 path.join(userDataPath, '.env'),
-            sharedProvidersPath:     downloadedProvidersPath,
+            envPath:                     path.join(userDataPath, '.env'),
+            sharedProvidersPath:         downloadedProvidersPath,
             downloadedProvidersPath,
-            userProvidersPath:       path.join(userDataPath, 'providers.user.json'),
+            userProvidersPath:           path.join(userDataPath, 'providers.user.json'),
             userDataPath,
             // process.resourcesPath points to <app>/resources/ on Windows
             // and <app>.app/Contents/Resources/ on macOS
-            resourcesPath:           process.resourcesPath
+            resourcesPath:               process.resourcesPath,
+            // Folder where the downloaded author knowledge base is stored (mirrors the
+            // knowledge-base/ directory from the repository main branch).
+            downloadedKnowledgeBasePath: path.join(userDataPath, 'knowledge-base')
         };
     }
 
     // Development: keep reading from the project directory as before
     const devRoot = path.join(__dirname, '..');
     return {
-        envPath:                 path.join(devRoot, '.env'),
-        sharedProvidersPath:     path.join(devRoot, 'providers.template.json'),
-        downloadedProvidersPath: null,
-        userProvidersPath:       path.join(devRoot, 'providers.user.json'),
-        userDataPath:            devRoot,
-        resourcesPath:           devRoot
+        envPath:                     path.join(devRoot, '.env'),
+        sharedProvidersPath:         path.join(devRoot, 'providers.template.json'),
+        downloadedProvidersPath:     null,
+        userProvidersPath:           path.join(devRoot, 'providers.user.json'),
+        userDataPath:                devRoot,
+        resourcesPath:               devRoot,
+        // null signals "no download in dev mode": agent reads local knowledge-base/ directly
+        downloadedKnowledgeBasePath: null
     };
 }
 

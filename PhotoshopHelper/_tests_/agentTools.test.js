@@ -137,9 +137,9 @@ test('ps_start_task hands over the rules, the knowledge base and the document', 
     knowledgeBase.writeArticle({
         id: 'curves', title: 'Curves', problem: 'adding a curves layer', body: 'text'
     });
-    knowledgeBase.ensureUserLayer();
+    fs.mkdirSync(knowledgeBase.paths.authorDir, { recursive: true });
     fs.writeFileSync(
-        path.join(knowledgeBase.paths.userDir, 'rules.md'),
+        path.join(knowledgeBase.paths.authorDir, 'rules.md'),
         'Look first, change, then check.',
         'utf8'
     );
@@ -207,13 +207,13 @@ test('with no document open the task does not start', async context => {
     assert.equal(tasks.getCurrent(), null, 'the task slot is left free');
 });
 
-test('with the assistant dialog closed the agent is told exactly what to ask for', async context => {
+test('with the plugin\'s AI line off the agent is told exactly what to ask for', async context => {
     const { tools, tasks } = makeTools(context, { __disconnected: true });
 
     const result = await tools.call('ps_start_task', { intent: 'anything' });
 
     assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /AI Assist/);
+    assert.match(result.content[0].text, /FromPS \/ ToPS AI/);
     assert.equal(tasks.getCurrent(), null);
 });
 
@@ -1105,7 +1105,7 @@ test('finishing frees the slot after a knowledge-base contribution', async conte
 
     const finished = await tools.call('ps_finish_task', { task_id: taskId, summary: 'done' });
 
-    assert.match(finished.content[0].text, /report is in the AI Assist dialog/);
+    assert.match(finished.content[0].text, /report is in the AI Assist window/);
     assert.doesNotMatch(finished.content[0].text, /curves-clipped/);
     assert.equal(tasks.getCurrent(), null);
 });
@@ -1228,4 +1228,21 @@ test('ps_kb_read enforces validation rules, task check, and hard limit of 4', as
         article_ids: ['art-b']
     });
     assert.equal(badTaskRes.isError, true);
+});
+
+test('ps_start_task informs agent when knowledge base and rules are not downloaded yet', async context => {
+    // When makeTools creates folders, authorDir is empty and does not exist unless created.
+    // If authorDir does not exist, ps_start_task must say they have not been downloaded yet,
+    // NOT "The base is empty so far" or "(No rules file was found)".
+    const { tools, knowledgeBase } = makeTools(context, { agent_start_task: startAnswer() });
+    assert.equal(fs.existsSync(knowledgeBase.paths.authorDir), false);
+
+    const started = await tools.call('ps_start_task', { intent: 'check missing kb' });
+    const text = started.content[0].text;
+
+    assert.ok(!started.isError);
+    assert.match(text, /The rules and author knowledge base have not been downloaded yet/);
+    assert.doesNotMatch(text, /No rules file was found/);
+    assert.match(text, /The knowledge base has not been downloaded yet/);
+    assert.doesNotMatch(text, /The base is empty so far/);
 });

@@ -204,7 +204,10 @@ test('one use moves one counter when an author article has a user-layer note twi
     kb.markHelped({ id: 'shared' });
 
     const stats = JSON.parse(fs.readFileSync(path.join(userDir, 'usage-stats.json'), 'utf8'));
-    assert.deepEqual(stats, { 'author:shared': { helped: 1, failed: 1 } });
+    // Author-layer stats now include a contentHash field for change detection.
+    assert.equal(typeof stats['author:shared'].contentHash, 'string');
+    assert.equal(stats['author:shared'].helped, 1);
+    assert.equal(stats['author:shared'].failed, 1);
 
     const lines = kb.formatIndex().split('\n');
     assert.match(lines[0], /\[author, .*helped 1, failed 1/);
@@ -225,7 +228,7 @@ test('articles with the same id in both layers are both returned', context => {
     assert.match(article.text, /the user says this/);
 });
 
-test('the rules come from the user layer when there is a copy there', context => {
+test('the rules come from the author layer even when the user layer has a copy', context => {
     const { kb, authorDir, userDir } = makeKnowledgeBase(context);
     fs.writeFileSync(path.join(authorDir, 'rules.md'), 'the shipped rules', 'utf8');
 
@@ -233,7 +236,7 @@ test('the rules come from the user layer when there is a copy there', context =>
 
     fs.mkdirSync(userDir, { recursive: true });
     fs.writeFileSync(path.join(userDir, 'rules.md'), 'my own rules', 'utf8');
-    assert.equal(kb.readRules(), 'my own rules');
+    assert.equal(kb.readRules(), 'the shipped rules');
 });
 
 test('asking for an article that does not exist says what to do instead', context => {
@@ -242,4 +245,259 @@ test('asking for an article that does not exist says what to do instead', contex
 
     assert.equal(article.found, false);
     assert.match(article.text, /ps_kb_contribute/);
+});
+
+// ---------------------------------------------------------------------------
+// Content-hash mark reset for author-layer articles
+// ---------------------------------------------------------------------------
+
+test('author article counters reset to zero when the article text changes', context => {
+    const { kb, authorDir, userDir } = makeKnowledgeBase(context);
+    writeArticleFile(authorDir, 'recipe', {
+        id: 'recipe', title: 'A recipe', problem: 'p', confidence: 'author-verified'
+    }, 'original text');
+
+    // Record a use
+    kb.markHelped({ id: 'recipe' });
+    assert.match(kb.readArticle('recipe').text, /helped 1 times/);
+
+    // Author updates the article text
+    writeArticleFile(authorDir, 'recipe', {
+        id: 'recipe', title: 'A recipe', problem: 'p', confidence: 'author-verified'
+    }, 'updated text — totally different');
+
+    // Counters should now appear as zero because the hash changed
+    assert.match(kb.readArticle('recipe').text, /helped 0 times/);
+    assert.match(kb.readArticle('recipe').text, /did not work 0 times/);
+    assert.doesNotMatch(kb.readArticle('recipe').text, /helped 1 times/);
+});
+
+test('user-layer article counters are NOT reset when their text changes', context => {
+    const { kb, userDir } = makeKnowledgeBase(context);
+    kb.writeArticle({ id: 'mine', title: 'T', problem: 'p', body: 'v1' });
+
+    kb.markHelped({ id: 'mine' });
+    assert.match(kb.readArticle('mine').text, /helped 1 times/);
+
+    // Overwrite the user article file directly to simulate an edit
+    writeArticleFile(userDir, 'mine', {
+        id: 'mine', title: 'T', problem: 'p', confidence: 'agent-written',
+        helped: 0, failed: 0
+    }, 'v2 — different body');
+
+    // User-layer article uses sidecar counters without hash checks
+    assert.match(kb.readArticle('mine').text, /helped 1 times/);
+});
+
+test('after a hash reset the next mark starts from one with the new hash', context => {
+    const { kb, authorDir, userDir } = makeKnowledgeBase(context);
+    writeArticleFile(authorDir, 'recipe2', {
+        id: 'recipe2', title: 'R', problem: 'p', confidence: 'author-verified'
+    }, 'v1');
+
+    kb.markHelped({ id: 'recipe2' });
+
+    // Update article content (hash changes)
+    writeArticleFile(authorDir, 'recipe2', {
+        id: 'recipe2', title: 'R', problem: 'p', confidence: 'author-verified'
+    }, 'v2 completely different');
+
+    // Mark helped again — should start from 1, not 2
+    kb.markHelped({ id: 'recipe2' });
+    assert.match(kb.readArticle('recipe2').text, /helped 1 times/);
+
+    // The stored hash must match the v2 content
+    const stats = JSON.parse(fs.readFileSync(path.join(userDir, 'usage-stats.json'), 'utf8'));
+    assert.equal(stats['author:recipe2'].helped, 1);
+});
+
+test('markFailed on an author article stores a content hash in the user note front matter', context => {
+    const { kb, authorDir, userDir } = makeKnowledgeBase(context);
+    writeArticleFile(authorDir, 'fragile', {
+        id: 'fragile', title: 'Fragile', problem: 'p', confidence: 'author-verified'
+    }, 'author recipe v1');
+
+    kb.markFailed({ id: 'fragile', note: 'it crashed', taskId: 't-1' });
+
+    const notePath = path.join(userDir, 'articles', 'fragile.md');
+    const noteContent = fs.readFileSync(notePath, 'utf8');
+    assert.match(noteContent, /author_content_hash:/);
+});
+
+// ---------------------------------------------------------------------------
+// formatIndex "not yet downloaded" state
+// ---------------------------------------------------------------------------
+
+test('formatIndex reports "not yet downloaded" when authorDir is missing', context => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-kb-'));
+    const authorDir = path.join(root, 'not-there');
+    const userDir = path.join(root, 'knowledge-base.user');
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const kb = createKnowledgeBase({
+        authorDir,
+        userDir,
+        logger: { info() {}, warn() {}, error() {} }
+    });
+
+    const index = kb.formatIndex();
+    assert.match(index, /not been downloaded yet/);
+    assert.doesNotMatch(index, /knowledge base is empty/);
+});
+
+test('formatIndex reports "empty" when authorDir exists but has no articles', context => {
+    const { kb } = makeKnowledgeBase(context);
+    // makeKnowledgeBase creates the authorDir and its articles/ folder
+    const index = kb.formatIndex();
+    assert.match(index, /knowledge base is empty/);
+    assert.doesNotMatch(index, /not been downloaded yet/);
+});
+
+// ---------------------------------------------------------------------------
+// helper: version field filtering
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a knowledge base with a specific Helper version.
+ */
+function makeKnowledgeBaseVersioned(context, helperVersion) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-kb-'));
+    const authorDir = path.join(root, 'knowledge-base');
+    const userDir = path.join(root, 'knowledge-base.user');
+    fs.mkdirSync(path.join(authorDir, 'articles'), { recursive: true });
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const kb = createKnowledgeBase({
+        authorDir,
+        userDir,
+        helperVersion,
+        logger: { info() {}, warn() {}, error() {} }
+    });
+    return { kb, authorDir, userDir };
+}
+
+test('article without helper: field is visible to any version', context => {
+    const { kb, authorDir } = makeKnowledgeBaseVersioned(context, '1.0.0');
+    writeArticleFile(authorDir, 'no-gate', {
+        id: 'no-gate', title: 'No gate', problem: 'p', confidence: 'author-verified'
+    }, 'body');
+
+    const list = kb.listArticles();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, 'no-gate');
+});
+
+test('article with helper: matching the running version is visible', context => {
+    const { kb, authorDir } = makeKnowledgeBaseVersioned(context, '1.3.0');
+    writeArticleFile(authorDir, 'exact', {
+        id: 'exact', title: 'Exact', problem: 'p', confidence: 'author-verified',
+        helper: '1.3.0'
+    }, 'body');
+
+    assert.equal(kb.listArticles().length, 1);
+});
+
+test('article with helper: higher than running version is excluded from list', context => {
+    const { kb, authorDir } = makeKnowledgeBaseVersioned(context, '1.2.0');
+    writeArticleFile(authorDir, 'future', {
+        id: 'future', title: 'Future', problem: 'p', confidence: 'author-verified',
+        helper: '1.3.0'
+    }, 'body');
+
+    assert.equal(kb.listArticles().length, 0);
+    assert.doesNotMatch(kb.formatIndex(), /future/);
+});
+
+test('reading a version-gated article by id returns a "requires newer Helper" notice', context => {
+    const { kb, authorDir } = makeKnowledgeBaseVersioned(context, '1.2.0');
+    writeArticleFile(authorDir, 'gated', {
+        id: 'gated', title: 'Gated', problem: 'p', confidence: 'author-verified',
+        helper: '2.0.0'
+    }, 'body that should not appear');
+
+    const result = kb.readArticle('gated');
+    assert.equal(result.found, true); // article exists, just gated
+    assert.match(result.text, /requires Helper 2\.0\.0 or newer/);
+    assert.doesNotMatch(result.text, /body that should not appear/);
+});
+
+test('article with lower helper: than running version is visible', context => {
+    const { kb, authorDir } = makeKnowledgeBaseVersioned(context, '2.0.0');
+    writeArticleFile(authorDir, 'old-compat', {
+        id: 'old-compat', title: 'Old compat', problem: 'p', confidence: 'author-verified',
+        helper: '1.0.0'
+    }, 'body');
+
+    assert.equal(kb.listArticles().length, 1);
+    const result = kb.readArticle('old-compat');
+    assert.match(result.text, /body/);
+    assert.doesNotMatch(result.text, /requires Helper/);
+});
+
+// ---------------------------------------------------------------------------
+// Hiding and unmixing failure notes when author article changes
+// ---------------------------------------------------------------------------
+
+test('old failure notes on an author article are hidden from list and read when the article changes', context => {
+    const { kb, authorDir, userDir } = makeKnowledgeBase(context);
+    writeArticleFile(authorDir, 'tricky', {
+        id: 'tricky', title: 'Tricky', problem: 'p', confidence: 'author-verified'
+    }, 'original author text');
+
+    // Add a failure note
+    kb.markFailed({ id: 'tricky', note: 'failed because of parameter X', taskId: 't-1' });
+
+    // Note is currently visible
+    assert.match(kb.readArticle('tricky').text, /failed because of parameter X/);
+    assert.equal(kb.listArticles().some(a => a.layer === 'user' && a.id === 'tricky'), true);
+
+    // Author edits tricky.md
+    writeArticleFile(authorDir, 'tricky', {
+        id: 'tricky', title: 'Tricky', problem: 'p', confidence: 'author-verified'
+    }, 'corrected author text that fixes parameter X');
+
+    // The old note must now be hidden from both listArticles and readArticle!
+    assert.doesNotMatch(kb.readArticle('tricky').text, /failed because of parameter X/);
+    assert.equal(kb.listArticles().some(a => a.layer === 'user' && a.id === 'tricky'), false);
+});
+
+test('a new failure note after an author article change does not mix with old notes', context => {
+    const { kb, authorDir, userDir } = makeKnowledgeBase(context);
+    writeArticleFile(authorDir, 'tricky2', {
+        id: 'tricky2', title: 'Tricky2', problem: 'p', confidence: 'author-verified'
+    }, 'v1 text');
+
+    // Add first failure note
+    kb.markFailed({ id: 'tricky2', note: 'old failure in v1', taskId: 't-1' });
+    assert.match(kb.readArticle('tricky2').text, /old failure in v1/);
+
+    // Author updates tricky2.md
+    writeArticleFile(authorDir, 'tricky2', {
+        id: 'tricky2', title: 'Tricky2', problem: 'p', confidence: 'author-verified'
+    }, 'v2 text');
+
+    // Add new failure note for v2
+    kb.markFailed({ id: 'tricky2', note: 'new failure in v2', taskId: 't-2' });
+
+    // The read result should only contain the new failure, NOT the old failure!
+    const article = kb.readArticle('tricky2');
+    assert.match(article.text, /new failure in v2/);
+    assert.doesNotMatch(article.text, /old failure in v1/);
+});
+
+test('hasAuthorBase reports accurately whether the author directory exists', context => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-kb-'));
+    const missingDir = path.join(root, 'non-existent');
+    const userDir = path.join(root, 'user');
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const kbWithout = createKnowledgeBase({
+        authorDir: missingDir,
+        userDir,
+        logger: { info() {}, warn() {}, error() {} }
+    });
+    assert.equal(kbWithout.hasAuthorBase(), false);
+
+    fs.mkdirSync(missingDir, { recursive: true });
+    assert.equal(kbWithout.hasAuthorBase(), true);
 });

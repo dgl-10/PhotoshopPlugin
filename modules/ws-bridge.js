@@ -208,8 +208,8 @@ function createWsBridgeClient({ url, token, runtimeId = null, maxReconnectDelay 
     }
 
     function disconnect(options = {}) {
-        const reason = options.reason || 'Assistant panel closed';
-        const reasonCode = options.reasonCode || 'assistant-dialog-closed';
+        const reason = options.reason || 'FromPS / ToPS AI line turned off';
+        const reasonCode = options.reasonCode || 'ai-line-off';
         const intentional = options.intentional !== false;
 
         intentionalClose = true;

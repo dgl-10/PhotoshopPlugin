@@ -1,5 +1,5 @@
 ---
-id: add-layer-mask-from-pixels
+id: mask-add-from-pixels
 title: Put a layer mask on a layer from pixels you generated
 problem: adding a layer mask and filling it with your own grayscale data
 confidence: author-verified
@@ -37,6 +37,11 @@ await imaging.putLayerMask({
 `using` takes `hideAll` for a black mask or `revealAll` for a white one. Start from
 `hideAll` when your data covers only part of the document: everything you do not write
 stays hidden, which is usually what you want.
+
+This recipe is for a **new** mask, and the plugin uses it daily. Writing into a mask that
+already exists — for example the white mask every new adjustment layer comes with — is a
+different case: an agent saw the data land but the image not update outside the area the
+mask had used before. See `mask-rewrite-image-not-updated`.
 
 ## Building the pixel data
 

@@ -63,13 +63,13 @@ sp-menu-item,
 
 .global-controls sp-dropdown {
     width: 100%;
-    max-width: 568px;
-    /* Two cards (280*2) + gap (8) */
+    min-width: 242px;
+    max-width: 572px;
     margin: 0 4px;
 }
 
 /* Match single card width when they wrap */
-@media (max-width: 440px) {
+@media (max-width: 530px) {
     .global-controls sp-dropdown {
         max-width: 280px;
     }
@@ -807,358 +807,195 @@ dialog::backdrop {
     border-left: none !important;
     border-top: 1px solid var(--border-color) !important;
 }
-/* ── AI Assist dialog ─────────────────────────────────────────────────────── */
 
-/* The dialog has no padding of its own here: modules/agent-panel.js measures .assistant
-   and resizes the window to it, so everything the window shows has to live inside it.
-   Spacing is done with margins throughout: flex "gap" does not take effect in UXP dialogs. */
-#assistant-dialog {
-    padding: 0;
-    width: 320px;
+/* ── FromPS / ToPS AI line ────────────────────────────────────────────────── */
+
+/* One line of fixed height at the bottom of the panel, drawn by modules/agent-line.js.
+   Hidden by default: without it the panel looks exactly like before this feature existed
+   (see ui02.00 in the PreRelease docs). Spans the full panel width like .global-controls,
+   and never resizes itself — long text is ellipsized instead; the full text lives in the
+   AI Assist window in Helper. */
+.agent-line {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 242px;
+    max-width: 572px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     box-sizing: border-box;
-    overflow: hidden;
+    height: 40px;
+    padding: 0 6px;
+    margin: 4px 4px 0;
+    background: #333333;
+    border: 1px solid #4a4a4a;
+    border-radius: var(--border-radius);
 }
 
-.assistant {
-    width: 100%;
+/* Match single card width when cards wrap into vertical layout */
+@media (max-width: 530px) {
+    .agent-line {
+        max-width: 280px;
+    }
+}
+
+/* The connection circle. Colour is the only thing that changes with connection state; it
+   is never a button. Its own margin widens the gap to the text specifically — the 8px
+   flex gap alone reads as too tight next to a filled 24px circle. */
+.agent-line-conn {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    margin-right: 5px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+}
+
+.agent-line-conn-yellow {
+    border-color: #a8843f;
+    background: rgba(229, 178, 93, 0.16);
+    color: #e5b25d;
+}
+
+.agent-line-conn-green {
+    border-color: #2d9d78;
+    background: rgba(45, 157, 120, 0.2);
+    color: #3fbf94;
+}
+
+.agent-line-conn-red {
+    border-color: #8f3b40;
+    background: rgba(227, 72, 80, 0.14);
+    color: #e34850;
+}
+
+.agent-line-text {
+    flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    box-sizing: border-box;
-    background: #323232;
-    color: #e6e6e6;
-}
-
-.assistant-header {
-    height: 38px;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding: 0 12px;
-    border-bottom: 1px solid #3e3e3e;
-}
-
-.assistant-title {
-    flex: 1;
-    font-size: 12px;
-    font-weight: bold;
-}
-
-.assistant-status {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    height: 20px;
-    padding: 0 8px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: bold;
-}
-
-.assistant-status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 3px;
+    justify-content: center;
     margin-right: 6px;
 }
 
-.assistant-status-ok { background: rgba(63, 191, 148, 0.14); color: #7fdcb8; }
-.assistant-status-ok .assistant-status-dot { background: #3fbf94; }
-.assistant-status-busy { background: rgba(75, 156, 245, 0.16); color: #9cc8fb; }
-.assistant-status-busy .assistant-status-dot { background: #4b9cf5; }
-.assistant-status-warn { background: rgba(232, 163, 61, 0.16); color: #f2c27a; }
-.assistant-status-warn .assistant-status-dot { background: #e8a33d; }
-.assistant-status-error { background: rgba(229, 87, 95, 0.16); color: #f29aa0; }
-.assistant-status-error .assistant-status-dot { background: #e5575f; }
-.assistant-status-muted { background: rgba(255, 255, 255, 0.08); color: #c8c8c8; }
-.assistant-status-muted .assistant-status-dot { background: #9a9a9a; }
-
-.assistant-section {
+.agent-line-row1,
+.agent-line-row2 {
     display: flex;
-    flex-direction: column;
-    padding: 12px 14px;
-}
-
-.assistant-heading {
-    font-size: 14px;
-    font-weight: bold;
-    line-height: 20px;
-    color: #ececec;
-}
-
-.assistant-ellipsis {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-
-.assistant-meta {
-    display: flex;
-    flex-direction: row;
-    font-size: 11px;
-    line-height: 15px;
-    color: #9d9d9d;
-    margin-bottom: 2px;
-}
-
-/* A document name can be longer than the window; it is cut, the task's state is not. */
-.assistant-meta-document {
-    flex: 1;
+    align-items: center;
+    gap: 4px;
     min-width: 0;
+}
+
+/* A small icon shown in front of the row's text for some states (a checkmark, a pause
+   glyph, a greyed-out abort mark, a cursor). Hidden and emptied the rest of the time. */
+.agent-line-glyph {
+    flex: none;
+    display: none;
+    align-items: center;
+}
+
+.agent-line-glyph.shown {
+    display: flex;
+}
+
+.agent-line-text1 {
+    font-size: 12px;
+    font-weight: 700;
+    color: #e0e0e0;
+    white-space: nowrap;
     overflow: hidden;
-    white-space: nowrap;
     text-overflow: ellipsis;
+    min-width: 0;
 }
 
-.assistant-meta-when {
-    flex-shrink: 0;
-    white-space: nowrap;
+.agent-line-text1.agent-line-error {
+    color: #f08a8a;
 }
 
-/* A plain clickable line rather than a Spectrum button: it must stay as small as the
-   text around it. */
-.assistant-toggle {
+/* "Aborted: <task>" is deliberately dimmer than a running or done task's name. */
+.agent-line-text1.agent-line-muted {
+    color: #c8c8c8;
+}
+
+.agent-line-text2 {
     font-size: 11px;
-    line-height: 16px;
-    color: #a9a9a9;
-    cursor: pointer;
-}
-
-.assistant-toggle:hover {
-    color: #e6e6e6;
-}
-
-.assistant-muted {
-    font-size: 12px;
-    line-height: 17px;
-    color: #a9a9a9;
-}
-
-.assistant-idle {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding: 10px 14px;
-}
-
-/* The one line that says what the agent is doing now and how long ago it last acted. */
-.assistant-live {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    height: 24px;
-    margin-top: 10px;
-    padding: 0 8px;
-    border-radius: 4px;
-    background: #2a2a2a;
-    border: 1px solid #2a2a2a;
-}
-
-.assistant-live-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 3px;
-    margin-right: 8px;
-    background: #4b9cf5;
-}
-
-.assistant-live-text {
-    flex: 1;
-    font-size: 12px;
-    color: #d8d8d8;
+    color: #a8a8a8;
+    white-space: nowrap;
     overflow: hidden;
-    white-space: nowrap;
     text-overflow: ellipsis;
+    min-width: 0;
 }
 
-.assistant-live-age {
-    margin-left: 8px;
-    font-size: 11px;
-    color: #9d9d9d;
-}
-
-.assistant-live-silent {
-    background: rgba(232, 163, 61, 0.1);
-    border-color: rgba(232, 163, 61, 0.35);
-}
-
-.assistant-live-silent .assistant-live-dot { background: #e8a33d; }
-.assistant-live-silent .assistant-live-age { color: #f2c27a; font-weight: bold; }
-
-.assistant-message {
-    margin-top: 8px;
-    font-size: 12px;
-    line-height: 17px;
-    color: #cfcfcf;
-}
-
-.assistant-summary {
-    margin-top: 12px;
-}
-
-.assistant-label {
-    font-size: 11px;
+.agent-line-text2.agent-line-warn {
+    color: #f0a54a;
     font-weight: bold;
-    line-height: 15px;
-    color: #9d9d9d;
-    margin-bottom: 4px;
 }
 
-.assistant-summary-text {
-    font-size: 12px;
-    line-height: 17px;
-    color: #d8d8d8;
-    white-space: pre-wrap;
+/* "Your turn: finish in the Photoshop dialog" reads as full-brightness text, not the
+   muted secondary line every other state uses for row 2. */
+.agent-line-text2.agent-line-bright {
+    color: #e0e0e0;
 }
 
-.assistant-actions {
+/* Only a real destination is ever styled as a link — see the "no dead-looking blue text"
+   rule in the ui02.00 spec. */
+.agent-line-link2 {
+    font-size: 11px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+/* Same pattern as .setting-sort-buttons sp-action-button above: Spectrum's own component
+   styling wins over a plain background/border rule on the host, so overrides need
+   !important, and the icon's colour is set on the slotted <svg> itself rather than relied
+   on to inherit from the button — sp-action-button's own default look is "quiet" (no fill
+   until hovered), which next to the icon-only connection circle reads as barely a button. */
+.agent-line-btn {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    box-sizing: border-box;
     display: flex;
-    flex-direction: row;
     align-items: center;
-    justify-content: space-between;
-    margin-top: 12px;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid #5a5a5a !important;
+    border-radius: var(--border-radius) !important;
+    background: #3a3a3a !important;
+    color: #e0e0e0 !important;
 }
 
-.assistant-steps {
-    display: flex;
-    flex-direction: column;
-    margin-top: 6px;
-    padding: 8px 10px;
-    border-radius: 4px;
-    background: #2a2a2a;
-    font-size: 11px;
-    line-height: 17px;
-    color: #b8b8b8;
+#agent-line-abort {
+    margin-right: 4px;
 }
 
-.assistant-steps-more {
-    color: #999999;
+.agent-line-btn:hover {
+    background: #4a4a4a !important;
+    border-color: #707070 !important;
+    color: #ffffff !important;
 }
 
-.assistant-step-row {
-    display: flex;
-    flex-direction: row;
+.agent-line-btn svg {
+    width: 14px;
+    height: 14px;
+    color: inherit !important;
 }
 
-.assistant-step-time {
-    width: 34px;
-    color: #999999;
+/* The agent has been silent past the warning threshold: Abort task is how the person frees
+   Photoshop for the next one, so it stands out instead of sitting quiet. */
+.agent-line-btn-warn {
+    border-color: #f0a54a !important;
+    background: rgba(240, 165, 74, 0.16) !important;
+    color: #f0a54a !important;
 }
 
-.assistant-step-text {
-    flex: 1;
-    word-break: break-word;
-}
-
-.assistant-step-current {
-    color: #e6e6e6;
-}
-
-.assistant-link-row {
-    padding: 0 14px 12px;
-}
-
-.assistant-notice {
-    padding: 0 14px 12px;
-    font-size: 11px;
-    line-height: 15px;
-    color: #f29aa0;
-    white-space: pre-wrap;
-}
-
-/* Shown while a task runs or is paused: closing the window pauses the task, and the
-   native close button of the dialog cannot be intercepted, so this stays in sight. */
-.assistant-warning {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding: 8px 14px;
-    border-top: 1px solid rgba(232, 163, 61, 0.35);
-    background: rgba(232, 163, 61, 0.1);
-    font-size: 11px;
-    line-height: 15px;
-    color: #f2c27a;
-}
-
-.assistant-warning svg {
-    width: 13px;
-    height: 13px;
-    margin-right: 8px;
-}
-
-/* ── Connecting an agent ── */
-
-.assistant-setup-step {
-    display: flex;
-    flex-direction: row;
-    margin-top: 14px;
-}
-
-.assistant-setup-number {
-    width: 18px;
-    height: 18px;
-    border-radius: 9px;
-    margin-right: 10px;
-    background: #444444;
-    font-size: 11px;
-    font-weight: bold;
-    line-height: 18px;
-    text-align: center;
-}
-
-.assistant-setup-body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-.assistant-setup-title {
-    font-size: 12px;
-    font-weight: bold;
-    line-height: 17px;
-    margin-bottom: 2px;
-}
-
-/* Flex + explicit order, not just source order: sp-dropdown has been seen painting itself
-   after later siblings regardless of where it sits in the markup, so the stacking here is
-   pinned rather than left to whatever the component decides. */
-.assistant-setup-picker {
-    display: flex;
-    flex-direction: column;
-}
-
-.assistant-setup-picker sp-dropdown {
-    order: 1;
-    width: 100%;
-    margin-top: 4px;
-}
-
-.assistant-setup-actions {
-    order: 2;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    margin-top: 8px;
-}
-
-.assistant-setup-actions sp-link {
-    margin-left: 12px;
-}
-
-.assistant-setup-hint {
-    order: 3;
-    margin-top: 6px;
-}
-
-.assistant-setup-text {
-    order: 4;
-    margin-top: 8px;
-    padding: 8px 10px;
-    border-radius: 4px;
-    background: #262626;
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 10px;
-    line-height: 15px;
-    color: #cfcfcf;
-    white-space: pre-wrap;
-    word-break: break-word;
+.agent-line-btn-warn svg {
+    color: #f0a54a !important;
 }

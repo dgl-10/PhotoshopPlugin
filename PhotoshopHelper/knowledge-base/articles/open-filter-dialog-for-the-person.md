@@ -14,7 +14,7 @@ failed: 0
 
 Do this only when the person asked to have the dialog opened for them. Otherwise apply the
 command yourself, silently, with values you choose — names and parameters are in
-`filter-and-adjustment-commands`.
+`filter-commands` and `adjustment-layers`.
 
 ## The pattern
 
@@ -42,8 +42,8 @@ silently with whatever values it carries — a recording included.
   `_obj: "liquify"` does **not** work: Photoshop shows the person the alert
   `The command "<unknown>" is not currently available` and returns -128.
 
-Other names in `filter-and-adjustment-commands` are confirmed as names, but opening them as
-a dialog this way was only tried for the two above.
+Other names in `filter-commands` are confirmed as names, but opening them as a dialog this
+way was only tried for the two above.
 
 ## Reading -128
 

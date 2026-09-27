@@ -15,8 +15,8 @@
  *      the token yet. Now only authenticated sockets are tracked, and a command goes to
  *      exactly one of them — the most recent — because only one Photoshop panel is
  *      expected and two would execute the same command twice.
- *   3. The plugin used to connect on every start. Now it connects when the assistant
- *      panel is open; that side of the change lives in the plugin.
+ *   3. The plugin used to connect on every start. Now it connects when the "FromPS / ToPS
+ *      AI" line is turned on; that side of the change lives in the plugin.
  */
 
 const crypto = require('node:crypto');
@@ -88,6 +88,19 @@ function createWsBridgeServer({ port, token, logger, onClientChange }) {
 
     wss.on('listening', () => {
         log.info(`[ws-bridge] Listening on ws://127.0.0.1:${port}`);
+    });
+
+    // A listen failure arrives after the constructor has returned, so the caller's
+    // try/catch never sees it. Without this handler it is an unhandled 'error' event,
+    // which electron-log reports as a crash of the whole Helper. Only the AI line is
+    // actually lost, so it is logged and the rest of Helper keeps running.
+    wss.on('error', (error) => {
+        if (error.code === 'EADDRINUSE' || error.code === 'EACCES') {
+            log.error(`[ws-bridge] Port ${port} is unavailable (${error.code}); `
+                + 'the "FromPS / ToPS AI" line cannot connect.');
+            return;
+        }
+        log.error(`[ws-bridge] Server error: ${error.message}`);
     });
 
     /**
@@ -292,8 +305,8 @@ function createWsBridgeServer({ port, token, logger, onClientChange }) {
                                     id,
                                     'The Photoshop plugin restarted while this command was in flight. '
                                     + 'Its outcome is unknown, so it was not repeated automatically. '
-                                    + 'Reopen AI Assist, resume the task, and inspect the document before '
-                                    + 'retrying any change.'
+                                    + 'Turn the "FromPS / ToPS AI" line back on, resume the task, and '
+                                    + 'inspect the document before retrying any change.'
                                 );
                                 continue;
                             }
@@ -439,7 +452,8 @@ function createWsBridgeServer({ port, token, logger, onClientChange }) {
                     `Photoshop did not answer within ${Math.round(timeoutMs / 1000)} seconds. `
                     + (getConnectedClients() === 0
                         ? 'The connection to the FromPS / ToPS plugin is down. Ask the person '
-                            + 'to check that Photoshop and the plugin are open, then reopen AI Assist.'
+                            + 'to check that Photoshop and the plugin are open, then turn the '
+                            + '"FromPS / ToPS AI" line back on.'
                         : 'A heavy filter may still be holding Photoshop up.')
                 ));
             }, timeoutMs);

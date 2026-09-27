@@ -195,8 +195,8 @@ function createTaskSession(options = {}) {
             if (lastClosed && taskId && lastClosed.id === taskId) {
                 throw new TaskError(
                     `Task ${taskId} is no longer running: ${lastClosed.abortReason || lastClosed.state}. `
-                    + 'Tell the person what happened. Start a new task only after Photoshop and '
-                    + 'the FromPS / ToPS AI Assist connection are available.',
+                    + 'Tell the person what happened. Start a new task only after Photoshop is open '
+                    + 'and its "FromPS / ToPS AI" line is on.',
                     'TASK_ENDED'
                 );
             }
@@ -243,10 +243,12 @@ function createTaskSession(options = {}) {
             : 'the connection to Photoshop was lost';
         const recovery = task.suspension && task.suspension.requiresRebind
             ? `The plugin runtime restarted, so call ps_resume_task with task_id "${task.id}" `
-                + 'after the person reopens AI Assist. Inspect the document before repeating any change.'
+                + 'after the person turns the "FromPS / ToPS AI" line back on. Inspect the document '
+                + 'before repeating any change.'
             : 'Ask the person to check that Photoshop and the FromPS / ToPS plugin are open, '
-                + 'then reopen AI Assist. After the connection returns, continue with the same task_id '
-                + 'and inspect the document before repeating the interrupted operation.';
+                + 'then turn the "FromPS / ToPS AI" line back on. After the connection returns, '
+                + 'continue with the same task_id and inspect the document before repeating the '
+                + 'interrupted operation.';
 
         return `Task ${task.id} is paused because ${reason}. ${recovery} Do not call ps_start_task.`;
     }

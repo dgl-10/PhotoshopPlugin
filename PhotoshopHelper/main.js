@@ -76,6 +76,7 @@ const { spawnSync } = require('node:child_process');
 const { generate } = require('./apiGenerator');
 const { loadProvidersCatalog, findMissingEnvKeys } = require('./providers-catalog');
 const { createCatalogUpdater } = require('./providers-updater');
+const { createKbUpdater } = require('./kb-updater');
 const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
 const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest, maskAuthorizationHeader } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
@@ -85,6 +86,7 @@ const { createWsBridgeServer } = require('./ws-bridge');
 const { createMcpRouter } = require('./mcp-server');
 const { createAgentService, resolveAgentPaths } = require('./agent');
 const { createAgentRouter } = require('./agent/agent-api');
+const { initAssistWindow, openAssistWindow } = require('./agent/assist-window');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow, setPairingRefresher } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -168,8 +170,8 @@ let pairingRefreshTimer = null;
 const WS_BRIDGE_PORT = 18346;
 let wsBridgeServer = null;
 
-// The document agent: MCP tools plus the task state shown by AI Assist in the plugin.
-// Created once the config paths are known.
+// The document agent: MCP tools plus the task state shown by the plugin's line and by the
+// AI Assist window. Created once the config paths are known.
 let agentService = null;
 
 // Whether the agent's journal of MCP calls is written to disk. A development run always
@@ -177,8 +179,24 @@ let agentService = null;
 let agentJournalChecked = false;
 
 // Whether an MCP agent has ever started a task here. Read from user settings when the
-// service is built; AI Assist uses it to decide whether to show its setup instructions.
+// service is built; the line and the AI Assist window use it to decide whether to show
+// setup instructions.
 let agentSeenChecked = false;
+
+/**
+ * How long the plugin's "FromPS / ToPS AI" line may stay connected without any task before
+ * it closes itself. A development-only environment variable shortens it for testing; see
+ * .env.template. Production always uses the one-hour default.
+ *
+ * @returns {number} Milliseconds.
+ */
+function resolveAgentLineIdleTimeoutMs() {
+    const minutes = Number(process.env.PHOTOSHOP_HELPER_AGENT_LINE_IDLE_MINUTES);
+    if (Number.isFinite(minutes) && minutes > 0) {
+        return minutes * 60 * 1000;
+    }
+    return undefined; // Let agent/index.js apply its own one-hour default.
+}
 
 /**
  * Build the document agent service.
@@ -210,8 +228,12 @@ function initAgentService() {
             agentSeenChecked = true;
             markAgentSeen().catch(error => log.warn(`Could not remember the first agent: ${error.message}`));
         },
+        idleWithoutTaskMs: resolveAgentLineIdleTimeoutMs(),
+        helperVersion: VERSION,
         logger: log
     });
+
+    initAssistWindow({ agentService, port: PORT });
 
     // Creating the user's layer up front means the person finds the folder for their own
     // articles even before the agent has written anything into it.
@@ -227,6 +249,9 @@ function initAgentService() {
 // Keeps the model list current from the repository. It runs on the app update schedule
 // and from the tray, both of which exist only in packaged builds.
 const catalogUpdater = createCatalogUpdater({ logger: log });
+
+// Keeps the author knowledge base current from the repository on the same schedule.
+const kbUpdater = createKbUpdater({ logger: log });
 
 // WebHelper specific globals
 global.tasks = {};
@@ -404,8 +429,18 @@ function updateTrayMenu() {
             label: 'AI Agent for Photoshop',
             submenu: [
                 {
-                    label: 'Connect Your Agent (MCP)...',
-                    click: () => { void showMcpSetupDialog(); }
+                    label: 'AI Assist...',
+                    click: () => { void openAssistWindow({ section: 'connect' }); }
+                },
+                {
+                    // Development reads the local knowledge-base/ folder and downloads nothing.
+                    label: app.isPackaged
+                        ? 'Check for Knowledge Base Updates'
+                        : 'Check for Knowledge Base Updates (Dev Mode)',
+                    enabled: app.isPackaged,
+                    click: async () => {
+                        await showKbCheckResult(await kbUpdater.checkNow());
+                    }
                 },
                 {
                     label: 'Open the Knowledge Base Folder',
@@ -688,6 +723,40 @@ async function showCatalogCheckResult(result) {
 }
 
 /**
+ * Show the outcome of a knowledge base update check in a dialog.
+ *
+ * @param {object} result - Result of kbUpdater.checkNow().
+ */
+async function showKbCheckResult(result) {
+    const messages = {
+        updated: {
+            type: 'info',
+            message: 'Knowledge base updated.',
+            detail: 'New or corrected articles will be used by the agent on the next task.'
+        },
+        unchanged: {
+            type: 'info',
+            message: 'Knowledge base is up to date.'
+        },
+        error: {
+            type: 'warning',
+            message: 'Could not check for knowledge base updates.',
+            detail: result.error
+        }
+    };
+    const { type, message, detail } = messages[result.status] || messages.error;
+
+    await dialog.showMessageBox({
+        type,
+        buttons: ['OK'],
+        defaultId: 0,
+        title: 'Knowledge Base',
+        message,
+        detail
+    });
+}
+
+/**
  * Create system tray icon
  */
 async function createTray() {
@@ -807,48 +876,6 @@ function refreshPluginPairing() {
 }
 
 /**
- * Show the commands that connect a CLI agent to this MCP server.
- *
- * Nothing is registered here: the dialog copies a command for the person to run, because
- * editing another program's global configuration is theirs to decide. The command carries
- * a reference to the environment variable, not the token itself.
- *
- * @returns {Promise<void>}
- */
-async function showMcpSetupDialog() {
-    const { buildInstallCommands, buildAgentInstructions, TOKEN_ENV_VAR } = require('./agent/mcp-setup');
-    const commands = buildInstallCommands({ port: PORT });
-
-    const buttons = [...commands.map(entry => `Copy: ${entry.label}`), 'Copy: Ask My Agent', 'Close'];
-
-    const { response } = await dialog.showMessageBox({
-        type: 'info',
-        buttons,
-        defaultId: 0,
-        cancelId: buttons.length - 1,
-        title: 'Connect Your Agent',
-        message: 'Register PhotoshopHelper as an MCP server in your CLI agent.',
-        detail:
-            'Run the copied command once in a terminal, then restart the agent. Your other MCP '
-            + 'servers are left alone.\n\n'
-            + `The command refers to the ${TOKEN_ENV_VAR} environment variable instead of the `
-            + 'token itself. Save the token there first: Access Tokens → Save Token to User '
-            + 'Environment.\n\n'
-            + 'The last button copies a short text you can paste to an agent so it sets this up '
-            + 'for you.'
-    });
-
-    if (response === buttons.length - 1) return;
-
-    if (response === commands.length) {
-        clipboard.writeText(buildAgentInstructions({ port: PORT }));
-        return;
-    }
-
-    clipboard.writeText(commands[response].copyCommand || commands[response].command);
-}
-
-/**
  * Start the HTTP server
  */
 function startHttpServer() {
@@ -940,11 +967,13 @@ function startHttpServer() {
         tools: agentService.tools
     }));
 
-    // AI Assist inside the plugin. These routes expose task state, explicit task close,
-    // and MCP setup text; the plugin token is the correct secret for all of them.
+    // What the plugin's FromPS / ToPS AI line talks to. These routes expose task state,
+    // explicit task close, MCP setup text, and opening the AI Assist window; the plugin
+    // token is the correct secret for all of them.
     expressApp.use('/api/agent', requirePluginToken, createAgentRouter({
         service: agentService,
-        port: PORT
+        port: PORT,
+        openAssistWindow
     }));
 
     // Mount the local service-to-service generation API over the existing provider
@@ -1695,17 +1724,17 @@ function startHttpServer() {
         refreshPluginPairing();
         pairingRefreshTimer = setInterval(refreshPluginPairing, PAIRING_REFRESH_INTERVAL_MS);
 
-        // Start the channel to the plugin. The plugin connects to it while its assistant
-        // panel is open, so an idle Helper normally has nobody on the other end.
+        // Start the channel to the plugin. The plugin connects to it while its "FromPS /
+        // ToPS AI" line is on, so an idle Helper normally has nobody on the other end.
         try {
             wsBridgeServer = createWsBridgeServer({
                 port: WS_BRIDGE_PORT,
                 token: pluginToken,
                 logger: log,
                 onClientChange: (event) => {
-                    // A closed AI Assist dialog intentionally tears down the WebSocket but
-                    // must not tear down its task. The agent service keeps the task paused
-                    // and uses the runtime identity to distinguish a harmless reopen (resume
+                    // Turning the line off intentionally tears down the WebSocket but must
+                    // not tear down its task. The agent service keeps the task paused and
+                    // uses the runtime identity to distinguish a harmless reopen (resume
                     // automatically) from a full UXP reload (explicit document rebind).
                     if (agentService) {
                         agentService.handlePluginConnectionChange(event);
@@ -1794,7 +1823,10 @@ app.whenReady().then(async () => {
 
     try {
         log.info('Initializing auto updater...');
-        initializeAutoUpdater(() => updateTrayMenu(), () => void catalogUpdater.checkNow());
+        initializeAutoUpdater(() => updateTrayMenu(), () => {
+            void catalogUpdater.checkNow();
+            void kbUpdater.checkNow();
+        });
 
         // Resolve both secrets before any route or setup window exists, so pairing can
         // occur immediately and the server has credentials ready.

@@ -40,7 +40,10 @@ const storePromise = import('electron-store').then(StoreModule => {
             agentJournalEnabled: false,
             // Set once the first MCP agent starts a task. Until then AI Assist shows how to
             // connect an agent; afterwards those instructions stay folded away.
-            agentSeen: false
+            agentSeen: false,
+            // Size and position of the AI Assist window in Helper, so it reopens where the
+            // person left it. Null until the window has been closed at least once.
+            assistWindowBounds: null
         }
     });
 });
@@ -251,6 +254,27 @@ async function markAgentSeen() {
 }
 
 /**
+ * Read the last size and position of the AI Assist window.
+ *
+ * @returns {Promise<{x: number, y: number, width: number, height: number}|null>}
+ */
+async function getAssistWindowBounds() {
+    const store = await storePromise;
+    return store.get('assistWindowBounds') || null;
+}
+
+/**
+ * Remember the AI Assist window's size and position for its next opening.
+ *
+ * @param {{x: number, y: number, width: number, height: number}} bounds - From BrowserWindow.getBounds().
+ * @returns {Promise<void>}
+ */
+async function setAssistWindowBounds(bounds) {
+    const store = await storePromise;
+    store.set('assistWindowBounds', bounds);
+}
+
+/**
  * Save a token to the current user's OS environment variables.
  *
  * On Windows, writes to HKCU\Environment via PowerShell and broadcasts WM_SETTINGCHANGE.
@@ -361,6 +385,8 @@ module.exports = {
     setAgentJournalEnabled,
     isAgentSeen,
     markAgentSeen,
+    getAssistWindowBounds,
+    setAssistWindowBounds,
     INITIAL_DONATION_THRESHOLD,
     DONATED_THRESHOLD: DONATED_NEW_DONATION_THRESHOLD,
     HARDCORE_UNPAID_THRESHOLD,

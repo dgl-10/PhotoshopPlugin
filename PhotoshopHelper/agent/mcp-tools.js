@@ -52,9 +52,9 @@ const DEFAULT_IMAGE_MAX_SIZE = 512;
 const HARD_IMAGE_MAX_SIZE = 8192;
 
 const ASSISTANT_CLOSED_MESSAGE =
-    'The connection to Photoshop is unavailable. Ask the person to check that Photoshop and '
-    + 'the FromPS / ToPS plugin are open, then reopen AI Assist from the panel flyout menu. '
-    + 'Do not guess that an unfinished change failed, and do not repeat it blindly.';
+    'The connection to Photoshop is unavailable. Ask the person to check that Photoshop is open '
+    + 'and to turn on "FromPS / ToPS AI" in the FromPS / ToPS panel menu — that opens the '
+    + 'connection. Do not guess that an unfinished change failed, and do not repeat it blindly.';
 
 // The plugin marks this one case in the text of its error, because only the text crosses
 // the channel. A task whose document went away is closed here rather than left to time out.
@@ -323,7 +323,7 @@ function createAgentTools({
      * @param {object} payload - Command payload.
      * @param {number} timeoutMs - How long to wait.
      * @returns {Promise<object>} The plugin's result.
-     * @throws {Error} When the assistant dialog is closed or the plugin reported a failure.
+     * @throws {Error} When the plugin's AI line is off or it reported a failure.
      */
     async function callPlugin(action, payload, timeoutMs) {
         const bridge = getBridge();
@@ -368,7 +368,13 @@ function createAgentTools({
             + 'something wrong or lose real time on it — the rules above say how to tell.'
         ];
 
-        if (articles.length === 0) {
+        if (!knowledgeBase.hasAuthorBase() && articles.length === 0) {
+            lines.push(
+                '',
+                'The knowledge base has not been downloaded yet. It will be downloaded automatically '
+                + 'in the background or can be checked from the tray menu. Continue working without it for now.'
+            );
+        } else if (articles.length === 0) {
             lines.push(
                 '',
                 'The base is empty so far. That does not make everything you do worth an article.'
@@ -427,8 +433,8 @@ function createAgentTools({
         {
             name: 'ps_resume_task',
             description:
-                'Resume a task that was paused because the Photoshop plugin or its AI Assist '
-                + 'window disconnected. Use the existing task_id; never call ps_start_task to '
+                'Resume a task that was paused because the Photoshop plugin or its "FromPS / ToPS '
+                + 'AI" line disconnected. Use the existing task_id; never call ps_start_task to '
                 + 'replace a paused task. If the whole plugin runtime restarted, this validates '
                 + 'the original document identity before rebinding the task.',
             inputSchema: {
@@ -446,7 +452,7 @@ function createAgentTools({
                 'End the task. Say what you did, what you are unhappy with, and what the person '
                 + 'could tune to their own taste. Before finishing, mark every knowledge article '
                 + 'you followed with ps_kb_mark_helped or ps_kb_mark_failed. The report goes to '
-                + 'the AI Assist dialog. If the '
+                + 'the AI Assist window in PhotoshopHelper. If the '
                 + 'task was a fight and you have written nothing down, this will ask you for a '
                 + 'technical contribution once before it closes.',
             inputSchema: {
@@ -821,6 +827,11 @@ function createAgentTools({
         note(task.id, `started: ${intent}`, 'ps_start_task');
 
         const rules = knowledgeBase.readRules();
+        const rulesFallback = !knowledgeBase.hasAuthorBase()
+            ? '(The rules and author knowledge base have not been downloaded yet. '
+                + 'They will arrive in the background or can be checked from the tray menu. '
+                + 'Work carefully: look first, change, then check.)'
+            : '(No rules file was found. Work carefully: look first, change, then check.)';
 
         const text = [
             `Task ${task.id} started.`,
@@ -835,7 +846,7 @@ function createAgentTools({
             + 'person switches to another one, your calls still go to this document.',
             '',
             '## How to work here',
-            rules || '(No rules file was found. Work carefully: look first, change, then check.)',
+            rules || rulesFallback,
             '',
             describeKnowledgeBase(),
             '',
@@ -858,7 +869,7 @@ function createAgentTools({
         if (!task) {
             return textResult(
                 'There is no paused task to resume. Call ps_start_task only after confirming '
-                + 'that Photoshop and AI Assist are connected.',
+                + 'that Photoshop is open with its "FromPS / ToPS AI" line on.',
                 true
             );
         }
@@ -1005,7 +1016,7 @@ function createAgentTools({
         // above has already dealt with the task that should have written something; for a
         // task that went smoothly, a closing "you wrote nothing" only pushes agents towards
         // articles nobody needs.
-        return textResult(`Task ${task.id} is closed.\nYour report is in the AI Assist dialog.`);
+        return textResult(`Task ${task.id} is closed.\nYour report is in the AI Assist window.`);
     }
 
     /**

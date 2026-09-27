@@ -43,7 +43,7 @@ When this skill is triggered, perform the following steps:
 ---
 
 ### 🪟 Windows Installation (SmartScreen)
-Because this is an open-source project without a paid corporate certificate, Windows SmartScreen may show a blue "Windows protected your PC" warning. To install safely:
+Because this is a source-available project without a paid corporate certificate, Windows SmartScreen may show a blue "Windows protected your PC" warning. To install safely:
 1. Click **More info** in the blue warning window.
 2. Click the **Run anyway** button that appears.
 

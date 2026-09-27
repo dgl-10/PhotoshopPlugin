@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhotoshopHelper — AI Assist</title>
+    <!-- Spectre.css (same as first-run-wizard.html and license-activation.html) -->
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-exp.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-icons.min.css">
+
+    <style>
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .assist-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: .8rem 1rem;
+            border-bottom: 1px solid #dadee4;
+            flex: none;
+        }
+
+        .assist-header h5 {
+            margin: 0;
+        }
+
+        .assist-body {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .assist-panel + .assist-panel {
+            margin-top: 1rem;
+        }
+
+        .assist-muted {
+            color: #667;
+        }
+
+        .assist-live {
+            display: flex;
+            align-items: baseline;
+            gap: .4rem;
+            margin: .4rem 0;
+        }
+
+        .assist-live-dot {
+            width: .5rem;
+            height: .5rem;
+            border-radius: 50%;
+            background: #32b643;
+            flex: none;
+        }
+
+        .assist-silent .assist-live-dot {
+            background: #ffb700;
+        }
+
+        .assist-silent .assist-live-age {
+            color: #a34c00;
+            font-weight: bold;
+        }
+
+        .assist-steps {
+            margin-top: .6rem;
+            max-height: 220px;
+            overflow-y: auto;
+            border: 1px solid #dadee4;
+            border-radius: .2rem;
+            padding: .4rem .6rem;
+            font-size: .8rem;
+            background: #f7f8f9;
+        }
+
+        .assist-step-row {
+            display: flex;
+            gap: .5rem;
+            padding: .15rem 0;
+        }
+
+        .assist-step-time {
+            color: #98a1a8;
+            flex: none;
+            width: 3.4rem;
+            font-family: monospace;
+        }
+
+        .assist-step-current {
+            font-weight: 600;
+        }
+
+        .assist-summary-text, .assist-issues-text, .assist-suggestions-text {
+            white-space: pre-wrap;
+            background: #f7f8f9;
+            border: 1px solid #dadee4;
+            border-radius: .2rem;
+            padding: .5rem .7rem;
+            margin-top: .3rem;
+        }
+
+        .assist-setup-step {
+            display: flex;
+            gap: .7rem;
+            margin-bottom: 1.1rem;
+        }
+
+        .assist-setup-step:last-child {
+            margin-bottom: 0;
+        }
+
+        .assist-setup-number {
+            width: 1.6rem;
+            height: 1.6rem;
+            border-radius: 50%;
+            background: #5755d9;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .75rem;
+            font-weight: 700;
+            flex: none;
+        }
+
+        .assist-setup-number.is-done {
+            background: #32b643;
+        }
+
+        .assist-setup-text {
+            font-family: monospace;
+            font-size: .78rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #f7f8f9;
+            border: 1px solid #dadee4;
+            border-radius: .2rem;
+            padding: .5rem .7rem;
+            margin-top: .4rem;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+
+        .assist-setup-actions {
+            display: flex;
+            align-items: center;
+            gap: .8rem;
+            margin-top: .5rem;
+        }
+
+        details.assist-accordion summary {
+            list-style: none;
+            outline: none;
+            cursor: pointer;
+            user-select: none;
+        }
+        details.assist-accordion summary::-webkit-details-marker {
+            display: none;
+        }
+        details.assist-accordion .accordion-body {
+            max-height: none !important;
+            overflow: visible !important;
+        }
+        .assist-accordion-header {
+            display: inline-flex;
+            align-items: center;
+            font-weight: 600;
+            color: #5755d9;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="assist-header">
+        <h5>AI Assist</h5>
+        <span id="assist-pill" class="label label-rounded">Connecting…</span>
+    </div>
+
+    <div class="assist-body">
+
+        <div id="assist-not-connected" class="assist-panel" hidden>
+            <p>Photoshop is not connected. In the FromPS / ToPS panel menu choose
+                <strong>FromPS / ToPS AI…</strong> — the panel is at the bottom of the FromPS / ToPS
+                panel once it is on.</p>
+        </div>
+
+        <div id="assist-task" class="assist-panel" hidden>
+            <div class="assist-muted" id="assist-task-meta"></div>
+            <h6 id="assist-task-title"></h6>
+            <div id="assist-live" class="assist-live" hidden>
+                <span class="assist-live-dot"></span>
+                <span id="assist-live-text"></span>
+                <span id="assist-live-age" class="assist-muted"></span>
+            </div>
+            <p id="assist-task-message" class="assist-muted" hidden></p>
+            <div id="assist-steps" class="assist-steps" hidden></div>
+            <div class="assist-setup-actions">
+                <button id="assist-abort" class="btn btn-error" hidden>Abort task</button>
+            </div>
+        </div>
+
+        <div id="assist-finished" class="assist-panel" hidden>
+            <div class="assist-muted" id="assist-finished-meta"></div>
+            <h6 id="assist-finished-title"></h6>
+            <p id="assist-finished-message" class="assist-muted" hidden></p>
+
+            <div id="assist-report" hidden>
+                <div class="assist-label">Summary</div>
+                <div id="assist-report-summary" class="assist-summary-text"></div>
+                <div id="assist-report-issues-wrap" hidden>
+                    <div class="assist-label" style="margin-top:.6rem;">Issues</div>
+                    <div id="assist-report-issues" class="assist-issues-text"></div>
+                </div>
+                <div id="assist-report-suggestions-wrap" hidden>
+                    <div class="assist-label" style="margin-top:.6rem;">Suggestions</div>
+                    <div id="assist-report-suggestions" class="assist-suggestions-text"></div>
+                </div>
+            </div>
+
+            <div id="assist-finished-steps" class="assist-steps" hidden></div>
+        </div>
+
+        <details id="assist-connect-details" class="accordion assist-accordion assist-panel" open>
+            <summary class="accordion-header assist-accordion-header">
+                <i class="icon icon-arrow-right mr-1"></i>
+                <span id="assist-connect-heading">How to connect an agent</span>
+            </summary>
+            <div class="accordion-body" style="padding-top:.6rem;">
+                <p id="assist-connect-intro" class="assist-muted"></p>
+
+                <div class="assist-setup-step">
+                    <span id="assist-step-1-num" class="assist-setup-number">1</span>
+                    <div>
+                        <div><strong>Save the access key</strong> <span id="assist-step-1-badge" class="label label-success label-rounded ml-1" hidden>Saved</span></div>
+                        <div id="assist-step-1-text" class="assist-muted">PhotoshopHelper tray menu → Access Tokens → Save Token
+                            to User Environment.</div>
+                    </div>
+                </div>
+
+                <div class="assist-setup-step">
+                    <span class="assist-setup-number">2</span>
+                    <div style="flex:1;">
+                        <div><strong>Add PhotoshopHelper to your agent</strong></div>
+                        <select id="assist-setup-choice" class="form-select" style="margin-top:.4rem; max-width: 320px;"></select>
+                        <div class="assist-setup-actions">
+                            <button id="assist-setup-copy" class="btn btn-primary btn-sm">Copy setup text</button>
+                            <a href="#" id="assist-setup-show"><i class="icon icon-arrow-right mr-1" id="assist-setup-show-icon"></i><span id="assist-setup-show-label">Show text</span></a>
+                        </div>
+                        <div id="assist-setup-hint" class="assist-muted" style="margin-top:.4rem;"></div>
+                        <div id="assist-setup-text" class="assist-setup-text" hidden></div>
+                    </div>
+                </div>
+
+                <div class="assist-setup-step">
+                    <span class="assist-setup-number">3</span>
+                    <div style="flex:1;">
+                        <div><strong>Restart the agent & prompt it</strong></div>
+                        <div class="assist-muted">Restart the agent, then ask it to work on the open document. You can use your own instructions or copy our starter prompt:</div>
+                        <div class="assist-setup-actions">
+                            <button id="assist-prompt-copy" class="btn btn-sm">Copy starter prompt</button>
+                            <a href="#" id="assist-prompt-show"><i class="icon icon-arrow-right mr-1" id="assist-prompt-show-icon"></i><span id="assist-prompt-show-label">Show prompt</span></a>
+                        </div>
+                        <div id="assist-prompt-text" class="assist-setup-text" hidden></div>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <div id="assist-idle" class="assist-panel" hidden>
+            <p class="assist-muted" id="assist-idle-text">Waiting for a task.</p>
+        </div>
+
+    </div>
+
+    <script src="assist-window-renderer.js"></script>
+</body>
+
+</html>

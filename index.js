@@ -11,7 +11,7 @@ const settings = require('./modules/settings.js');
 
 const helper = require('./modules/helper.js');
 const imageUtils = require('./modules/image-utils.js');
-const assistantPanel = require('./modules/agent-panel.js');
+const agentLine = require('./modules/agent-line.js');
 
 const { entrypoints, versions } = require("uxp");
 
@@ -27,9 +27,9 @@ let currentFeatherOptions = { enabled: false }; // Mask feathering bias settings
 // distinct case from the Helper being absent, and needs a different fix from the user.
 const HELPER_NOT_PAIRED_MESSAGE = 'Helper not paired! Add its token in Settings';
 
-// Whether the 'close' listener on the assistant dialog has been attached yet. Attached
-// once, lazily, the first time the dialog is opened.
-let assistantDialogWired = false;
+// The panel's own menu items, captured once at panel creation so agent-line.js can put a
+// checkmark on "FromPS / ToPS AI..." without needing UXP entrypoints access itself.
+let panelMenuItems = null;
 
 /**
  * Initialize plugin
@@ -55,21 +55,37 @@ function init() {
             destroy() {
                 // Best-effort clean shutdown. UXP may kill a plugin too quickly for a close
                 // frame, so Helper's heartbeat remains the fallback for abrupt unloads.
-                assistantPanel.onDestroy('plugin-runtime-destroyed');
+                agentLine.onHostDestroyed('plugin-runtime-destroyed');
             }
         },
         panels: {
             "fromps-tops-panel": {
+                create() {
+                    // 'this' is the UxpPanelInfo for this panel (see the UXP entry-points
+                    // reference); its menuItems collection is how a menu item's checkmark is
+                    // toggled outside of invokeMenu, e.g. from the line's own hour timer.
+                    panelMenuItems = this.menuItems;
+                    agentLine.init({
+                        setMenuChecked(checked) {
+                            try {
+                                const item = panelMenuItems && panelMenuItems.getItem('aiAssistant');
+                                if (item) item.checked = checked;
+                            } catch (error) {
+                                console.warn('[agent-line] Could not update the menu checkmark:', error.message || error);
+                            }
+                        }
+                    });
+                },
                 show() {
                     console.log("Panel shown");
                 },
                 destroy() {
-                    assistantPanel.onDestroy('plugin-panel-destroyed');
+                    agentLine.onHostDestroyed('plugin-panel-destroyed');
                 },
                 menuItems: [
                     { id: "clearAll", label: "Clear All" },
                     "-",
-                    { id: "aiAssistant", label: "FromPS / ToPS AI..." },
+                    { id: "aiAssistant", label: "FromPS / ToPS AI...", checked: false },
                     "-",
                     { id: "settings", label: "Settings..." }
                 ],
@@ -77,7 +93,7 @@ function init() {
                     if (id === "clearAll") {
                         handleClearAll();
                     } else if (id === "aiAssistant") {
-                        showAssistantDialog();
+                        agentLine.toggle();
                     } else if (id === "settings") {
                         settings.showSettingsDialog();
                     }
@@ -108,52 +124,6 @@ function init() {
     startHelperStatusPolling();
 
     console.log('FromPS/ToPS plugin initialized');
-}
-
-/**
- * Open AI Assist as a non-modal dialog in this panel's own document.
- *
- * Settings uses `showModal()`/`uxpShowModal()` because it is a short form the person fills
- * in and closes. AI Assist keeps the MCP channel open and reports a task while the person
- * continues working in Photoshop. A modal dialog fights that directly: in UXP,
- * `showModal()` can freeze the whole application, not just this panel
- * (Adobe's own known-issues page documents a `lockDocumentFocus` option specifically for
- * turning that on, meaning the surface is capable of it, and it is exactly what happened
- * here). The non-modal `show()` has no such lock — the canvas, tools and every other panel
- * stay usable while this dialog is open. The starting size here is only a first guess:
- * modules/agent-panel.js resizes the window to its content as soon as it has drawn it.
- *
- * @see https://developer.adobe.com/photoshop/uxp/2022/ps_reference/known-issues
- */
-function showAssistantDialog() {
-    const dialog = document.getElementById('assistant-dialog');
-    if (!dialog) return;
-
-    if (!assistantDialogWired) {
-        // The 'close' event fires no matter how the dialog closed — the X button, or a
-        // call to dialog.close() — so this one listener is the single place that closes
-        // the dialog-owned WebSocket. This deliberately does not stop the Helper-side task:
-        // Helper pauses it, and opening this dialog again reconnects the same UXP runtime
-        // so the task can continue with the same id. Escape does not close a non-modal
-        // dialog; the window's own close button is the only way out, and it is always
-        // there. Its 'cancel' event arrives, but preventDefault() does not keep it open.
-        dialog.addEventListener('close', () => assistantPanel.onHide('assistant-dialog-closed'));
-        assistantDialogWired = true;
-    }
-
-    try {
-        dialog.show({ size: { width: 320, height: 120 } });
-    } catch (error) {
-        console.warn('[assistant] show() with a size option failed, retrying without it:', error.message || error);
-        try {
-            dialog.show();
-        } catch (fallbackError) {
-            console.error('Failed to open the AI assistant dialog:', fallbackError);
-            return;
-        }
-    }
-
-    assistantPanel.onShow();
 }
 
 /**
@@ -491,8 +461,13 @@ async function handleClearAll() {
  * Handle source selection from dropdown
  */
 async function handleSourceSelection(val) {
-    // Default item selected — auto-Clean
+    // Default item selected — auto-Clean. Already-cleared is a no-op: resetSourceDropdown()
+    // rebuilds the dropdown's menu items from scratch on every call, and re-asserting
+    // "-1" on the freshly rebuilt sp-dropdown can itself fire another "change" event.
+    // Without this guard that re-enters handleSourceSelection('-1') and clears again,
+    // forever, once anything (Clear FromPS, Clear All) first sets the dropdown to "-1".
     if (val === '-1') {
+        if (capturedPayload === null) return;
         await handleClearFromPS();
         return;
     }

@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * Assemble the Photoshop document-agent service used by the MCP server and the plugin's
- * AI Assist dialog.
+ * Assemble the Photoshop document-agent service used by the MCP server, the plugin's
+ * FromPS / ToPS AI line, and the AI Assist window in Helper.
  *
  * An MCP client owns its own interaction with the person; Helper owns only the Photoshop
  * task, the knowledge base, the diagnostic journal, and the live status shown in the
- * plugin.
+ * plugin and in the AI Assist window.
  */
 
 const path = require('node:path');
@@ -16,10 +16,24 @@ const { createKnowledgeBase } = require('./knowledge-base');
 const { createJournal } = require('./journal');
 const { createAgentTools } = require('./mcp-tools');
 
-// Why a task ended when the person pressed Abort task in AI Assist. The agent reads it in
-// the refusal of its next call; the plugin's AI Assist dialog (modules/agent-panel.js)
-// compares against this exact text to say "aborted by you", so change both together.
+// Why a task ended when the person pressed Abort task. The agent reads it in the refusal
+// of its next call; the plugin's line (modules/agent-line.js) compares against this exact
+// text to say "aborted by you", so change both together.
 const ABORTED_BY_PERSON = 'the person pressed Abort task';
+
+// How long the FromPS / ToPS AI line stays connected without any task before it closes
+// itself. main.js may override this from an environment variable for development testing.
+const DEFAULT_IDLE_WITHOUT_TASK_MS = 60 * 60 * 1000;
+
+// What each channel-close reason code the plugin sends means, in words the agent reading
+// a suspended task's refusal can act on. Codes not listed here (an older plugin build, or
+// a plain connection drop) fall back to the event's own "reason" text.
+const CHANNEL_CLOSE_REASON_TEXT = {
+    'ai-line-off': 'the "FromPS / ToPS AI" line was turned off',
+    'ai-line-idle-timeout': 'the "FromPS / ToPS AI" line closed itself after an hour without tasks',
+    'plugin-panel-destroyed': 'the FromPS / ToPS plugin panel was closed',
+    'plugin-runtime-destroyed': 'the Photoshop plugin was reloaded'
+};
 
 /**
  * Build the service.
@@ -33,6 +47,9 @@ const ABORTED_BY_PERSON = 'the person pressed Abort task';
  *   if no agent had ever connected.
  * @param {() => void} [options.onAgentSeen] - Called when the first task of this Helper run
  *   starts, so the caller can remember it.
+ * @param {number} [options.idleWithoutTaskMs] - How long the plugin's AI line may stay
+ *   connected without a task before it closes itself. Reported to the plugin so it can run
+ *   its own countdown; Helper never closes the channel itself.
  * @param {Console} [options.logger] - Destination for diagnostics.
  * @returns {object} The document-agent service.
  */
@@ -42,12 +59,15 @@ function createAgentService({
     isJournalEnabled,
     isAgentSeen = () => false,
     onAgentSeen = () => {},
+    idleWithoutTaskMs = DEFAULT_IDLE_WITHOUT_TASK_MS,
+    helperVersion,
     logger = console
 }) {
     const tasks = createTaskSession();
     const knowledgeBase = createKnowledgeBase({
         authorDir: paths.authorKnowledgeDir,
         userDir: paths.userKnowledgeDir,
+        helperVersion,
         logger
     });
     const journal = createJournal({ dir: paths.journalDir, isEnabled: isJournalEnabled, logger });
@@ -57,7 +77,7 @@ function createAgentService({
     let lastFinishedTask = null;
 
     // Whether a task has started during this Helper run. Together with isAgentSeen() it tells
-    // AI Assist that its setup instructions have done their job.
+    // the AI Assist window that its setup instructions have done their job.
     let agentSeenThisRun = false;
 
     // Steps of the running task in human words. This lives in memory on purpose: the MCP
@@ -66,7 +86,7 @@ function createAgentService({
 
     tasks.subscribe((type, payload) => {
         if (type === 'started') {
-            // A new task owns the dialog from now on: the previous report and steps go.
+            // A new task owns the display from now on: the previous report and steps go.
             progressLog = [];
             lastFinishedTask = null;
             if (!agentSeenThisRun) {
@@ -100,7 +120,8 @@ function createAgentService({
 
     const progress = {
         /**
-         * Keep the recent human-readable steps that the AI Assist dialog displays.
+         * Keep the recent human-readable steps that the plugin line and the AI Assist
+         * window display.
          *
          * @param {object} step - { taskId, tool, text }.
          */
@@ -119,7 +140,7 @@ function createAgentService({
     });
 
     /**
-     * Return everything the AI Assist dialog needs to show.
+     * Return everything the plugin line and the AI Assist window need to show.
      *
      * @returns {object} Current channel, task, progress, report, and knowledge-base state.
      */
@@ -141,7 +162,7 @@ function createAgentService({
                     intent: task.intent,
                     state: task.state,
                     startedAt: task.startedAt,
-                    // Any tool call counts as activity. AI Assist warns when the agent has
+                    // Any tool call counts as activity. The line warns when the agent has
                     // been silent for a while, unless it waits for the person in a dialog.
                     lastActivityAt: task.lastActivityAt,
                     waitingForPerson: (task.waitingForPerson || 0) > 0,
@@ -154,6 +175,9 @@ function createAgentService({
             progress: progressLog,
             lastFinishedTask,
             agentSeen: agentSeenThisRun || Boolean(isAgentSeen()),
+            // The plugin's AI line reads this to run its own "an hour without tasks" clock
+            // and to show the remaining minutes; see modules/agent-line.js.
+            idleWithoutTaskMs,
             knowledgeBase: {
                 articles: knowledgeBase.listArticles().length,
                 userDir: knowledgeBase.paths.userDir
@@ -188,12 +212,13 @@ function createAgentService({
     }
 
     /**
-     * Apply a plugin WebSocket lifecycle event to the current task. Losing the view is not
-     * the same as cancelling work: closing AI Assist only removes the document channel.
-     * The task remains resumable until its suspension timeout or an explicit Abort task
-     * action. A reconnect from the same UXP runtime resumes it automatically below.
+     * Apply a plugin WebSocket lifecycle event to the current task. Turning the AI line off
+     * is not the same as cancelling work: it only removes the document channel. The task
+     * remains resumable until its suspension timeout or an explicit Abort task action. A
+     * reconnect from the same UXP runtime resumes it automatically below.
      *
      * @param {object} event - Structured event from the WebSocket bridge.
+     * @returns {void}
      */
     function handlePluginConnectionChange(event) {
         if (!event || typeof event !== 'object') return;
@@ -202,9 +227,8 @@ function createAgentService({
         if (!task) return;
 
         if (event.clients === 0) {
-            const reason = event.reasonCode === 'assistant-dialog-closed'
-                ? 'the AI Assist window in Photoshop was closed'
-                : event.reason || 'the connection to the Photoshop plugin was lost';
+            const reason = CHANNEL_CLOSE_REASON_TEXT[event.reasonCode]
+                || event.reason || 'the connection to the Photoshop plugin was lost';
             tasks.suspend({ ...event, reason });
             return;
         }
@@ -225,7 +249,7 @@ function createAgentService({
             return;
         }
 
-        tasks.resume({ reason: 'the AI Assist connection returned in the same plugin runtime' });
+        tasks.resume({ reason: 'the FromPS / ToPS AI line reconnected in the same plugin runtime' });
     }
 
     /**
@@ -254,14 +278,25 @@ function createAgentService({
  * Derive document-agent folders from Helper's config paths. Absolute paths keep packaged
  * and development runs independent of the process working directory.
  *
+ * In a packaged build the author knowledge base is the downloaded copy stored in userData.
+ * In development it falls back to the local knowledge-base/ folder in the project, so
+ * npm start works without any download.
+ *
  * @param {object} configPaths - Result of getConfigPaths().
  * @returns {object} Knowledge-base and journal folders.
  */
 function resolveAgentPaths(configPaths) {
+    // In packaged builds: use the downloaded copy from userData (may not exist yet if the
+    // first download has not run; the agent will see "base not yet loaded").
+    // In dev (downloadedKnowledgeBasePath === null): read local project knowledge-base/.
+    const authorKnowledgeDir = configPaths.downloadedKnowledgeBasePath !== null
+        ? configPaths.downloadedKnowledgeBasePath
+        : path.resolve(configPaths.resourcesPath, 'knowledge-base');
+
     return {
-        authorKnowledgeDir: path.resolve(configPaths.resourcesPath, 'knowledge-base'),
+        authorKnowledgeDir,
         userKnowledgeDir: path.resolve(configPaths.userDataPath, 'knowledge-base.user'),
-        journalDir: path.resolve(configPaths.userDataPath, 'agent-journal')
+        journalDir:       path.resolve(configPaths.userDataPath, 'agent-journal')
     };
 }
 

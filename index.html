@@ -449,6 +449,51 @@
             </div>
         </div>
 
+        <!--
+            The FromPS / ToPS AI line: a fixed-height status line, shown and hidden by the
+            "FromPS / ToPS AI..." panel menu item (see invokeMenu in index.js). Hidden by
+            default so the panel looks exactly as it always has. modules/agent-line.js draws
+            it and owns the channel to PhotoshopHelper; long text is never wrapped or
+            resized, only ellipsized — everything long lives in the AI Assist window that
+            Helper's own window button and link open. See ui02.00 in the PreRelease docs.
+        -->
+        <div id="agent-line" class="agent-line" style="display: none">
+            <span id="agent-line-conn" class="agent-line-conn agent-line-conn-yellow" title="Connection to Photoshop">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M6 10L10 6" fill="none" stroke="currentColor" />
+                    <path d="M8.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1" fill="none" stroke="currentColor" />
+                    <path d="M7.5 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1" fill="none" stroke="currentColor" />
+                </svg>
+            </span>
+            <div class="agent-line-text">
+                <div class="agent-line-row1">
+                    <span id="agent-line-glyph1" class="agent-line-glyph"></span>
+                    <span id="agent-line-text1" class="agent-line-text1"></span>
+                </div>
+                <div class="agent-line-row2">
+                    <span id="agent-line-glyph2" class="agent-line-glyph"></span>
+                    <span id="agent-line-text2" class="agent-line-text2"></span>
+                    <sp-link id="agent-line-link2" class="agent-line-link2" quiet style="display: none"></sp-link>
+                </div>
+            </div>
+            <sp-action-button id="agent-line-abort" class="agent-line-btn" style="display: none" title="Abort task">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"
+                    stroke-linecap="round" aria-hidden="true">
+                    <circle cx="8" cy="8" r="5.8" fill="none" stroke="currentColor" />
+                    <path d="M3.9 3.9L12.1 12.1" fill="none" stroke="currentColor" />
+                </svg>
+            </sp-action-button>
+            <sp-action-button id="agent-line-window" class="agent-line-btn" style="display: none" title="Open AI Assist">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9.5 2.5h4v4" fill="none" stroke="currentColor" />
+                    <path d="M13.5 2.5L8 8" fill="none" stroke="currentColor" />
+                    <path d="M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" fill="none" stroke="currentColor" />
+                </svg>
+            </sp-action-button>
+        </div>
+
     </div>
 
     <!-- Settings Dialog -->
@@ -486,120 +531,6 @@
                 <sp-button variant="cta" id="btn-settings-save">Save</sp-button>
             </footer>
         </form>
-    </dialog>
-
-    <!--
-        AI Assist is a dialog like Settings just above, not a second panel entrypoint.
-        A second panel in the manifest sounds tidy, but Photoshop opens every declared panel
-        the first time it installs or reloads the plugin, with no manifest setting to stop
-        it, and showing it from a menu afterwards needs UXP's inter-plugin-communication
-        permission just to reach a panel that belongs to this same plugin. A dialog needs
-        none of that, and it is not squeezed into the docked panel's width either.
-        Opening it is also what opens the channel to PhotoshopHelper. Closing only this
-        dialog intentionally closes that channel; it does not cancel an active task. The
-        task stays paused in Helper and reconnects when the dialog is opened again.
-
-        The window has no close button of its own: the dialog's native one is always there,
-        and a second one next to it only confuses. modules/agent-panel.js shows one of the
-        sections below at a time and resizes the window to fit what is shown.
-    -->
-    <dialog id="assistant-dialog">
-        <div class="assistant" id="assistant-root">
-
-            <div class="assistant-header">
-                <span class="assistant-title">AI Assist</span>
-                <span id="assistant-status" class="assistant-status assistant-status-muted">
-                    <span class="assistant-status-dot"></span>
-                    <span id="assistant-status-text">Connecting...</span>
-                </span>
-            </div>
-
-            <div id="assistant-offline" class="assistant-section" style="display: none">
-                <span class="assistant-heading">Start PhotoshopHelper</span>
-                <span class="assistant-muted">Agents reach Photoshop through it.</span>
-            </div>
-
-            <div id="assistant-idle" class="assistant-idle" style="display: none">
-                <span class="assistant-muted">No tasks yet</span>
-            </div>
-
-            <div id="assistant-taskview" class="assistant-section" style="display: none">
-                <div class="assistant-meta">
-                    <span id="assistant-task-document" class="assistant-meta-document"></span>
-                    <span id="assistant-task-when" class="assistant-meta-when"></span>
-                </div>
-                <span id="assistant-task-title" class="assistant-heading assistant-ellipsis"></span>
-                <div id="assistant-live" class="assistant-live" style="display: none">
-                    <span class="assistant-live-dot"></span>
-                    <span id="assistant-live-text" class="assistant-live-text"></span>
-                    <span id="assistant-live-age" class="assistant-live-age"></span>
-                </div>
-                <span id="assistant-message" class="assistant-message" style="display: none"></span>
-                <div id="assistant-summary" class="assistant-summary" style="display: none">
-                    <div class="assistant-label">Agent's report</div>
-                    <div id="assistant-summary-text" class="assistant-summary-text"></div>
-                </div>
-                <div class="assistant-actions">
-                    <div id="assistant-steps-toggle" class="assistant-toggle" style="display: none"></div>
-                    <sp-button id="assistant-abort" variant="warning" quiet style="display: none">Abort task</sp-button>
-                </div>
-                <div id="assistant-steps" class="assistant-steps" style="display: none"></div>
-            </div>
-
-            <div id="assistant-setup" class="assistant-section" style="display: none">
-                <span id="assistant-setup-heading" class="assistant-heading">Waiting for an agent</span>
-                <span id="assistant-setup-intro" class="assistant-muted">No agent has connected yet. Set one up once:</span>
-
-                <div class="assistant-setup-step">
-                    <span class="assistant-setup-number">1</span>
-                    <div class="assistant-setup-body">
-                        <span class="assistant-setup-title">Save the access key</span>
-                        <span class="assistant-muted">PhotoshopHelper tray menu → Access Tokens → Save Token to User Environment.</span>
-                    </div>
-                </div>
-
-                <div class="assistant-setup-step">
-                    <span class="assistant-setup-number">2</span>
-                    <div class="assistant-setup-body">
-                        <span class="assistant-setup-title">Add PhotoshopHelper to your agent</span>
-                        <div class="assistant-setup-picker">
-                            <sp-dropdown id="assistant-setup-choice" placeholder="Choose your agent">
-                                <sp-menu slot="options"></sp-menu>
-                            </sp-dropdown>
-                            <div class="assistant-setup-actions">
-                                <sp-button id="assistant-setup-copy" variant="cta">Copy setup text</sp-button>
-                                <sp-link id="assistant-setup-show" quiet>Show text</sp-link>
-                            </div>
-                            <span id="assistant-setup-hint" class="assistant-muted assistant-setup-hint"></span>
-                            <div id="assistant-setup-text" class="assistant-setup-text" style="display: none"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="assistant-setup-step">
-                    <span class="assistant-setup-number">3</span>
-                    <div class="assistant-setup-body">
-                        <span class="assistant-setup-title">Restart the agent</span>
-                        <span class="assistant-muted">Then ask it to work on the open document. This window switches to the task by itself.</span>
-                    </div>
-                </div>
-            </div>
-
-            <div id="assistant-setup-link-row" class="assistant-link-row" style="display: none">
-                <sp-link id="assistant-setup-toggle" quiet>How to connect an agent</sp-link>
-            </div>
-
-            <div id="assistant-notice" class="assistant-notice" style="display: none"></div>
-
-            <div id="assistant-warning" class="assistant-warning" style="display: none">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M8 1.8L15 14H1z" fill="none" stroke="#f2c27a" stroke-width="1.6" stroke-linejoin="round" />
-                    <path d="M8 6.2v3.6M8 11.8v0.2" fill="none" stroke="#f2c27a" stroke-width="1.6" stroke-linecap="round" />
-                </svg>
-                <span>Keep this window open — closing pauses the task.</span>
-            </div>
-
-        </div>
     </dialog>
 
     <script src="index.js"></script>

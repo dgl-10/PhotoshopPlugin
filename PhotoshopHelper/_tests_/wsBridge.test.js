@@ -297,3 +297,24 @@ test('an intentional dialog close reports its actionable reason', async context 
     assert.equal(event.intentional, true);
     assert.equal(event.runtimeId, 'runtime-1');
 });
+
+test('a busy port is logged instead of crashing Helper', async context => {
+    const net = require('node:net');
+    const blocker = net.createServer();
+    await new Promise(resolve => blocker.listen(0, '127.0.0.1', resolve));
+    context.after(() => new Promise(resolve => blocker.close(resolve)));
+
+    const errors = [];
+    const { createWsBridgeServer } = require('../ws-bridge');
+    const server = createWsBridgeServer({
+        port: blocker.address().port,
+        token: 'test-token',
+        logger: { info() {}, warn() {}, error: message => errors.push(message) }
+    });
+    context.after(async () => await server.close());
+
+    // Without the server's own handler this event would be unhandled and fail the run.
+    await new Promise(resolve => server.wss.once('error', resolve));
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /Port \d+ is unavailable \(EADDRINUSE\)/);
+});

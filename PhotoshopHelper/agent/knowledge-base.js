@@ -18,6 +18,19 @@
  * index file would be a second place to forget to update, and an article written by the
  * agent has to appear in the index without a second write.
  *
+ * Content-hash tracking for author articles:
+ *   Usage counters (helped/failed) and failure notes on author-layer articles are tied to
+ *   the exact version of the article they were collected on. When the author updates an
+ *   article (any text change), the SHA-256 hash of its file changes, and the old counters
+ *   and failure notes are treated as stale: they are not displayed, and the next mark
+ *   starts from zero. User-layer articles are not affected by this mechanism.
+ *
+ * Minimum Helper version:
+ *   An optional `helper:` field in an article's front matter sets the minimum Helper
+ *   version required to read it. Articles that require a newer version are silently
+ *   excluded from listings and return a short "requires newer Helper" message on direct
+ *   read. The field uses semver ordering.
+ *
  * Planned article classes (design note, not an implemented taxonomy):
  *
  * The current base contains technical recipes: exact DOM, Imaging API, or action
@@ -39,6 +52,7 @@
  * and how feedback leads to a concrete correction of an article.
  */
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -52,6 +66,46 @@ const CONFIDENCE_LEVELS = ['agent-written', 'user-confirmed', 'author-verified']
 const ARTICLE_EXTENSION = '.md';
 const STATS_FILENAME = 'usage-stats.json';
 const RULES_FILENAME = 'rules.md';
+
+/**
+ * Compute a short SHA-256 hex digest of a string, used to detect author article changes.
+ *
+ * @param {string} text - File content.
+ * @returns {string} 16-character hex prefix of the SHA-256 digest.
+ */
+function contentHash(text) {
+    return crypto.createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16);
+}
+
+/**
+ * Parse a semver string into a comparable tuple. Returns [0,0,0] for anything
+ * that does not look like major.minor.patch.
+ *
+ * @param {string} version - e.g. "1.3.0".
+ * @returns {number[]} [major, minor, patch]
+ */
+function parseSemver(version) {
+    const parts = String(version || '').trim().split('.');
+    return [
+        Math.max(0, parseInt(parts[0], 10) || 0),
+        Math.max(0, parseInt(parts[1], 10) || 0),
+        Math.max(0, parseInt(parts[2], 10) || 0)
+    ];
+}
+
+/**
+ * Compare two semver tuples.
+ *
+ * @param {number[]} a - [major, minor, patch].
+ * @param {number[]} b - [major, minor, patch].
+ * @returns {number} Negative if a < b, 0 if equal, positive if a > b.
+ */
+function compareSemver(a, b) {
+    for (let i = 0; i < 3; i++) {
+        if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return 0;
+}
 
 /**
  * Split a Markdown file into its front matter and its body.
@@ -124,16 +178,23 @@ function normalizeArticleId(value) {
  * Create the knowledge base over a pair of folders.
  *
  * @param {object} options
- * @param {string} options.authorDir - Folder shipped with Helper. Read only.
+ * @param {string} options.authorDir - Folder shipped with Helper or downloaded from the
+ *   repository. Read only from the knowledge base's perspective.
  * @param {string} options.userDir - Folder the agent writes to.
+ * @param {string} [options.helperVersion] - Current Helper version string (e.g. "1.3.0"),
+ *   used to filter out articles that require a newer release.
  * @param {Console} [options.logger] - Destination for diagnostics.
  * @returns {object} Knowledge base.
  */
-function createKnowledgeBase({ authorDir, userDir, logger = console }) {
+function createKnowledgeBase({ authorDir, userDir, helperVersion, logger = console }) {
     const layers = [
         { name: 'author', dir: authorDir, writable: false },
         { name: 'user', dir: userDir, writable: true }
     ];
+
+    // Parsed [major, minor, patch] of the running Helper; articles with a higher
+    // `helper:` requirement are invisible to this version.
+    const runningVersion = parseSemver(helperVersion);
 
     /**
      * @param {string} dir - Layer folder.
@@ -163,6 +224,11 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
      * These counters are evidence from agents applying a specific article, not a person's
      * rating of the overall task.
      *
+     * Stats object shape: keyed by "<layer>:<article-id>".
+     * Each value may contain: { helped, failed, contentHash? }
+     * contentHash is only stored for author-layer articles. When the file's current hash
+     * differs from the stored one, the counters are treated as stale (reset to 0).
+     *
      * @returns {object} Counters keyed by `<layer>:<article-id>`.
      */
     function readStats() {
@@ -188,17 +254,20 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
-     * Read one article file.
+     * Read one article file. Returns the raw file text alongside the parsed article so
+     * the caller can compute a content hash without re-reading the file.
      *
      * @param {string} dir - Layer folder.
      * @param {string} id - Article id.
-     * @returns {{meta: object, body: string}|null}
+     * @returns {{meta: object, body: string, rawText: string}|null}
      */
     function readArticleFile(dir, id) {
         const file = path.join(articlesDir(dir), `${id}${ARTICLE_EXTENSION}`);
         try {
             if (!fs.existsSync(file)) return null;
-            return parseArticle(fs.readFileSync(file, 'utf8'));
+            const rawText = fs.readFileSync(file, 'utf8');
+            const { meta, body } = parseArticle(rawText);
+            return { meta, body, rawText };
         } catch (error) {
             logger.warn(`[knowledge-base] Could not read ${file}: ${error.message}`);
             return null;
@@ -206,7 +275,51 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
     }
 
     /**
+     * Return the effective helped/failed counters for an author-layer article, resetting
+     * them to zero when the article's content has changed since the counters were recorded.
+     *
+     * Old stats records that predate content-hash tracking have no `contentHash` field.
+     * Per the TZ specification, such records are treated as stale and reset to 0.
+     *
+     * @param {string} id - Article id.
+     * @param {string} rawText - Current file content of the author article.
+     * @param {object} storedCounters - The raw stats entry for `author:<id>`.
+     * @returns {{ helped: number, failed: number, currentHash: string }} Effective counters.
+     */
+    function effectiveAuthorCounters(id, rawText, storedCounters) {
+        const currentHash = contentHash(rawText);
+        const stored = storedCounters || {};
+        const storedHash = stored.contentHash;
+
+        // If no hash was stored, or the hash differs, the counters are stale.
+        if (!storedHash || storedHash !== currentHash) {
+            return { helped: 0, failed: 0, currentHash };
+        }
+
+        return {
+            helped: Number(stored.helped || 0),
+            failed: Number(stored.failed || 0),
+            currentHash
+        };
+    }
+
+    /**
+     * Decide whether an article with the given `helper:` front-matter value should be
+     * visible to the current Helper version.
+     *
+     * @param {string|undefined} requiredVersion - The `helper:` field value, or undefined.
+     * @returns {boolean} True when the article may be shown.
+     */
+    function isVersionVisible(requiredVersion) {
+        if (!requiredVersion) return true;
+        const required = parseSemver(requiredVersion);
+        // Article is visible when the running version is >= the required version.
+        return compareSemver(runningVersion, required) >= 0;
+    }
+
+    /**
      * Every article in both layers, with the descriptive metadata needed to find it.
+     * Articles requiring a newer Helper version are silently excluded.
      *
      * @returns {object[]} Entries sorted by id, author layer first for a shared id.
      */
@@ -229,7 +342,33 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
                 const article = readArticleFile(layer.dir, id);
                 if (!article) continue;
 
-                const counters = stats[`${layer.name}:${id}`] || {};
+                // Filter out articles that require a newer Helper version.
+                if (!isVersionVisible(article.meta.helper)) continue;
+
+                // If this is a user-layer failure note on an author article, hide it if the
+                // author has updated the article since the note was recorded.
+                if (layer.name === 'user' && article.meta.note_on) {
+                    const authorArticle = readArticleFile(authorDir, id);
+                    if (authorArticle) {
+                        const currentHash = contentHash(authorArticle.rawText);
+                        if (!article.meta.author_content_hash || article.meta.author_content_hash !== currentHash) {
+                            continue;
+                        }
+                    }
+                }
+
+                let helped, failed;
+                if (layer.name === 'author') {
+                    const key = `author:${id}`;
+                    const effective = effectiveAuthorCounters(id, article.rawText, stats[key]);
+                    helped = Number(article.meta.helped || 0) + effective.helped;
+                    failed = Number(article.meta.failed || 0) + effective.failed;
+                } else {
+                    const counters = stats[`user:${id}`] || {};
+                    helped = Number(article.meta.helped || 0) + Number(counters.helped || 0);
+                    failed = Number(article.meta.failed || 0) + Number(counters.failed || 0);
+                }
+
                 entries.push({
                     id,
                     layer: layer.name,
@@ -242,8 +381,8 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
                     date: article.meta.date || '',
                     task: article.meta.task || '',
                     agent: article.meta.agent || '',
-                    helped: Number(article.meta.helped || 0) + Number(counters.helped || 0),
-                    failed: Number(article.meta.failed || 0) + Number(counters.failed || 0)
+                    helped,
+                    failed
                 });
             }
         }
@@ -258,10 +397,22 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
      * The index the agent is given in ps_start_task: one line per article, both layers
      * joined line by line, so the agent opens an article only when it looks relevant.
      *
+     * When the author KB has never been downloaded yet (authorDir does not exist), a
+     * distinct message tells the agent to wait rather than concluding the base is empty.
+     *
      * @returns {string} Plain text index.
      */
     function formatIndex() {
+        // Distinguish "base not yet downloaded" from "base is empty".
+        const authorDirMissing = !fs.existsSync(authorDir);
         const entries = listArticles();
+
+        if (authorDirMissing && entries.length === 0) {
+            return 'The knowledge base has not been downloaded yet. It will be available after the '
+                + 'first scheduled update or when you trigger one from the tray menu. '
+                + 'Continue working without it for now.';
+        }
+
         if (entries.length === 0) {
             return 'The knowledge base is empty. That does not make everything you do worth an '
                 + 'article: write with ps_kb_contribute only what the next agent would get wrong '
@@ -278,6 +429,7 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
 
     /**
      * Read an article by id, from both layers.
+     * Articles requiring a newer Helper version return a short notice instead.
      *
      * @param {string} rawId - Article id.
      * @returns {{found: boolean, text: string}} Text ready to hand to the agent.
@@ -291,9 +443,39 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
             const article = readArticleFile(layer.dir, id);
             if (!article) continue;
 
-            const counters = stats[`${layer.name}:${id}`] || {};
-            const helped = Number(article.meta.helped || 0) + Number(counters.helped || 0);
-            const failed = Number(article.meta.failed || 0) + Number(counters.failed || 0);
+            // Return a version-gate notice instead of the article body.
+            if (!isVersionVisible(article.meta.helper)) {
+                parts.push(
+                    `=== ${id} (${layer.name} layer) ===\n`
+                    + `This article requires Helper ${article.meta.helper} or newer. `
+                    + 'Update Helper to read it.'
+                );
+                continue;
+            }
+
+            // If this is a user-layer failure note on an author article, do not show it if the
+            // author has updated the article since the note was recorded.
+            if (layer.name === 'user' && article.meta.note_on) {
+                const authorArticle = readArticleFile(authorDir, id);
+                if (authorArticle) {
+                    const currentHash = contentHash(authorArticle.rawText);
+                    if (!article.meta.author_content_hash || article.meta.author_content_hash !== currentHash) {
+                        continue;
+                    }
+                }
+            }
+
+            let helped, failed;
+            if (layer.name === 'author') {
+                const key = `author:${id}`;
+                const effective = effectiveAuthorCounters(id, article.rawText, stats[key]);
+                helped = Number(article.meta.helped || 0) + effective.helped;
+                failed = Number(article.meta.failed || 0) + effective.failed;
+            } else {
+                const counters = stats[`user:${id}`] || {};
+                helped = Number(article.meta.helped || 0) + Number(counters.helped || 0);
+                failed = Number(article.meta.failed || 0) + Number(counters.failed || 0);
+            }
 
             parts.push(
                 `=== ${id} (${layer.name} layer) ===\n`
@@ -448,6 +630,11 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
      * note becomes a same-id article in the user layer, so future agents see the shipped
      * recipe and its local correction history side by side.
      *
+     * When writing a failure note for an author article, the current content hash is stored
+     * in the note's front matter. If the author later updates the article (hash changes),
+     * the old notes describe text that no longer exists: listArticles and readArticle stop
+     * showing them, and the next failure note replaces them instead of being appended.
+     *
      * @param {object} params
      * @param {string} params.id - Article id.
      * @param {string} params.note - What failed and what worked instead.
@@ -472,23 +659,36 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
         const stamp = new Date().toISOString().slice(0, 10);
         const addition = `### Did not work — ${stamp}, task ${taskId || 'unknown'}\n\n${String(note).trim()}`;
 
-        if (inUser) {
+        if (inAuthor) {
+            const hash = contentHash(inAuthor.rawText);
+            const isStale = inUser && inUser.meta.note_on
+                && (!inUser.meta.author_content_hash || inUser.meta.author_content_hash !== hash);
+
+            if (inUser && !isStale) {
+                // Same author article version: append note to existing history
+                const meta = { ...inUser.meta, id: inUser.meta.id || id, author_content_hash: hash };
+                writeFileAtomic(file, formatArticle(meta, `${inUser.body}\n\n${addition}`));
+            } else {
+                // First note or new author article version: do not mix with old notes, start fresh
+                const meta = {
+                    id,
+                    title: inAuthor.meta.title || id,
+                    problem: inAuthor.meta.problem || inAuthor.meta.title || id,
+                    confidence: 'agent-written',
+                    task: taskId || '',
+                    photoshop: inAuthor.meta.photoshop || 'unknown',
+                    date: stamp,
+                    note_on: 'author-layer article of the same id',
+                    author_content_hash: hash,
+                    helped: 0,
+                    failed: 0
+                };
+                writeFileAtomic(file, formatArticle(meta, addition));
+            }
+        } else if (inUser) {
+            // Standalone user-layer article
             const meta = { ...inUser.meta, id: inUser.meta.id || id };
             writeFileAtomic(file, formatArticle(meta, `${inUser.body}\n\n${addition}`));
-        } else {
-            const meta = {
-                id,
-                title: inAuthor.meta.title || id,
-                problem: inAuthor.meta.problem || inAuthor.meta.title || id,
-                confidence: 'agent-written',
-                task: taskId || '',
-                photoshop: inAuthor.meta.photoshop || 'unknown',
-                date: stamp,
-                note_on: 'author-layer article of the same id',
-                helped: 0,
-                failed: 0
-            };
-            writeFileAtomic(file, formatArticle(meta, addition));
         }
 
         recordUsage(id, 'failed');
@@ -502,6 +702,9 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
      * normally contains failure notes about that shipped article. Counting both would make
      * one use appear twice in the index.
      *
+     * For author-layer articles the current content hash is also persisted, so that future
+     * reads can detect whether the article was updated since the mark was recorded.
+     *
      * @param {string} rawId - Article id.
      * @param {'helped'|'failed'} outcome - Result of applying the article.
      */
@@ -514,31 +717,66 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
 
         const stats = readStats();
         const key = `${layer.name}:${id}`;
-        const counters = stats[key] || { helped: 0, failed: 0 };
-        if (outcome === 'failed') counters.failed = Number(counters.failed || 0) + 1;
-        else counters.helped = Number(counters.helped || 0) + 1;
-        stats[key] = counters;
+        const stored = stats[key] || { helped: 0, failed: 0 };
+
+        if (layer.name === 'author') {
+            // Refresh the content hash when recording a usage mark.
+            const articleFile = readArticleFile(authorDir, id);
+            if (articleFile) {
+                const currentHash = contentHash(articleFile.rawText);
+                // If the hash has changed since the last mark, the old counts are stale;
+                // start fresh from this mark.
+                if (!stored.contentHash || stored.contentHash !== currentHash) {
+                    stats[key] = {
+                        helped: outcome === 'helped' ? 1 : 0,
+                        failed: outcome === 'failed' ? 1 : 0,
+                        contentHash: currentHash
+                    };
+                    writeStats(stats);
+                    return;
+                }
+                stored.contentHash = currentHash;
+            }
+        }
+
+        if (outcome === 'failed') stored.failed = Number(stored.failed || 0) + 1;
+        else stored.helped = Number(stored.helped || 0) + 1;
+        stats[key] = stored;
         writeStats(stats);
     }
 
     /**
-     * The general rules handed to the agent in ps_start_task. They are text, not code, so
-     * they can be corrected without releasing Helper. A copy in the user layer wins.
+     * The general rules handed to the agent in ps_start_task.
+     *
+     * They are part of the program and are read from the author layer only. A rules.md in
+     * the user layer is deliberately ignored: a local copy would otherwise override every
+     * later release of the rules, and the person would never learn that their Helper had
+     * stopped receiving them.
+     *
+     * When the author KB has not been downloaded yet, returns an empty string so the
+     * agent gets the same "(No rules file was found…)" fallback message as before.
      *
      * @returns {string} Rules text, or an empty string when there is no rules file.
      */
     function readRules() {
-        for (const layer of [layers[1], layers[0]]) {
-            const file = path.join(layer.dir, RULES_FILENAME);
-            try {
-                if (fs.existsSync(file)) {
-                    return fs.readFileSync(file, 'utf8').trim();
-                }
-            } catch (error) {
-                logger.warn(`[knowledge-base] Could not read ${file}: ${error.message}`);
+        const file = path.join(authorDir, RULES_FILENAME);
+        try {
+            if (fs.existsSync(file)) {
+                return fs.readFileSync(file, 'utf8').trim();
             }
+        } catch (error) {
+            logger.warn(`[knowledge-base] Could not read ${file}: ${error.message}`);
         }
         return '';
+    }
+
+    /**
+     * Whether the author knowledge base exists on disk (has been downloaded or exists locally).
+     *
+     * @returns {boolean}
+     */
+    function hasAuthorBase() {
+        return fs.existsSync(authorDir);
     }
 
     return {
@@ -550,6 +788,7 @@ function createKnowledgeBase({ authorDir, userDir, logger = console }) {
         markFailed,
         recordUsage,
         readRules,
+        hasAuthorBase,
         ensureUserLayer,
         // For Helper itself and the person (the "Open the Knowledge Base Folder" menu item).
         // Never put these into anything an agent reads: the agent uses the ps_kb_ tools only.

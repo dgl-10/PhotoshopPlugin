@@ -20,6 +20,20 @@ until you have run it and looked at what came back. If you cannot find a descrip
 honest ways to get a real one are: record the action in the Actions panel and use "Copy As
 JavaScript", or ask the person to do that for you.
 
+**The knowledge base is not a manual, and it will never cover everything.** It holds only
+what was deliberately singled out — mostly things that were hard to get right: descriptors
+the documentation lacks, traps, what failed and why. Most of Photoshop is not in it and
+does not need to be. So a missing article says nothing about whether something is possible
+or safe, and "the knowledge base has no article on X" is not a problem to report.
+
+**Missing from the knowledge base is not a reason to guess, and not a reason to switch to a
+different technique.** Go down the list: look it up in the documentation and on the web,
+try it, and check that it did what you meant by reading the layer's settings back with
+`ps_get_layer` — a wrong key often lands silently on the wrong target. If finding it was
+hard, you have found exactly what belongs in the knowledge base: write it down yourself,
+do not just suggest that someone should. Fall back to another technique only after that
+search came up empty, and say so in your report.
+
 ## Reading the knowledge base
 
 **The knowledge base is used only through the tools of this server — never by reading or
@@ -164,6 +178,25 @@ In that order, every time.
 If you cannot see the image — if your client did not show it to you — say so plainly. Do
 not work out what is in the document from layer names and present the guess as fact.
 
+## Eyes find, pixels measure
+
+`ps_get_image` is not only for checking a result. It is how you find out what is where —
+and also how easily you fool yourself about exactly where.
+
+- **Your eyes are for understanding and rough position.** On a reduced picture one of its
+  pixels is several document pixels — the caption gives the scale. When a position has to
+  be right, take the region again with `bounds` at full size and look closely.
+- **Exact geometry comes from the pixels, not from your estimate.** When the job depends on
+  an edge or a distance — follow the outline of an object, keep N pixels away from it, place
+  something along a contour — first get that edge as data: a selection (Select Subject,
+  Color Range), a mask, or your own analysis of `imaging.getPixels` in a script. Compute the
+  contour and the offset from that data, then draw. Use your eyes to confirm that the data
+  is the right object.
+- **Marks the person drew — arrows, circles, scribbles — show intent and a rough place.**
+  They are not coordinates to trace. When it is unclear what exactly they point at, ask.
+- **Do not report a measurement you did not take.** "50 px from the edge" in your report
+  means you measured it on a close-up after drawing. Otherwise say it is approximate.
+
 ## Adjustment layers first, filters only where there is no other way
 
 Tone and colour — exposure, contrast, curves, levels, colour balance, hue and saturation,
@@ -212,7 +245,7 @@ complement each other, they just have different places.
   open it only when they say yes. If the answer says the dialog is still open, wait with
   `ps_wait_for_dialog` and do not open it again. Command names of filters and adjustments
   are often not the obvious ones — look them up in the knowledge base
-  (`filter-and-adjustment-commands`) instead of guessing.
+  (`filter-commands`, `adjustment-layers`) instead of guessing.
 - If it really is only the mouse — the neural filters window, another plugin's panel, the
   application preferences — do not do it silently. Tell the person what you intend to
   click and get their agreement.

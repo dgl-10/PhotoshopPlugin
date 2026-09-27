@@ -22,7 +22,12 @@ function makeService(context, bridge = null, options = {}) {
 
     const service = createAgentService({
         getBridge: () => bridge,
-        paths: resolveAgentPaths({ resourcesPath: root, userDataPath: root }),
+        paths: resolveAgentPaths({
+            resourcesPath: root,
+            userDataPath: root,
+            // null = dev mode: read local knowledge-base/ directly, no download
+            downloadedKnowledgeBasePath: null
+        }),
         isJournalEnabled: () => true,
         logger: { info() {}, warn() {}, error() {} },
         ...options
@@ -53,7 +58,11 @@ function startAnswer() {
 }
 
 test('the paths contain only the knowledge-base layers and journal', () => {
-    const paths = resolveAgentPaths({ resourcesPath: '/res', userDataPath: '/data' });
+    const paths = resolveAgentPaths({
+        resourcesPath: '/res',
+        userDataPath: '/data',
+        downloadedKnowledgeBasePath: null
+    });
 
     assert.deepEqual(paths, {
         authorKnowledgeDir: path.resolve('/res', 'knowledge-base'),
@@ -63,7 +72,11 @@ test('the paths contain only the knowledge-base layers and journal', () => {
 });
 
 test('the knowledge base folders are absolute, whatever folder Helper runs from', () => {
-    const paths = resolveAgentPaths({ resourcesPath: '.', userDataPath: './data' });
+    const paths = resolveAgentPaths({
+        resourcesPath: '.',
+        userDataPath: './data',
+        downloadedKnowledgeBasePath: null
+    });
 
     assert.ok(path.isAbsolute(paths.authorKnowledgeDir));
     assert.ok(path.isAbsolute(paths.userKnowledgeDir));
@@ -102,7 +115,7 @@ test('the tool layer is wired to the service', async context => {
     // With no channel the answer is the sentence the MCP agent is meant to relay.
     const result = await service.tools.call('ps_start_task', { intent: 'anything' });
     assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /AI Assist/);
+    assert.match(result.content[0].text, /FromPS \/ ToPS AI/);
 });
 
 test('progress from the tools reaches the plugin state', async context => {
@@ -154,6 +167,37 @@ test('a dialog disconnect pauses the task and the same runtime resumes it', asyn
     });
 
     assert.equal(service.getState().task.state, 'running');
+});
+
+test('the idle-without-task timeout defaults to an hour and can be overridden', context => {
+    const { service: withDefault } = makeService(context);
+    assert.equal(withDefault.getState().idleWithoutTaskMs, 60 * 60 * 1000);
+
+    const { service: withOverride } = makeService(context, null, { idleWithoutTaskMs: 5 * 60 * 1000 });
+    assert.equal(withOverride.getState().idleWithoutTaskMs, 5 * 60 * 1000);
+});
+
+test('each line-close reason code becomes a sentence the agent can act on', async context => {
+    const bridge = {
+        getConnectedClients: () => 1,
+        sendCommandAndWait: async () => startAnswer(),
+        sendCommand: () => 'id'
+    };
+    const { service } = makeService(context, bridge);
+    await service.tools.call('ps_start_task', { intent: 'recover' });
+
+    service.handlePluginConnectionChange({
+        type: 'disconnected',
+        clients: 0,
+        reasonCode: 'ai-line-idle-timeout',
+        runtimeId: 'runtime-1',
+        at: Date.now()
+    });
+
+    assert.match(
+        service.tasks.describeSuspension(service.tasks.getCurrent()),
+        /"FromPS \/ ToPS AI" line closed itself after an hour without tasks/
+    );
 });
 
 test('Abort task closes the task and releases the document side', async context => {

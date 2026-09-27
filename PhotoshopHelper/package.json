@@ -47,6 +47,9 @@
             "!providers.template.json",
             "!.env",
             "!user-settings.json",
+            "!agent-journal/**",
+            "!knowledge-base/**",
+            "!knowledge-base.user/**",
             "!_tests_/**",
             "!**/*.md",
             "!node_modules/.cache/**",
@@ -73,10 +76,6 @@
             {
                 "from": "Local_Generation_API.md",
                 "to": "Local_Generation_API.md"
-            },
-            {
-                "from": "knowledge-base",
-                "to": "knowledge-base"
             }
         ],
         "extraFiles": [
