@@ -22,6 +22,20 @@
     let setupTextShown = false;
     let promptTextShown = false;
 
+    /** Display names for supported CLIs. */
+    const CLI_LABELS = {
+        claude: 'Anthropic Claude',
+        codex:  'OpenAI Codex',
+        grok:   'SpaceX AI Grok Build',
+        agy:    'Google Antigravity'
+    };
+
+    /** Display order for CLIs in the platform picker. */
+    const CLI_ORDER = ['claude', 'codex', 'grok', 'agy'];
+
+    let selectedPlatform = 'any';
+    let currentCliConfig = null;
+
     const STARTER_PROMPT = [
         'Use the photoshop-helper MCP server to work on the active Photoshop document.',
         '',
@@ -40,6 +54,8 @@
         'Task:',
         '[YOUR_TASK_DESCRIPTION]'
     ].join('\n');
+
+    let currentStarterPrompt = STARTER_PROMPT;
 
     /**
      * @param {string} id - Element id.
@@ -374,6 +390,112 @@
         }
     }
 
+    // ── Platform starter prompt ──────────────────────────────────────────────
+
+    /**
+     * A CLI is only valid for the starter prompt picker if it is enabled
+     * and has non-empty medium and high tier models defined.
+     *
+     * @param {object} cfg - Single CLI config object.
+     * @returns {boolean}
+     */
+    function isPlatformValid(cfg) {
+        if (!cfg || !cfg.enabled) return false;
+        const medModel = (cfg.tiers?.medium?.model || '').trim();
+        const highModel = (cfg.tiers?.high?.model || '').trim();
+        return Boolean(medModel && highModel);
+    }
+
+    /**
+     * Build the starter prompt for the selected CLI platform.
+     *
+     * @param {string} cliKey - 'any' or one of the CLI names.
+     * @param {object|null} cliConfig - Full CLI config map.
+     * @returns {string} Formatted prompt text.
+     */
+    function buildPrompt(cliKey, cliConfig) {
+        if (!cliKey || cliKey === 'any' || !cliConfig || !cliConfig[cliKey]) {
+            return STARTER_PROMPT;
+        }
+
+        const cfg = cliConfig[cliKey];
+        const high = cfg.tiers?.high;
+        const med = cfg.tiers?.medium;
+
+        const highModel = (high?.model || '').trim();
+        const highEffort = (high?.effort || '').trim();
+        const medModel = (med?.model || '').trim();
+        const medEffort = (med?.effort || '').trim();
+
+        const highSpec = highModel
+            ? (highEffort ? `${highModel} (effort: ${highEffort})` : highModel)
+            : '[TOP_TIER_VISION_MODEL] (effort: [EXTRA_HIGH_EFFORT])';
+
+        const medSpec = medModel
+            ? (medEffort ? `${medModel} (effort: ${medEffort})` : medModel)
+            : '[MID_TIER_RESEARCH_MODEL] (effort: [HIGH_EFFORT])';
+
+        return STARTER_PROMPT
+            .replace('[TOP_TIER_VISION_MODEL] (effort: [EXTRA_HIGH_EFFORT])', highSpec)
+            .replace('[MID_TIER_RESEARCH_MODEL] (effort: [HIGH_EFFORT])', medSpec);
+    }
+
+    /**
+     * Update the active starter prompt text based on current selection and update the DOM.
+     */
+    function updatePromptDisplay() {
+        currentStarterPrompt = buildPrompt(selectedPlatform, currentCliConfig);
+        const promptText = byId('assist-prompt-text');
+        if (promptText) {
+            promptText.textContent = currentStarterPrompt;
+        }
+    }
+
+    /**
+     * Load CLI settings and populate the platform combobox.
+     */
+    async function loadPlatformChoices() {
+        if (!window.assistBridge || !window.assistBridge.getCliConfig) return;
+        try {
+            const config = await window.assistBridge.getCliConfig();
+            currentCliConfig = config || {};
+
+            const select = byId('assist-prompt-platform');
+            if (!select) return;
+
+            const prevSelected = select.value || selectedPlatform || 'any';
+            select.textContent = '';
+
+            // Default option: Any agent
+            const anyOption = document.createElement('option');
+            anyOption.value = 'any';
+            anyOption.textContent = 'Any agent';
+            select.appendChild(anyOption);
+
+            let isPrevSelectedStillValid = (prevSelected === 'any');
+
+            for (const cli of CLI_ORDER) {
+                const cfg = currentCliConfig[cli];
+                if (isPlatformValid(cfg)) {
+                    const option = document.createElement('option');
+                    option.value = cli;
+                    option.textContent = CLI_LABELS[cli] || cli;
+                    select.appendChild(option);
+                    if (cli === prevSelected) {
+                        isPrevSelectedStillValid = true;
+                    }
+                }
+            }
+
+            selectedPlatform = isPrevSelectedStillValid ? prevSelected : 'any';
+            select.value = selectedPlatform;
+
+            updatePromptDisplay();
+        } catch {
+            // Keep default starter prompt if config loading fails
+        }
+    }
+
     // ── Controls ────────────────────────────────────────────────────────────
 
     function wireControls() {
@@ -413,9 +535,30 @@
             });
         }
 
+        const platformSelect = byId('assist-prompt-platform');
+        if (platformSelect) {
+            platformSelect.addEventListener('change', () => {
+                selectedPlatform = platformSelect.value;
+                updatePromptDisplay();
+            });
+        }
+
+        const configureBtn = byId('assist-prompt-configure');
+        if (configureBtn) {
+            configureBtn.addEventListener('click', async () => {
+                if (window.assistBridge.openCliSettings) {
+                    await window.assistBridge.openCliSettings(selectedPlatform);
+                }
+            });
+        }
+
+        window.addEventListener('focus', () => {
+            void loadPlatformChoices();
+        });
+
         const promptText = byId('assist-prompt-text');
         if (promptText) {
-            promptText.textContent = STARTER_PROMPT;
+            promptText.textContent = currentStarterPrompt;
         }
 
         const showPrompt = byId('assist-prompt-show');
@@ -433,7 +576,7 @@
         const copyPrompt = byId('assist-prompt-copy');
         if (copyPrompt) {
             copyPrompt.addEventListener('click', async () => {
-                await window.assistBridge.copyText(STARTER_PROMPT);
+                await window.assistBridge.copyText(currentStarterPrompt);
                 copyPrompt.textContent = 'Copied';
                 setTimeout(() => { copyPrompt.textContent = 'Copy starter prompt'; }, 1500);
             });
@@ -464,6 +607,7 @@
     });
 
     wireControls();
+    void loadPlatformChoices();
     void refresh();
     setInterval(() => { void refresh(); }, POLL_INTERVAL_MS);
 })();

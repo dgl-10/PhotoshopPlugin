@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { buildArgs, parseOutput, sanitize, readAgentConfig } = require('../agent/cli-runner');
+const { buildArgs, parseOutput, sanitize, readAgentConfig, normalizeAgyModel } = require('../agent/cli-runner');
 const { buildInstallCommands, TOKEN_ENV_VAR, SERVER_NAME } = require('../agent/mcp-setup');
 
 test('Claude Code is launched with the MCP tools explicitly allowed', () => {
@@ -67,10 +67,6 @@ test('Grok needs its folder trusted', () => {
     assert.ok(args.includes('--always-approve'));
 });
 
-test('Helper refuses to launch Antigravity', () => {
-    assert.throws(() => buildArgs({ cli: 'agy', prompt: 'x' }), /cannot launch/);
-});
-
 test('the answer and the session id are read out of what the CLI printed', () => {
     const claude = parseOutput('claude', '{"result":"all done","session_id":"s-1"}', null);
     assert.deepEqual(claude, { text: 'all done', sessionId: 's-1' });
@@ -96,6 +92,13 @@ test('the answer and the session id are read out of what the CLI printed', () =>
         null
     );
     assert.deepEqual(codex, { text: 'done', sessionId: 't-2' });
+
+    const codexReal = parseOutput(
+        'codex',
+        '{"thread_id":"t-3"}\n{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"real codex done"}}',
+        null
+    );
+    assert.deepEqual(codexReal, { text: 'real codex done', sessionId: 't-3' });
 });
 
 test('secrets are stripped from text returned to a caller', () => {
@@ -152,3 +155,105 @@ test('the registration command refers to the environment variable, not the token
     }
     assert.doesNotMatch(grok.note, /has not been verified|by hand/i);
 });
+
+test('normalizeAgyModel normalizes model slugs and effort correctly', () => {
+    // 1. Saved as display name with spaces and capital letters + effort
+    assert.deepEqual(
+        normalizeAgyModel('Gemini 3.1 Pro', 'high'),
+        { model: 'gemini-3.1-pro-high', effort: null }
+    );
+
+    // 2. Already saved as clean slug + effort
+    assert.deepEqual(
+        normalizeAgyModel('gemini-3.8-flash', 'high'),
+        { model: 'gemini-3.8-flash-high', effort: null }
+    );
+
+    // 3. Medium tier / low effort
+    assert.deepEqual(
+        normalizeAgyModel('gemini-3.8-flash', 'medium'),
+        { model: 'gemini-3.8-flash-medium', effort: null }
+    );
+    assert.deepEqual(
+        normalizeAgyModel('gemini-3.8-flash', 'low'),
+        { model: 'gemini-3.8-flash-low', effort: null }
+    );
+
+    // 4. Model already contains effort suffix in slug
+    assert.deepEqual(
+        normalizeAgyModel('gemini-3.8-flash-high', 'high'),
+        { model: 'gemini-3.8-flash-high', effort: null }
+    );
+    assert.deepEqual(
+        normalizeAgyModel('gemini-3.8-flash-high', 'medium'),
+        { model: 'gemini-3.8-flash-medium', effort: null }
+    );
+
+    // 5. Parenthetical UI representation
+    assert.deepEqual(
+        normalizeAgyModel('Gemini 3.8 Flash (High)'),
+        { model: 'gemini-3.8-flash-high', effort: null }
+    );
+
+    // 6. Model without effort (e.g. effort empty string or null)
+    assert.deepEqual(
+        normalizeAgyModel('gemini-3.8-flash', ''),
+        { model: 'gemini-3.8-flash', effort: null }
+    );
+    assert.deepEqual(
+        normalizeAgyModel('Gemini 3.8 Flash', null),
+        { model: 'gemini-3.8-flash', effort: null }
+    );
+
+    // 7. Non-Gemini model in agy preserves separate --effort flag
+    assert.deepEqual(
+        normalizeAgyModel('claude-sonnet-4-6', 'high'),
+        { model: 'claude-sonnet-4-6', effort: 'high' }
+    );
+
+    // 8. Empty or null model
+    assert.deepEqual(
+        normalizeAgyModel(null, 'high'),
+        { model: null, effort: 'high' }
+    );
+    assert.deepEqual(
+        normalizeAgyModel('', ''),
+        { model: null, effort: null }
+    );
+});
+
+test('buildArgs for agy produces normalized arguments without conflicting flags', () => {
+    // Flash model with high effort bakes effort into slug and omits --effort
+    const flashRun = buildArgs({
+        cli: 'agy',
+        model: 'gemini-3.8-flash',
+        effort: 'high',
+        prompt: 'test prompt'
+    });
+    assert.equal(flashRun.binary, 'agy');
+    assert.ok(flashRun.args.includes('--model'));
+    assert.equal(flashRun.args[flashRun.args.indexOf('--model') + 1], 'gemini-3.8-flash-high');
+    assert.ok(!flashRun.args.includes('--effort'), 'must not pass --effort for gemini models with baked slug');
+    assert.ok(flashRun.args.includes('-p'));
+    assert.equal(flashRun.args[flashRun.args.indexOf('-p') + 1], 'test prompt');
+
+    // Display title with spaces and caps
+    const proRun = buildArgs({
+        cli: 'agy',
+        model: 'Gemini 3.1 Pro',
+        effort: 'high',
+        prompt: 'test prompt'
+    });
+    assert.equal(proRun.args[proRun.args.indexOf('--model') + 1], 'gemini-3.1-pro-high');
+    assert.ok(!proRun.args.includes('--effort'));
+
+    // Model without effort
+    const noEffortRun = buildArgs({
+        cli: 'agy',
+        model: 'gemini-3.8-flash',
+        prompt: 'test prompt'
+    });
+    assert.equal(noEffortRun.args[noEffortRun.args.indexOf('--model') + 1], 'gemini-3.8-flash');
+    assert.ok(!noEffortRun.args.includes('--effort'));
+});
+

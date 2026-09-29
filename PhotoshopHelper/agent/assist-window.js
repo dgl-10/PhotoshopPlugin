@@ -17,6 +17,9 @@ const path = require('node:path');
 const { BrowserWindow, ipcMain, clipboard } = require('electron');
 
 const { buildInstallCommands, buildAgentInstructions } = require('./mcp-setup');
+const { getCliConfig } = require('./cli-service');
+const { openCliSettingsWindow } = require('./cli-settings-window');
+const { openCliModelsWindow } = require('./cli-models-window');
 const {
     getAssistWindowBounds,
     setAssistWindowBounds,
@@ -87,6 +90,18 @@ function registerIpc() {
 
     ipcMain.handle('agent-assist:copy-text', (event, text) => {
         clipboard.writeText(String(text || ''));
+    });
+
+    ipcMain.handle('agent-assist:get-cli-config', async () => {
+        return getCliConfig();
+    });
+
+    ipcMain.handle('agent-assist:open-cli-settings', async (_event, { cli } = {}) => {
+        if (cli && cli !== 'any') {
+            await openCliModelsWindow(cli, { parent: assistWindow });
+        } else {
+            await openCliSettingsWindow({ parent: assistWindow, modal: true });
+        }
     });
 }
 

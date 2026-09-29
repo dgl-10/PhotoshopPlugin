@@ -71,7 +71,15 @@ export function resultImageUrl(url, isLocal) {
 
 export function filenameFromUrl(url) {
     if (!url) return '';
-    return String(url).split('/').pop();
+    const marker = '/api/webhelper/file/';
+    const text = String(url);
+    const index = text.indexOf(marker);
+    const relative = index === -1 ? text.split('/').pop() : text.slice(index + marker.length);
+    return relative.split('?')[0].split('#')[0];
+}
+
+export function downloadNameFromUrl(url) {
+    return filenameFromUrl(url).split('/').pop();
 }
 
 export function fixAspectRatio(aspectRatio, allowedList) {

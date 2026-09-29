@@ -43,7 +43,50 @@ const storePromise = import('electron-store').then(StoreModule => {
             agentSeen: false,
             // Size and position of the AI Assist window in Helper, so it reopens where the
             // person left it. Null until the window has been closed at least once.
-            assistWindowBounds: null
+            assistWindowBounds: null,
+            // Per-CLI configuration for the four supported command-line agents.
+            // enabled:        whether this CLI is selected for use by the agent system.
+            // nativeImageGen: whether this CLI supports native (built-in) image generation.
+            // tiers:          model + effort strings for three quality levels.
+            //                 Empty strings mean "use the CLI default".
+            cliSettings: {
+                claude: {
+                    enabled: false,
+                    nativeImageGen: false,
+                    tiers: {
+                        light:  { model: '', effort: '' },
+                        medium: { model: '', effort: '' },
+                        high:   { model: '', effort: '' }
+                    }
+                },
+                codex: {
+                    enabled: false,
+                    nativeImageGen: false,
+                    tiers: {
+                        light:  { model: '', effort: '' },
+                        medium: { model: '', effort: '' },
+                        high:   { model: '', effort: '' }
+                    }
+                },
+                grok: {
+                    enabled: false,
+                    nativeImageGen: false,
+                    tiers: {
+                        light:  { model: '', effort: '' },
+                        medium: { model: '', effort: '' },
+                        high:   { model: '', effort: '' }
+                    }
+                },
+                agy: {
+                    enabled: false,
+                    nativeImageGen: false,
+                    tiers: {
+                        light:  { model: '', effort: '' },
+                        medium: { model: '', effort: '' },
+                        high:   { model: '', effort: '' }
+                    }
+                }
+            }
         }
     });
 });
@@ -228,6 +271,10 @@ async function isAgentJournalEnabled() {
  * @returns {Promise<boolean>} The stored state.
  */
 async function setAgentJournalEnabled(enabled) {
+    const { app } = require('electron');
+    if (!app.isPackaged) {
+        throw new Error('Cannot change agent journal setting in development mode (it is always enabled).');
+    }
     const store = await storePromise;
     store.set('agentJournalEnabled', Boolean(enabled));
     return Boolean(enabled);
@@ -272,6 +319,78 @@ async function getAssistWindowBounds() {
 async function setAssistWindowBounds(bounds) {
     const store = await storePromise;
     store.set('assistWindowBounds', bounds);
+}
+
+/**
+ * Read the full CLI settings object for all four CLIs.
+ *
+ * @returns {Promise<object>} The cliSettings object from the store.
+ */
+async function getCliSettings() {
+    const store = await storePromise;
+    return store.get('cliSettings');
+}
+
+/**
+ * Enable or disable a specific CLI.
+ *
+ * @param {string}  cli     - One of: claude, codex, grok, agy.
+ * @param {boolean} enabled - New enabled state.
+ * @returns {Promise<void>}
+ */
+async function setCliEnabled(cli, enabled) {
+    const store = await storePromise;
+    store.set(`cliSettings.${cli}.enabled`, Boolean(enabled));
+}
+
+/**
+ * Set the native image generation flag for a specific CLI.
+ *
+ * @param {string}  cli   - One of: claude, codex, grok, agy.
+ * @param {boolean} value - Whether the CLI natively supports image generation.
+ * @returns {Promise<void>}
+ */
+async function setCliNativeImageGen(cli, value) {
+    const store = await storePromise;
+    store.set(`cliSettings.${cli}.nativeImageGen`, Boolean(value));
+}
+
+/**
+ * Save the model and effort for one tier of a specific CLI.
+ *
+ * @param {string} cli    - One of: claude, codex, grok, agy.
+ * @param {string} tier   - One of: light, medium, high.
+ * @param {object} config
+ * @param {string} config.model  - Model identifier (empty string = use CLI default).
+ * @param {string} config.effort - Effort level (empty string = use CLI default).
+ * @returns {Promise<void>}
+ */
+async function setCliTier(cli, tier, { model, effort }) {
+    const store = await storePromise;
+    store.set(`cliSettings.${cli}.tiers.${tier}`, {
+        model:  typeof model  === 'string' ? model  : '',
+        effort: typeof effort === 'string' ? effort : ''
+    });
+}
+
+/**
+ * Save the complete tiers object for a specific CLI in one write.
+ *
+ * @param {string} cli   - One of: claude, codex, grok, agy.
+ * @param {object} tiers - Object with light/medium/high keys, each { model, effort }.
+ * @returns {Promise<void>}
+ */
+async function setCliTiers(cli, tiers) {
+    const store = await storePromise;
+    const safe = {};
+    for (const tier of ['light', 'medium', 'high']) {
+        const src = (tiers && tiers[tier]) || {};
+        safe[tier] = {
+            model:  typeof src.model  === 'string' ? src.model  : '',
+            effort: typeof src.effort === 'string' ? src.effort : ''
+        };
+    }
+    store.set(`cliSettings.${cli}.tiers`, safe);
 }
 
 /**
@@ -387,6 +506,12 @@ module.exports = {
     markAgentSeen,
     getAssistWindowBounds,
     setAssistWindowBounds,
+    // CLI settings
+    getCliSettings,
+    setCliEnabled,
+    setCliNativeImageGen,
+    setCliTier,
+    setCliTiers,
     INITIAL_DONATION_THRESHOLD,
     DONATED_THRESHOLD: DONATED_NEW_DONATION_THRESHOLD,
     HARDCORE_UNPAID_THRESHOLD,

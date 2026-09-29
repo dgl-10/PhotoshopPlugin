@@ -337,6 +337,16 @@ test('parseCodexJsonl extracts text from JSONL stream', () => {
     assert.equal(text, 'Hello from Codex');
 });
 
+test('parseCodexJsonl extracts text from real Codex agent_message format', () => {
+    const stdout = [
+        '{"type":"thread.started","thread_id":"t1"}',
+        '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Hello from real Codex"}}',
+        '{"type":"turn.completed"}'
+    ].join('\n');
+    const text = parseCodexJsonl(stdout);
+    assert.equal(text, 'Hello from real Codex');
+});
+
 test('parseCodexJsonl returns null when no text found', () => {
     const stdout = '{"type":"thread.started","thread_id":"t1"}';
     assert.equal(parseCodexJsonl(stdout), null);

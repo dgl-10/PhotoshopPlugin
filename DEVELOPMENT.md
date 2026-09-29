@@ -27,6 +27,7 @@ Most AI plugins for Photoshop require an embedded API key and charge a fee for e
 - Automatically receives tasks (Image + Mask) from the FromPS plugin
 - Allows you to select a model, write prompts, and configure generation parameters
 - Displays a visual mask overlay and supports Reference images
+- Adds one in-memory CLI image provider when an installed and enabled CLI supports native image generation and has a Medium model configured
 - Finished generations can be copied and pasted back into Photoshop via ToPS in one click
 - Can operate either alongside the plugin or fully standalone
 

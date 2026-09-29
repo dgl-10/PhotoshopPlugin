@@ -48,6 +48,7 @@
             "!.env",
             "!user-settings.json",
             "!agent-journal/**",
+            "!cli-models-cache/**",
             "!knowledge-base/**",
             "!knowledge-base.user/**",
             "!_tests_/**",

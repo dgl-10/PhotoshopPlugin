@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhotoshopHelper — Model Configuration</title>
+    <!-- Spectre.css — same version used across all Helper windows -->
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-exp.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-icons.min.css">
+
+    <style>
+        html, body {
+            height: 100%;
+            overflow-x: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .cm-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: .8rem 1rem;
+            border-bottom: 1px solid #dadee4;
+            flex: none;
+        }
+
+        .cm-header h5 {
+            margin: 0;
+        }
+
+        .cm-body {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 1rem;
+        }
+
+        .cm-footer {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: .8rem;
+            padding: .7rem 1rem;
+            border-top: 1px solid #dadee4;
+            flex: none;
+        }
+
+        /* Options bar: Enabled & Native Image Gen */
+        .cm-options-bar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: .8rem 1.2rem;
+            padding: .6rem .8rem;
+            background: #f7f8f9;
+            border: 1px solid #dadee4;
+            border-radius: .2rem;
+            margin-bottom: .8rem;
+        }
+
+        .cm-options-bar .form-checkbox {
+            margin: 0;
+            user-select: none;
+        }
+
+        .cm-native-gen-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+        }
+
+        .cm-native-gen-hint {
+            font-size: .75rem;
+            color: #667;
+        }
+
+        .cs-info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #5755d9;
+            color: #fff;
+            font-size: 10px;
+            font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-weight: 700;
+            font-style: normal;
+            line-height: 1;
+            margin-left: 3px;
+            cursor: help;
+            vertical-align: middle;
+            text-transform: none;
+        }
+
+        /* Refresh bar */
+        .cm-refresh-bar {
+            display: flex;
+            align-items: center;
+            gap: .8rem;
+            margin-bottom: 1rem;
+            flex-wrap: nowrap;
+        }
+
+        #cm-refresh-btn {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        .cm-cache-age {
+            font-size: .8rem;
+            color: #667;
+            white-space: nowrap;
+        }
+
+        .cm-refresh-status {
+            display: inline-flex;
+            align-items: center;
+            font-size: .8rem;
+            color: #5755d9;
+            gap: .4rem;
+            white-space: nowrap;
+        }
+
+        .cm-refresh-status .loading {
+            display: inline-block;
+            width: 1.2rem;
+            height: 1.2rem;
+            flex-shrink: 0;
+            margin-right: .25rem;
+        }
+
+        .cm-refresh-hint {
+            font-size: .75rem;
+            color: #667;
+            white-space: nowrap;
+        }
+
+        /* Tier section */
+        .cm-tier {
+            border: 1px solid #dadee4;
+            border-radius: .2rem;
+            padding: .7rem .9rem;
+            margin-bottom: .8rem;
+            position: relative;
+            overflow: visible;
+        }
+
+        .cm-tier-title {
+            font-weight: 700;
+            font-size: .85rem;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: #5755d9;
+            margin-bottom: .6rem;
+        }
+
+        .cm-tier-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: .6rem;
+            overflow: visible;
+        }
+
+        .form-group {
+            position: relative;
+            overflow: visible;
+            min-width: 0;
+        }
+
+        /* Combobox widget built with Spectre.css input-group and menu */
+        .cm-combobox {
+            position: relative;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .cm-combobox .form-input {
+            flex: 1 1 auto;
+            min-width: 0;
+            width: 0;
+        }
+
+        .cm-combobox .cm-combo-btn {
+            padding: 0 .45rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cm-combobox .cm-combo-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 200;
+            max-height: 220px;
+            overflow-y: auto;
+            margin: 2px 0 0 0;
+            padding: .25rem 0;
+            background: #fff;
+            border: 1px solid #dadee4;
+            border-radius: .2rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            list-style: none;
+        }
+
+        .cm-combobox .cm-combo-menu .menu-item a {
+            display: block;
+            padding: .35rem .6rem;
+            color: #3b4351;
+            text-decoration: none;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: .8rem;
+        }
+
+        .cm-combobox .cm-combo-menu .menu-item a:hover {
+            background: #f1f1fc;
+            color: #5755d9;
+        }
+
+        .cm-combobox .cm-combo-menu .menu-item.is-selected a {
+            background: #5755d9;
+            color: #fff;
+        }
+
+        .cm-combobox .cm-combo-empty {
+            padding: .4rem .6rem;
+            color: #9aa0a6;
+            font-size: .75rem;
+            font-style: italic;
+        }
+
+        .form-label {
+            font-size: .78rem;
+            color: #454d5d;
+            margin-bottom: .2rem;
+            display: block;
+        }
+
+        /* Loading / error states */
+        .cm-loading {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            color: #667;
+            padding: .5rem 0;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="cm-header">
+        <!-- Title is set by the renderer once it knows the CLI name -->
+        <h5 id="cm-title">Model Configuration</h5>
+    </div>
+
+    <div class="cm-body">
+
+        <!-- Loading state -->
+        <div id="cm-loading" class="cm-loading">
+            <div class="loading"></div>
+            <span>Loading…</span>
+        </div>
+
+        <!-- Error state -->
+        <div id="cm-error" class="toast toast-error" hidden>
+            <span id="cm-error-text"></span>
+        </div>
+
+        <!-- Main content -->
+        <div id="cm-content" hidden>
+
+            <!-- Options bar: Enabled & Native Image Gen checkboxes -->
+            <div class="cm-options-bar">
+                <label class="form-checkbox">
+                    <input type="checkbox" id="cm-enabled">
+                    <i class="form-icon"></i> Enabled
+                </label>
+                <div class="cm-native-gen-wrap">
+                    <label class="form-checkbox" id="cm-native-image-gen-label">
+                        <input type="checkbox" id="cm-native-image-gen">
+                        <i class="form-icon"></i> Native Image Generation
+                    </label>
+                    <span class="tooltip tooltip-bottom" data-tooltip="Enable if CLI supports native image generation included in your subscription.">
+                        <i class="cs-info-icon">i</i>
+                    </span>
+                    <span id="cm-native-image-gen-hint" class="cm-native-gen-hint"></span>
+                </div>
+            </div>
+
+            <!-- Refresh Models bar -->
+            <div class="cm-refresh-bar">
+                <button id="cm-refresh-btn" class="btn btn-sm">
+                    <i class="icon icon-refresh mr-1"></i>
+                    <span id="cm-refresh-btn-text">Refresh via CLI</span>
+                </button>
+                <span id="cm-cache-age" class="cm-cache-age"></span>
+                <span id="cm-refresh-status" class="cm-refresh-status" hidden>
+                    <span class="loading mr-1"></span>
+                    <span id="cm-refresh-status-text">Querying CLI...</span>
+                    <span id="cm-refresh-timer" class="text-bold ml-1 text-primary">0s</span>
+                    <span id="cm-refresh-hint" class="cm-refresh-hint ml-1" hidden>(analyzing models...)</span>
+                </span>
+            </div>
+
+            <!-- Refresh error toast (inline, dismissable) -->
+            <div id="cm-refresh-error" class="toast toast-error" hidden style="margin-bottom:.8rem;">
+                <button class="btn btn-clear float-right" id="cm-refresh-error-close"></button>
+                <span id="cm-refresh-error-text"></span>
+            </div>
+
+            <!-- Light tier -->
+            <div class="cm-tier">
+                <div class="cm-tier-title">Light</div>
+                <div class="cm-tier-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="cm-light-model">Model</label>
+                        <div class="input-group cm-combobox">
+                            <input
+                                id="cm-light-model"
+                                class="form-input"
+                                type="text"
+                                placeholder="e.g. gemini-3.8-flash"
+                                autocomplete="off"
+                            />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-light-model-btn" tabindex="-1" title="Show all models">
+                                <i class="icon icon-caret"></i>
+                            </button>
+                            <ul class="menu cm-combo-menu" id="cm-light-model-menu" hidden></ul>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="cm-light-effort">Effort</label>
+                        <div class="input-group cm-combobox">
+                            <input
+                                id="cm-light-effort"
+                                class="form-input"
+                                type="text"
+                                placeholder="e.g. low"
+                                autocomplete="off"
+                            />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-light-effort-btn" tabindex="-1" title="Show all efforts">
+                                <i class="icon icon-caret"></i>
+                            </button>
+                            <ul class="menu cm-combo-menu" id="cm-light-effort-menu" hidden></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Medium tier -->
+            <div class="cm-tier">
+                <div class="cm-tier-title">Medium</div>
+                <div class="cm-tier-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="cm-medium-model">Model</label>
+                        <div class="input-group cm-combobox">
+                            <input
+                                id="cm-medium-model"
+                                class="form-input"
+                                type="text"
+                                placeholder="e.g. gemini-3.8-flash"
+                                autocomplete="off"
+                            />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-medium-model-btn" tabindex="-1" title="Show all models">
+                                <i class="icon icon-caret"></i>
+                            </button>
+                            <ul class="menu cm-combo-menu" id="cm-medium-model-menu" hidden></ul>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="cm-medium-effort">Effort</label>
+                        <div class="input-group cm-combobox">
+                            <input
+                                id="cm-medium-effort"
+                                class="form-input"
+                                type="text"
+                                placeholder="e.g. high"
+                                autocomplete="off"
+                            />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-medium-effort-btn" tabindex="-1" title="Show all efforts">
+                                <i class="icon icon-caret"></i>
+                            </button>
+                            <ul class="menu cm-combo-menu" id="cm-medium-effort-menu" hidden></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- High tier -->
+            <div class="cm-tier">
+                <div class="cm-tier-title">High</div>
+                <div class="cm-tier-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="cm-high-model">Model</label>
+                        <div class="input-group cm-combobox">
+                            <input
+                                id="cm-high-model"
+                                class="form-input"
+                                type="text"
+                                placeholder="e.g. gemini-3.1-pro"
+                                autocomplete="off"
+                            />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-high-model-btn" tabindex="-1" title="Show all models">
+                                <i class="icon icon-caret"></i>
+                            </button>
+                            <ul class="menu cm-combo-menu" id="cm-high-model-menu" hidden></ul>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="cm-high-effort">Effort</label>
+                        <div class="input-group cm-combobox">
+                            <input
+                                id="cm-high-effort"
+                                class="form-input"
+                                type="text"
+                                placeholder="e.g. high"
+                                autocomplete="off"
+                            />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-high-effort-btn" tabindex="-1" title="Show all efforts">
+                                <i class="icon icon-caret"></i>
+                            </button>
+                            <ul class="menu cm-combo-menu" id="cm-high-effort-menu" hidden></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /#cm-content -->
+
+    </div><!-- /.cm-body -->
+
+    <div class="cm-footer">
+        <button id="cm-save-btn" class="btn btn-primary" hidden>Save</button>
+    </div>
+
+    <script src="cli-models-renderer.js"></script>
+</body>
+
+</html>

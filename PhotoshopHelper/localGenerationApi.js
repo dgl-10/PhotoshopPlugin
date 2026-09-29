@@ -6,6 +6,7 @@ const express = require('express');
 
 const { createAuthMiddleware } = require('./auth');
 const { getProvidersConfig, IMPLEMENTED_GENERATION_MODES } = require('./apiGenerator');
+const { resolveWebhelperFile } = require('./webhelper-storage');
 
 // The common prefix is versioned independently from the browser-oriented
 // WebHelper API so the local service contract can evolve without breaking the UI.
@@ -90,6 +91,8 @@ function normalizeInputFilePath(value, fieldName, required) {
  * @param {unknown} body - Parsed Express JSON request body.
  * @param {object} [options] - Optional validation context.
  * @param {Record<string, object>} [options.responseHandlers] - Map of available response handlers to validate $ref against.
+ * @param {boolean} [options.supportsAspectRatioAutoInT2i=false] - Whether a trusted,
+ *     resolved provider can choose its own T2I output ratio.
  * @returns {object} Normalized image paths, provider, and generation arguments.
  */
 function normalizeGenerationRequest(body, options = {}) {
@@ -177,8 +180,8 @@ function normalizeGenerationRequest(body, options = {}) {
     }
 
     // Trim transport-only whitespace once at the API boundary. An empty string is
-    // equivalent to an omitted ratio for image-to-image, but is rejected below for
-    // text-to-image where an explicit output shape is mandatory.
+    // equivalent to an omitted ratio for image-to-image and for the one trusted runtime
+    // provider that explicitly supports its native model's automatic output shape.
     const aspectRatio = typeof rawAspectRatio === 'string'
         ? rawAspectRatio.trim() || undefined
         : undefined;
@@ -229,7 +232,7 @@ function normalizeGenerationRequest(body, options = {}) {
     const isTextToImage = !sourceImagePath
         && !useMask
         && normalizedReferencePaths.length === 0;
-    if (isTextToImage && !aspectRatio) {
+    if (isTextToImage && !aspectRatio && options.supportsAspectRatioAutoInT2i !== true) {
         throw createHttpError('"aspect_ratio" is required for text-to-image generation.');
     }
 
@@ -251,7 +254,7 @@ function normalizeGenerationRequest(body, options = {}) {
  * Convert a WebHelper result URL into an absolute generated file path.
  *
  * @param {object} result - One result returned by apiGenerator.generate().
- * @param {string} tempDir - Directory where generated images are saved.
+ * @param {string} tempDir - WebHelper temp root that contains `_WH_Generated`.
  * @returns {string|null} Absolute output path, or null for a failed/non-file result.
  */
 function resultToAbsolutePath(result, tempDir) {
@@ -263,15 +266,9 @@ function resultToAbsolutePath(result, tempDir) {
         return path.normalize(result.image);
     }
 
-    const webHelperPrefix = '/api/webhelper/file/';
-    if (!result.image.startsWith(webHelperPrefix)) {
-        return null;
-    }
-
-    // Generated files are always written directly into the shared WebHelper output
-    // directory, so only the filename portion is accepted from an internal URL.
-    const filename = path.basename(result.image.slice(webHelperPrefix.length));
-    return path.resolve(tempDir, filename);
+    // New results use `/api/webhelper/file/generated/<filename>`. A bare filename
+    // still resolves in the temp root for a caller that emits the older URL.
+    return resolveWebhelperFile(tempDir, result.image);
 }
 
 /**
@@ -308,8 +305,8 @@ function serializeGeneration(generation, tempDir) {
         statusUrl: getGenerationStatusUrl(generation.generationId)
     };
 
-    if (generation.providerObject) {
-        serialized.providerSnapshot = generation.providerObject;
+    if (generation.providerSnapshot) {
+        serialized.providerSnapshot = generation.providerSnapshot;
     }
 
     return serialized;
@@ -377,6 +374,7 @@ async function executeGeneration(generation, dependencies) {
  * @param {string} options.tempDir - Existing WebHelper generation output directory.
  * @param {Function} options.getToken - Returns the shared token required of every caller.
  * @param {Function} [options.getProvidersConfig] - Optional provider config loader.
+ * @param {Function} [options.resolveRuntimeProvider] - Resolves an in-memory provider by ID.
  * @param {Function} [options.onGenerationAccepted] - Optional usage/accounting callback.
  * @returns {import('express').Router} A router mounted at LOCAL_API_PREFIX.
  */
@@ -396,6 +394,7 @@ function createLocalGenerationRouter(options) {
         tempDir: path.resolve(options.tempDir)
     };
     const resolveProvidersConfig = options.getProvidersConfig || getProvidersConfig;
+    const resolveRuntimeProvider = options.resolveRuntimeProvider;
 
     // Generation state is deliberately private to this router. Local API requests
     // never enter WebHelper's task registry and cannot affect Photoshop/UI tasks.
@@ -407,8 +406,19 @@ function createLocalGenerationRouter(options) {
     router.use(createAuthMiddleware({ getToken: options.getToken }));
 
     // Accept one complete provider invocation without a preliminary task resource.
-    router.post('/generations', (req, res) => {
+    router.post('/generations', async (req, res) => {
         try {
+            // Disk-backed providers are still resolved later by apiGenerator. Runtime-only
+            // providers do not exist in that catalog, so resolve only their advertised ID
+            // here and retain the resulting private object for the background invocation.
+            const requestedProviderId = isPlainObject(req.body)
+                && typeof req.body.providerId === 'string'
+                ? req.body.providerId.trim()
+                : '';
+            const runtimeProvider = requestedProviderId && typeof resolveRuntimeProvider === 'function'
+                ? await resolveRuntimeProvider(requestedProviderId)
+                : null;
+
             let responseHandlers;
             if (typeof resolveProvidersConfig === 'function') {
                 try {
@@ -419,7 +429,21 @@ function createLocalGenerationRouter(options) {
                 }
             }
 
-            const request = normalizeGenerationRequest(req.body, { responseHandlers });
+            const request = normalizeGenerationRequest(req.body, {
+                responseHandlers,
+                // This exception comes from the trusted in-memory provider. Inline callers
+                // cannot enable it by adding an undocumented provider field themselves.
+                supportsAspectRatioAutoInT2i:
+                    runtimeProvider?.supports_aspect_ratio_auto_in_t2i === true
+            });
+
+            // Keep providerId as the public identity, but execute with the complete runtime
+            // object because it is intentionally absent from the provider catalog on disk.
+            // This object contains a private endpoint credential and must never be echoed.
+            if (runtimeProvider) {
+                request.providerObject = runtimeProvider;
+            }
+
             const generationId = `generation_${Date.now()}_${crypto.randomUUID()}`;
             const createdAt = new Date().toISOString();
             const generation = {
@@ -427,6 +451,7 @@ function createLocalGenerationRouter(options) {
                 status: 'queued',
                 providerId: request.providerId,
                 providerObject: request.providerObject,
+                providerSnapshot: runtimeProvider ? null : request.providerObject,
                 sourceImagePath: request.sourceImagePath,
                 maskImagePath: request.maskImagePath,
                 params: request.params,

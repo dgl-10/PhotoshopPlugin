@@ -109,6 +109,8 @@ While the browser-based workflow is great, **WebHelper** is designed for those w
 
 If you prefer using your own credentials for privacy, higher limits, or specific models — WebHelper handles the technical bridge. Your images and masks arrive there **automatically** from Photoshop, letting you generate, compare, and send results back in one click.
 
+**Already paying for AI?** WebHelper turns your existing ChatGPT/Codex, Gemini/Antigravity, Grok access into one unified image-generation workspace—using supported CLIs and your subscription allowance, with no separate image API key or API-token bill.
+
 <table>
   <tr>
     <td><img src="_screenshots/01/11.png" alt="WebHelper Source Tab with mask overlay and generation settings" height="550"></td>
@@ -132,6 +134,7 @@ WebHelper is designed as a universal bridge. It includes modular **Response Hand
 ---
 
 ### WebHelper Features:
+- 🤖 **Native CLI generation**: Use an installed, enabled Codex, Grok, or Antigravity CLI that is marked for native image generation; WebHelper runs its configured Medium model without requiring another API key
 - 🖼️ **Reference images**: Attach additional reference images to guide the AI
 - 🎭 **Mask overlay**: See exactly what the AI will inpaint (toggle: image / mask / overlay)
 - 🔄 **Multi-task**: Send multiple selections from Photoshop — each becomes an independent task

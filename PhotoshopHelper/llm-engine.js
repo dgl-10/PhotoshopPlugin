@@ -601,9 +601,12 @@ function parseCodexJsonl(stdout) {
     for (let i = lines.length - 1; i >= 0; i--) {
         try {
             const event = JSON.parse(lines[i]);
-            if (event.type === 'item.completed' && event.item?.content) {
-                const textContent = event.item.content.find(c => c.type === 'text');
-                if (textContent?.text) return textContent.text;
+            if (event.type === 'item.completed' && event.item) {
+                if (typeof event.item.text === 'string') return event.item.text;
+                if (Array.isArray(event.item.content)) {
+                    const textContent = event.item.content.find(c => c.type === 'text');
+                    if (textContent?.text) return textContent.text;
+                }
             }
         } catch { /* skip non-JSON lines */ }
     }

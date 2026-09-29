@@ -58,9 +58,6 @@ Cross-origin browser requests are also rejected outright: the server reflects on
 own origin instead of `Access-Control-Allow-Origin: *`, so a page from any other site
 fails its CORS check before a mutating request is even authenticated.
 
-WebHelper itself stays reachable without a token when accessed from the machine it runs
-on, including through a tunnel such as ngrok, because that traffic is same-origin from
-the browser's perspective. Setting `WEBHELPER_ACCESS_PASSWORD` adds an HTTP Basic
-password gate for the case where WebHelper is deliberately exposed beyond this machine.
+While WebHelper is designed as a local service, it is common to access it remotely via reverse tunnels (e.g., ngrok or cloudflared). Because tunneled traffic appears as same-origin to the browser, standard local origin protections are bypassed. If you choose to expose your instance this way, you can set `WEBHELPER_ACCESS_PASSWORD` to enforce an HTTP Basic Authentication prompt, protecting the interface and your API keys from unauthorized access.
 
 Reports are reviewed on a best-effort basis. Please allow time for verification before publishing details.

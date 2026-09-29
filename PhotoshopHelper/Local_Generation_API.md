@@ -32,7 +32,7 @@ is `completed` or `failed`.
 - Every supplied path must identify an existing readable regular file.
 - Source, mask, references, provider parameters, and output settings belong to one
   self-contained generation request.
-- Generated files are written to the existing `%TEMP%\ps_webhelper_tasks` directory.
+- Generated files and their JSON sidecars are written to `%TEMP%\ps_webhelper_tasks\_WH_Generated`.
 - Successful status responses contain absolute output paths.
 - Generation state is held in memory and is not restored after Photoshop Helper restarts.
 - Local API generations do not enter or modify the Photoshop/WebHelper task registry.
@@ -59,7 +59,10 @@ is evaluated dynamically by the server (validating configured credentials, apply
 overrides, and filtering out incomplete templates). The discovery endpoint is the only
 source of truth for currently active and supported providers.
 
-The response body is `{ "providers": [ ... ] }`.
+The response body is `{ "providers": [ ... ] }`. This can include runtime providers such
+as `native-cli-image-generator`; a returned runtime provider can be selected by `providerId`
+exactly like a catalog provider. Its server-side transport remains private and cannot be
+recreated as an inline `provider` object.
 
 There are two ways to select a provider on `POST /api/local/v1/generations`:
 
@@ -122,6 +125,8 @@ be forwarded to the paid provider. A `providerId` request must therefore include
 
 - `alias` on a parameter or dropdown option — WebHelper UI persistence only.
 - `hidden` on a dropdown option — alias bridge for the UI.
+- `ui_position` on a parameter — runtime WebHelper layout metadata. It does not change
+  the parameter key or value sent in `params`.
 - `label` — display text, including prices. Never send it as a value.
 - `nice_name` — result-tab title.
 - `tags` — UI grouping labels. Do not send them in the generation request.
@@ -548,7 +553,7 @@ Poll until the state becomes `completed` or `failed`.
   "startedAt": "2026-08-13T10:00:00.010Z",
   "completedAt": "2026-08-13T10:00:31.250Z",
   "outputPaths": [
-    "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\generated_image_2026-08-13_1.wh.gpt_image_2_i2i.png"
+    "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\_WH_Generated\\generated_image_2026-08-13_1.wh.gpt_image_2_i2i.png"
   ],
   "error": null,
   "statusUrl": "/api/local/v1/generations/generation_1786540000000_00000000-0000-0000-0000-000000000000"
@@ -573,7 +578,7 @@ When the generation was created using an inline `provider` object, the response 
   "startedAt": "2026-08-13T10:00:00.010Z",
   "completedAt": "2026-08-13T10:00:31.250Z",
   "outputPaths": [
-    "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\generated_image_2026-08-13_1.wh.my_replicate_test_t2i.png"
+    "C:\\Users\\user\\AppData\\Local\\Temp\\ps_webhelper_tasks\\_WH_Generated\\generated_image_2026-08-13_1.wh.my_replicate_test_t2i.png"
   ],
   "error": null,
   "statusUrl": "/api/local/v1/generations/generation_1786540000000_00000000-0000-0000-0000-000000000000"

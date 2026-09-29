@@ -92,13 +92,21 @@ export function allowedAspectRatios(provider, formState) {
 }
 
 export function resolveAspectRatio(task, provider, aliasState) {
-    const raw = aliasState?.aspect_ratio ?? '';
+    // New img2img tasks opt out of the session ratio and start empty (Match Input).
+    // Text-to-image keeps reading the session alias.
+    const raw = task.state.useSessionAspectRatio === false
+        ? (task.state.formState?.aspect_ratio ?? '')
+        : (aliasState?.aspect_ratio ?? '');
     const allowed = allowedAspectRatios(provider, task.state.formState);
     const isT2I = effectiveGenerationMode(task) === 't2i';
+    // Fully functional and tested, but intentionally omitted from public docs
+    // by maintainer decision. Supporting Auto aspect ratio in T2I is considered unnecessary for project workflows.
+    const allowEmpty = !isT2I || provider?.supports_aspect_ratio_auto_in_t2i === true;
     let effective;
     if (isT2I) {
         if (raw && allowed.includes(raw)) effective = raw;
         else if (raw) effective = fixAspectRatio(raw, allowed);
+        else if (allowEmpty) effective = '';
         else effective = allowed.includes('1:1') ? '1:1' : (allowed[0] || '');
     } else if (allowed.length === 0 || raw === '') {
         effective = '';
@@ -106,7 +114,7 @@ export function resolveAspectRatio(task, provider, aliasState) {
         effective = fixAspectRatio(raw, allowed);
     }
     task.state.formState.aspect_ratio = effective;
-    return { effective, allowed, isT2I };
+    return { effective, allowed, isT2I, allowEmpty };
 }
 
 export function isPromptEmpty(task) {
@@ -127,8 +135,10 @@ export function isMaskMissing(provider, task) {
     return Boolean(provider.mask_handling?.required && !task.data?.maskImage);
 }
 
-export function isAspectRatioMissing(task) {
+export function isAspectRatioMissing(task, provider) {
     if (!task?.state?.selectedProviderId) return false;
+    // See resolveAspectRatio(): only an explicitly opted-in provider may use T2I Auto.
+    if (provider?.supports_aspect_ratio_auto_in_t2i === true) return false;
     return effectiveGenerationMode(task) === 't2i'
         && (!task.state.formState?.aspect_ratio || String(task.state.formState.aspect_ratio).trim() === '');
 }
@@ -138,52 +148,81 @@ export function isGenerateBlocked(provider, task) {
     const mode = effectiveGenerationMode(task);
     if (!providerSupportsMode(provider, mode)) return true;
     if (isMaskMissing(provider, task)) return true;
-    if (isAspectRatioMissing(task)) return true;
+    if (isAspectRatioMissing(task, provider)) return true;
     return false;
 }
 
-const VENDOR_RULES = [
-    { tag: 'xai', test: /xai|grok/ },
-    { tag: 'fal', test: /fal/ },
-    { tag: 'replicate', test: /replicate/ },
-    { tag: 'openai', test: /openai|gpt/ },
-    { tag: 'bfl', test: /\bbfl\b|flux/ },
-    { tag: 'seedream', test: /seedream/ },
-    { tag: 'qwen', test: /qwen|alibaba/ },
-    { tag: 'wan', test: /wan/ },
-    { tag: 'pruna', test: /pruna/ },
-    { tag: 'civitai', test: /civitai/ }
-];
+/**
+ * Extract tags categorized into three groups: provider, family, and other.
+ *
+ * @param {object} provider - Provider definition.
+ * @returns {{ provider: string[], family: string[], other: string[] }} Categorized tag lists.
+ */
+export function providerCategorizedTags(provider) {
+    const res = { provider: [], family: [], other: [] };
+    if (!provider || !provider.tags || typeof provider.tags !== 'object') return res;
 
+    const addTag = (arr, t) => {
+        if (typeof t === 'string') {
+            const trimmed = t.trim();
+            if (trimmed && !arr.includes(trimmed)) arr.push(trimmed);
+        } else if (Array.isArray(t)) {
+            for (const item of t) addTag(arr, item);
+        }
+    };
+
+    if (Array.isArray(provider.tags)) {
+        for (const t of provider.tags) addTag(res.other, t);
+        return res;
+    }
+
+    for (const [key, value] of Object.entries(provider.tags)) {
+        if (key === 'provider') {
+            addTag(res.provider, value);
+        } else if (key === 'family') {
+            addTag(res.family, value);
+        } else {
+            addTag(res.other, value);
+        }
+    }
+
+    return res;
+}
+
+/**
+ * Extract grouping tags declared directly on the provider as a flat list.
+ *
+ * @param {object} provider - Provider definition.
+ * @returns {string[]} List of unique tag slugs.
+ */
 export function providerTags(provider) {
-    if (!provider) return [];
-    const tags = [];
-    const blob = `${provider.id} ${provider.name}`.toLowerCase();
-    for (const rule of VENDOR_RULES) {
-        if (rule.test.test(blob)) tags.push(rule.tag);
-    }
-    // Temporary user decision: disabled automatic capability and mode tags (mask, refs, t2i, i2i)
-    /*
-    if (Array.isArray(provider.generation_modes)) {
-        for (const mode of provider.generation_modes) {
-            if (IMPLEMENTED_GENERATION_MODES.includes(mode) && !tags.includes(mode)) tags.push(mode);
-        }
-    }
-    if (provider.mask_handling && provider.mask_handling.supported !== false) tags.push('mask');
-    const maxRefs = maxReferenceImages(provider, {});
-    if (maxRefs > 0) tags.push('refs');
-    */
-    if (provider.tags && typeof provider.tags === 'object') {
-        const extraTags = Array.isArray(provider.tags)
-            ? provider.tags
-            : Object.values(provider.tags);
+    const cat = providerCategorizedTags(provider);
+    return [...cat.provider, ...cat.family, ...cat.other];
+}
 
-        for (const extra of extraTags) {
-            const t = typeof extra === 'string' ? extra.trim() : '';
-            if (t && !tags.includes(t)) tags.push(t);
-        }
+/**
+ * Extract all unique tags across all providers, grouped by category.
+ *
+ * @param {object[]} providers - List of providers.
+ * @returns {{ provider: string[], family: string[], other: string[] }} Grouped tag lists.
+ */
+export function allCategorizedProviderTags(providers) {
+    const providerSet = new Set();
+    const familySet = new Set();
+    const otherSet = new Set();
+
+    for (const p of providers || []) {
+        const cat = providerCategorizedTags(p);
+        for (const t of cat.provider) providerSet.add(t);
+        for (const t of cat.family) familySet.add(t);
+        for (const t of cat.other) otherSet.add(t);
     }
-    return tags;
+
+    return {
+        provider: [...providerSet],
+        family: [...familySet],
+        other: [...otherSet]
+    };
 }
 
 export function allProviderTags(providers) {
@@ -292,6 +331,44 @@ export function collectGenerateParams(provider, formState, root) {
         finalParams[param.name] = val;
     }
     return finalParams;
+}
+
+function coerceGenerateParam(param, value) {
+    if (param.type === 'slider' || param.type === 'number' || param.type === 'integer') return Number(value);
+    if (param.type === 'boolean' || param.type === 'checkbox') return value === 'true' || value === true;
+    if (param.type === 'string') return String(value);
+    return value;
+}
+
+function substituteNiceName(template, context) {
+    return template.replace(/{{([^}]+)}}/g, (match, key) => {
+        // Request secrets stay on the server. A name must not read process.env.
+        if (key.startsWith('env:')) return match;
+        return context[key] !== undefined ? String(context[key]) : match;
+    });
+}
+
+// Same selection as apiGenerator: values[param] or default, then {{param}} substitution.
+// The context keys are parameter names and API values, as in collectGenerateParams.
+export function resolveNiceName(provider, context = {}) {
+    const spec = provider?.nice_name;
+    if (!spec) return '';
+    const resolved = { ...context };
+    for (const param of provider.parameters || []) {
+        if (resolved[param.name] !== undefined) {
+            resolved[param.name] = coerceGenerateParam(param, resolved[param.name]);
+        }
+    }
+    let template = null;
+    if (typeof spec === 'string') {
+        template = spec;
+    } else if (typeof spec === 'object') {
+        const val = spec.depends_on ? resolved[spec.depends_on] : undefined;
+        if (val && spec.values && spec.values[val]) template = spec.values[val];
+        else template = spec.default || null;
+    }
+    if (typeof template !== 'string' || template === '') return '';
+    return substituteNiceName(template, resolved);
 }
 
 export function applyParamValue(task, aliasState, name, alias, rawVal) {

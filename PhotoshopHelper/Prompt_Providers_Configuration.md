@@ -309,9 +309,11 @@ Always include a `tags` object on the provider as documented in the guide.
   `flux`, `grok`, `gpt-image`, `qwen`, `alibaba`, `p-image`). Reuse an existing family
   slug when the configuration is another host or version of the same line.
 
-Use lowercase slugs with optional hyphens. One family slug per provider object — a
-bundled dropdown (Wan + Qwen in one entry) gets a single bundle slug such as
-`alibaba`. Do not add a favorites flag or any per-user state to `tags`.
+Use lowercase slugs with optional hyphens. `tags.family` can be a single slug string
+or an array of slugs when multiple model lines or sub-families are bundled. For Alibaba
+models, always include `alibaba` as the umbrella slug, alongside the specific line
+(`wan` and/or `qwen`, e.g. `['alibaba', 'wan', 'qwen']` or `['alibaba', 'qwen']`).
+Do not add a favorites flag or any per-user state to `tags`.
 
 ## Output
 

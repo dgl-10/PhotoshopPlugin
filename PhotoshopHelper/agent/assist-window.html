@@ -270,9 +270,13 @@
                     <span class="assist-setup-number">3</span>
                     <div style="flex:1;">
                         <div><strong>Restart the agent & prompt it</strong></div>
-                        <div class="assist-muted">Restart the agent, then ask it to work on the open document. You can use your own instructions or copy our starter prompt:</div>
+                        <div class="assist-muted">Restart the agent, then ask it to work on the active Photoshop document.<br>You can use your own instructions or copy our starter prompt:</div>
+                        <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.4rem;">
+                            <select id="assist-prompt-platform" class="form-select select-sm" style="max-width:240px;"></select>
+                            <button id="assist-prompt-configure" class="btn btn-sm" style="margin-left:auto;">Configure models</button>
+                        </div>
                         <div class="assist-setup-actions">
-                            <button id="assist-prompt-copy" class="btn btn-sm">Copy starter prompt</button>
+                            <button id="assist-prompt-copy" class="btn btn-primary btn-sm">Copy starter prompt</button>
                             <a href="#" id="assist-prompt-show"><i class="icon icon-arrow-right mr-1" id="assist-prompt-show-icon"></i><span id="assist-prompt-show-label">Show prompt</span></a>
                         </div>
                         <div id="assist-prompt-text" class="assist-setup-text" hidden></div>

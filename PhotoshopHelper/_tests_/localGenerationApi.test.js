@@ -51,7 +51,8 @@ async function startTestServer(context, options) {
         generate: options.generate,
         tempDir: options.tempDir,
         getToken: options.getToken || (() => 'test-local-token'),
-        getProvidersConfig: options.getProvidersConfig
+        getProvidersConfig: options.getProvidersConfig,
+        resolveRuntimeProvider: options.resolveRuntimeProvider
     }));
 
     const server = await new Promise(resolve => {
@@ -309,6 +310,54 @@ test('an inline provider runs to completion, passes the provider object, and ret
     assert.deepEqual(generation.providerSnapshot, inlineProvider);
     assert.deepEqual(generation.outputPaths, [path.resolve(fixtureDirectory, 'inline-output.png')]);
     assert.deepEqual(receivedProviderArg, inlineProvider);
+});
+
+test('a runtime provider ID works without an aspect ratio and never exposes its private object', async context => {
+    const fixtureDirectory = createFixtureDirectory(context);
+    const runtimeProvider = {
+        id: 'native-cli-image-generator',
+        generation_modes: ['t2i', 'i2i'],
+        image_format: 'file_path',
+        supports_aspect_ratio_auto_in_t2i: true,
+        request_config: {
+            endpoint_url: 'http://127.0.0.1/private',
+            headers: { 'x-private-key': 'must-not-leak' }
+        },
+        response_config: { $ref: 'sync' }
+    };
+    let receivedProviderArg = null;
+
+    const baseUrl = await startTestServer(context, {
+        tempDir: fixtureDirectory,
+        resolveRuntimeProvider: async providerId => (
+            providerId === runtimeProvider.id ? runtimeProvider : null
+        ),
+        generate: async (_input, providerIdOrObject) => {
+            receivedProviderArg = providerIdOrObject;
+            const outputFilename = 'runtime-output.png';
+            fs.writeFileSync(path.join(fixtureDirectory, outputFilename), 'runtime output data');
+            return [{ status: 'done', image: `/api/webhelper/file/${outputFilename}` }];
+        }
+    });
+
+    // No aspect_ratio is intentional: the trusted runtime provider advertises that its
+    // native model may choose an automatic ratio for text-to-image generation.
+    const started = await startGeneration(baseUrl, {
+        providerId: runtimeProvider.id,
+        params: {
+            cli: 'codex',
+            prompt: 'A lighthouse in heavy rain.',
+            do_not_change_prompt: false
+        }
+    });
+
+    assert.equal(started.response.status, 202);
+    const generation = await waitForTerminalGeneration(`${baseUrl}${started.body.statusUrl}`);
+    assert.equal(generation.status, 'completed');
+    assert.equal(generation.providerId, runtimeProvider.id);
+    assert.equal(generation.providerSnapshot, undefined);
+    assert.deepEqual(receivedProviderArg, runtimeProvider);
+    assert.deepEqual(generation.outputPaths, [path.resolve(fixtureDirectory, 'runtime-output.png')]);
 });
 
 test('a request specifying both providerId and provider is rejected with 400', async context => {

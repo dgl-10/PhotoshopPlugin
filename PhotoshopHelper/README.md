@@ -8,7 +8,7 @@
 
 - **Clipboard Harmony:** Copy and paste full PNG images (UXP natively supports text only).
 - **Pro Drag & Drop:** Drag a single file or a group of files from Photoshop directly into a browser or file explorer.
-- **WebHelper UI:** A local SPA (`http://localhost:18345/webhelper`) for working with neural networks (Grok, FLUX, Seedream, Civitai).
+- **WebHelper UI:** A local SPA (`http://localhost:18345/webhelper`) for working with neural networks (Grok, FLUX, Seedream, Civitai), including native image generation through configured AI CLIs.
 - **Nebula Integration:** Dynamic API key injection via the Nebula Broker.
 
 ---
@@ -91,7 +91,7 @@ WebHelper works from its own page without any setup.
 - 🌐 `GET /api/webhelper/queue` — Queue of new tasks (polled by the UI).
 - 🌐 `POST /api/webhelper/mark_opened` — Mark tasks as accepted by the UI (clears the queue).
 - 🌐 `GET /api/webhelper/task/:taskId` — Detailed task metadata and results.
-- 🌐 `GET /api/webhelper/file/:filename` — Access temporary images (sources, masks, generations).
+- 🌐 `GET /api/webhelper/file/tasks/:filename` and `GET /api/webhelper/file/generated/:filename` — Access task images and generated images.
 - 🌐 `POST /api/webhelper/generate` — Start the generation process via the selected AI provider.
 - 🌐 `POST /api/webhelper/file/copy2clipboard` — Copy any file from the working directory to the clipboard at full resolution.
 
@@ -156,7 +156,7 @@ PhotoshopHelper/
 ## 🔧 Technical Details
 
 - **Security:** The application is designed for local and personal use. **Important: it is not intended for public deployment.** Its local HTTP server requires a paired token or a same-origin browser request on every route except the health check — see [SECURITY.md](../SECURITY.md#local-http-server-access-control) for the full model. An environment detection system (`/api/is-local`) is implemented, allowing the UI to adapt when accessed via temporary tunnels (ngrok, cloudflared, etc.).
-- **Temp Management:** Session files are stored in `%TEMP%\ps_webhelper_tasks`. Files older than 30 days are cleaned up automatically.
+- **Temp Management:** Session files are stored in `%TEMP%\ps_webhelper_tasks`. Task uploads live in `_WH_Tasks`, generated images and their JSON sidecars live in `_WH_Generated`, and CLI working files live in `_WH_CliScratch`. Files older than 30 days are removed from every subdirectory.
 - **Nebula Secrets:** When `NEBULA_CS` is set, the application automatically calls `nebulabroker emit` to inject keys from your personal GSM (Google Secret Manager) into `process.env`.
 - **High-Res Copy:** When copying from WebHelper, NativeImage is used to guarantee the original resolution is preserved without browser-side compression.
 - **Template Engine:** `templateEngine.js` resolves provider placeholders and parses

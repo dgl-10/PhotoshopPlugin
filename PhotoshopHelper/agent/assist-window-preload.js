@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('assistBridge', {
     stop: () => ipcRenderer.invoke('agent-assist:stop'),
     getSetup: () => ipcRenderer.invoke('agent-assist:get-setup'),
     copyText: (text) => ipcRenderer.invoke('agent-assist:copy-text', text),
+    getCliConfig: () => ipcRenderer.invoke('agent-assist:get-cli-config'),
+    openCliSettings: (cli) => ipcRenderer.invoke('agent-assist:open-cli-settings', { cli }),
 
     // Fired when the tray menu or the plugin's line asks for a specific section, most often
     // 'connect' right after opening the window.

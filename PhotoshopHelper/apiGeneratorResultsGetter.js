@@ -3,6 +3,7 @@ const path = require('node:path');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { detectMimeTypeFromBase64, mimeTypeToExt } = require('./imageUtils');
+const { ensureWebhelperArea, webhelperFileUrl } = require('./webhelper-storage');
 
 /**
  * Resolve nested property by dot-notation path (e.g. "result.sample", "images.0.url")
@@ -330,12 +331,81 @@ function getUniqueFilename(folder, baseName = "generated_image", ext = "png", fi
 }
 
 /**
+ * Reserve the next generated-image path inside `_WH_Generated`.
+ *
+ * @param {string} tempDir - WebHelper temp root.
+ * @param {string} ext - File extension without a leading dot.
+ * @param {string} fileSuffix - Provider suffix inserted before the extension.
+ * @returns {{ filePath: string, imageUrl: string }} Path on disk and its public URL.
+ */
+function allocateGeneratedImage(tempDir, ext, fileSuffix) {
+    const generatedDir = ensureWebhelperArea(tempDir, 'generated');
+    const filePath = getUniqueFilename(generatedDir, 'generated_image', ext, fileSuffix);
+    return {
+        filePath,
+        imageUrl: webhelperFileUrl('generated', path.basename(filePath))
+    };
+}
+
+/**
  * Download a URL or decode base64 and save to disk.
- * Returns { image: "/api/webhelper/file/...", status: "done" }
+ * Returns { image: "/api/webhelper/file/generated/...", status: "done" }
  */
 async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, taskId, idx, fileSuffix) {
     let ext = 'png';
     let buffer = null;
+
+    // PRIVATE RUNTIME CONTRACT: This format is accepted only for output from the
+    // loopback CLI endpoint. It is intentionally omitted from the public provider
+    // configuration guide.
+    if (format === 'file_path') {
+        if (typeof imageStr !== 'string' || !path.isAbsolute(imageStr)) {
+            throw new Error('The local image result must be an absolute file path.');
+        }
+
+        const realImagePath = fs.realpathSync(imageStr);
+        const stats = fs.statSync(realImagePath);
+        if (!stats.isFile() || stats.size === 0 || stats.size > 100 * 1024 * 1024) {
+            throw new Error('The local image result is empty, too large, or not a regular file.');
+        }
+
+        const descriptor = fs.openSync(realImagePath, 'r');
+        let header;
+        try {
+            header = Buffer.alloc(16);
+            const bytesRead = fs.readSync(descriptor, header, 0, header.length, 0);
+            header = header.subarray(0, bytesRead);
+        } finally {
+            fs.closeSync(descriptor);
+        }
+
+        if (header.length >= 8
+            && header[0] === 0x89 && header[1] === 0x50
+            && header[2] === 0x4e && header[3] === 0x47) {
+            ext = 'png';
+        } else if (header.length >= 3
+            && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) {
+            ext = 'jpg';
+        } else if (header.length >= 12
+            && header.subarray(0, 4).toString('ascii') === 'RIFF'
+            && header.subarray(8, 12).toString('ascii') === 'WEBP') {
+            ext = 'webp';
+        } else if (['GIF87a', 'GIF89a'].includes(header.subarray(0, 6).toString('ascii'))) {
+            ext = 'gif';
+        } else {
+            throw new Error('The local result is not a supported PNG, JPEG, WebP, or GIF image.');
+        }
+
+        // Promote every accepted CLI output into `_WH_Generated`, the same folder and
+        // filename sequence used by ordinary API generations. A CLI scratch copy, when
+        // one exists, stays a working artifact and is removed by the temp-root cleanup.
+        const allocated = allocateGeneratedImage(tempDir, ext, fileSuffix);
+        fs.copyFileSync(realImagePath, allocated.filePath);
+        return {
+            image: allocated.imageUrl,
+            status: 'done'
+        };
+    }
 
     if (format === 'url') {
         const maxDownloadRetries = 2;
@@ -364,8 +434,8 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
                     }
                 }
 
-                const filePath = getUniqueFilename(tempDir, "generated_image", ext, fileSuffix);
-                const fileName = path.basename(filePath);
+                const allocated = allocateGeneratedImage(tempDir, ext, fileSuffix);
+                const filePath = allocated.filePath;
                 try {
                     // pipeline() (unlike source.pipe(dest)) forwards errors from BOTH ends into
                     // this rejection and destroys both streams. A plain .pipe() only listens for
@@ -379,7 +449,7 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
                 }
 
                 return {
-                    image: `/api/webhelper/file/${fileName}`,
+                    image: allocated.imageUrl,
                     status: 'done'
                 };
             } catch (downloadErr) {
@@ -416,12 +486,11 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
         buffer = Buffer.from(imageStr, 'base64');
     }
 
-    const filePath = getUniqueFilename(tempDir, "generated_image", ext, fileSuffix);
-    const fileName = path.basename(filePath);
-    fs.writeFileSync(filePath, buffer);
+    const allocated = allocateGeneratedImage(tempDir, ext, fileSuffix);
+    fs.writeFileSync(allocated.filePath, buffer);
 
     return {
-        image: `/api/webhelper/file/${fileName}`,
+        image: allocated.imageUrl,
         status: 'done'
     };
 }

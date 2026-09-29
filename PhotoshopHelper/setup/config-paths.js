@@ -38,7 +38,9 @@ function getConfigPaths() {
             resourcesPath:               process.resourcesPath,
             // Folder where the downloaded author knowledge base is stored (mirrors the
             // knowledge-base/ directory from the repository main branch).
-            downloadedKnowledgeBasePath: path.join(userDataPath, 'knowledge-base')
+            downloadedKnowledgeBasePath: path.join(userDataPath, 'knowledge-base'),
+            // Folder where cached CLI model lists are stored (14-day TTL).
+            cliModelsCachePath:          path.join(userDataPath, 'cli-models-cache')
         };
     }
 
@@ -52,7 +54,9 @@ function getConfigPaths() {
         userDataPath:                devRoot,
         resourcesPath:               devRoot,
         // null signals "no download in dev mode": agent reads local knowledge-base/ directly
-        downloadedKnowledgeBasePath: null
+        downloadedKnowledgeBasePath: null,
+        // Development reads/writes to project directory cli-models-cache/
+        cliModelsCachePath:          path.join(devRoot, 'cli-models-cache')
     };
 }
 

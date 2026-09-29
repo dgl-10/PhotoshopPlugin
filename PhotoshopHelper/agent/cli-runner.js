@@ -23,10 +23,6 @@ const crypto = require('node:crypto');
 
 const { SERVER_NAME } = require('./mcp-setup');
 
-// Antigravity is not included because its supported workflow does not expose the same
-// non-interactive execution contract. It can still use the MCP server after persistent
-// registration with `agy mcp add` in the user's terminal or IDE.
-const LAUNCHABLE_CLIS = new Set(['claude', 'codex', 'grok']);
 
 // The agent may work for a long time — a task is many tool calls and a person watching.
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
@@ -43,6 +39,7 @@ function readAgentConfig() {
     const mode = (process.env.LLM_MODE || '').toLowerCase().trim();
     const cli = (process.env.LLM_CLI_TYPE || '').toLowerCase().trim();
     const model = (process.env.LLM_CLI_MODEL || '').trim();
+    const effort = (process.env.LLM_CLI_EFFORT || '').trim();
     const window = (process.env.AGENT_CLI_WINDOW || 'hidden').toLowerCase().trim();
     const workDir = (process.env.AGENT_WORK_DIR || '').trim();
 
@@ -53,21 +50,81 @@ function readAgentConfig() {
             + 'separate path.'
         );
     }
-    if (!LAUNCHABLE_CLIS.has(cli)) {
-        problems.push(
-            `LLM_CLI_TYPE must be one of: ${[...LAUNCHABLE_CLIS].join(', ')}. Antigravity cannot `
-            + 'be launched from Helper; connect it yourself and talk to it in your own terminal.'
-        );
-    }
 
     return {
         cli,
         model: model || null,
+        effort: effort || null,
         window: window === 'visible' ? 'visible' : 'hidden',
         workDir: workDir || null,
         configured: problems.length === 0,
         problems
     };
+}
+
+/**
+ * Normalize model name and effort specifically for the Antigravity CLI (`agy`).
+ *
+ * Antigravity CLI expects lowercase hyphenated slugs (e.g. "gemini-3.8-flash", "gemini-3.1-pro").
+ * For Gemini models, effort levels are baked directly into the model slug
+ * (e.g. "gemini-3.8-flash-high", "gemini-3.1-pro-high") rather than passed via --effort.
+ *
+ * @param {string|null} rawModel - Model name from settings or UI (e.g. "Gemini 3.1 Pro", "gemini-3.8-flash").
+ * @param {string|null} [rawEffort] - Optional reasoning effort (e.g. "high", "medium", "low").
+ * @returns {{ model: string|null, effort: string|null }}
+ */
+function normalizeAgyModel(rawModel, rawEffort) {
+    if (!rawModel || typeof rawModel !== 'string' || !rawModel.trim()) {
+        const effort = rawEffort && typeof rawEffort === 'string' && rawEffort.trim()
+            ? rawEffort.trim().toLowerCase()
+            : null;
+        return { model: null, effort };
+    }
+
+    let model = rawModel.trim();
+    let effort = rawEffort && typeof rawEffort === 'string' && rawEffort.trim()
+        ? rawEffort.trim().toLowerCase()
+        : null;
+
+    // 1. Extract effort if it was embedded in UI parenthetical title, e.g. "Gemini 3.8 Flash (High)"
+    const parentheticalMatch = model.match(/\((low|medium|high)\)$/i);
+    if (parentheticalMatch) {
+        if (!effort) effort = parentheticalMatch[1].toLowerCase();
+        model = model.replace(/\s*\((low|medium|high)\)$/i, '').trim();
+    }
+
+    // 2. Convert to lowercase hyphenated slug
+    // e.g. "Gemini 3.1 Pro" -> "gemini-3.1-pro"
+    // e.g. "gemini-3.8-flash" -> "gemini-3.8-flash" (already valid, stays identical)
+    model = model
+        .toLowerCase()
+        .replace(/[\s_]+/g, '-')       // Replace spaces and underscores with hyphens
+        .replace(/[^a-z0-9.-]/g, '')    // Remove invalid punctuation
+        .replace(/-+/g, '-');          // Collapse duplicate hyphens
+
+    // 3. Check if the model already has an effort suffix (e.g. -low, -medium, -high)
+    const suffixMatch = model.match(/-(low|medium|high)$/);
+    if (suffixMatch) {
+        // If an explicit effort was passed and differs from suffix, update suffix
+        if (effort && ['low', 'medium', 'high'].includes(effort) && suffixMatch[1] !== effort) {
+            model = model.replace(/-(low|medium|high)$/, `-${effort}`);
+        }
+        // Effort is already encoded in the slug; suppress separate --effort flag
+        return { model, effort: null };
+    }
+
+    // 4. If effort is provided ('low' | 'medium' | 'high')
+    if (effort && ['low', 'medium', 'high'].includes(effort)) {
+        // For Gemini models in agy, effort must be part of the slug (e.g. gemini-3.8-flash-high)
+        if (model.startsWith('gemini')) {
+            model = `${model}-${effort}`;
+            return { model, effort: null };
+        }
+        // Non-Gemini models (e.g. Claude / third-party) can retain --effort if supported
+        return { model, effort };
+    }
+
+    return { model, effort: null };
 }
 
 /**
@@ -77,10 +134,19 @@ function readAgentConfig() {
  * things in its own folder, the agent writes Photoshop scripts from memory, which is
  * exactly what this whole feature exists to avoid.
  *
- * @param {object} params - { cli, model, prompt, sessionId, cwd, outputFile }.
- * @returns {{binary: string, args: string[], parse: 'claude'|'codex'|'grok'}}
+ * `reasoningSummary` asks Codex to put its thinking summaries into the event stream.
+ * `streaming` makes Grok and Antigravity print one event per step instead of one answer at
+ * the end, so thoughts and tool calls can be watched while the agent works. Both default to
+ * off, which keeps the command lines every existing caller relies on.
+ *
+ * @param {object} params - { cli, model, effort, prompt, sessionId, cwd, outputFile,
+ *   reasoningSummary, streaming }.
+ * @returns {{binary: string, args: string[], parse: 'claude'|'codex'|'grok'|'agy'|'grok-stream'|'agy-stream'}}
  */
-function buildArgs({ cli, model, prompt, sessionId, cwd, outputFile }) {
+function buildArgs({
+    cli, model, effort, prompt, sessionId, cwd, outputFile,
+    reasoningSummary = null, streaming = false
+}) {
     switch (cli) {
         case 'claude': {
             const args = [
@@ -93,6 +159,7 @@ function buildArgs({ cli, model, prompt, sessionId, cwd, outputFile }) {
                 '--allowedTools', `mcp__${SERVER_NAME}__*,Read,Write,Edit,Bash,WebSearch,WebFetch,Agent`
             ];
             if (model) args.push('--model', model);
+            if (effort) args.push('--effort', effort);
             if (sessionId) args.push('--resume', sessionId);
             return { binary: 'claude', args, parse: 'claude' };
         }
@@ -108,6 +175,8 @@ function buildArgs({ cli, model, prompt, sessionId, cwd, outputFile }) {
                 '--json'
             );
             if (model) args.push('-m', model);
+            if (effort) args.push('-c', `model_reasoning_effort=${effort}`);
+            if (reasoningSummary) args.push('-c', `model_reasoning_summary=${reasoningSummary}`);
             if (cwd) args.push('-C', cwd);
             if (outputFile) args.push('-o', outputFile);
             if (sessionId) args.push('resume', sessionId);
@@ -119,7 +188,7 @@ function buildArgs({ cli, model, prompt, sessionId, cwd, outputFile }) {
             const args = [
                 '--trust',
                 '-p', prompt,
-                '--output-format', 'json',
+                '--output-format', streaming ? 'streaming-json' : 'json',
                 '--always-approve'
             ];
             if (model) args.push('-m', model);
@@ -127,7 +196,21 @@ function buildArgs({ cli, model, prompt, sessionId, cwd, outputFile }) {
             // Sessions are filed under the working directory. --session-id starts a new
             // one; --resume continues the one whose id came back in the JSON.
             if (sessionId) args.push('--resume', sessionId);
-            return { binary: 'grok', args, parse: 'grok' };
+            return { binary: 'grok', args, parse: streaming ? 'grok-stream' : 'grok' };
+        }
+
+        case 'agy': {
+            const { model: normModel, effort: normEffort } = normalizeAgyModel(model, effort);
+            const args = [
+                '--print-timeout', '15m',
+                '--dangerously-skip-permissions'
+            ];
+            if (sessionId) args.push('--conversation', sessionId);
+            if (normModel) args.push('--model', normModel);
+            if (normEffort) args.push('--effort', normEffort);
+            if (streaming) args.push('--output-format', 'stream-json');
+            args.push('-p', prompt);
+            return { binary: 'agy', args, parse: streaming ? 'agy-stream' : 'agy' };
         }
 
         default:
@@ -145,6 +228,27 @@ function buildArgs({ cli, model, prompt, sessionId, cwd, outputFile }) {
  */
 function parseOutput(parse, stdout, outputFile) {
     if (parse === 'grok') return parseGrokOutput(stdout);
+    if (parse === 'grok-stream') return parseGrokStream(stdout);
+    if (parse === 'agy-stream') return parseAgyStream(stdout);
+
+    if (parse === 'agy') {
+        const json = parseFirstJson(stdout);
+        if (json && (json.response || json.text || json.result)) {
+            const isError = json.status && json.status !== 'SUCCESS';
+            return {
+                text: json.response || json.text || json.result,
+                sessionId: json.conversation_id || json.sessionId || null,
+                error: isError ? (json.error || 'Antigravity run failed') : null
+            };
+        }
+        // Fallback for plain headless output: the answer is the stdout text itself
+        const trimmed = (stdout || '').trim();
+        return {
+            text: trimmed.length > 0 ? trimmed : null,
+            sessionId: null,
+            error: null
+        };
+    }
 
     if (parse === 'claude') {
         const json = parseFirstJson(stdout);
@@ -173,9 +277,13 @@ function parseOutput(parse, stdout, outputFile) {
             const event = JSON.parse(line);
             if (event.thread_id) sessionId = event.thread_id;
             if (event.thread && event.thread.id) sessionId = event.thread.id;
-            if (!text && event.type === 'item.completed' && event.item && event.item.content) {
-                const part = event.item.content.find(item => item.type === 'text');
-                if (part && part.text) text = part.text;
+            if (!text && event.type === 'item.completed' && event.item) {
+                if (typeof event.item.text === 'string') {
+                    text = event.item.text;
+                } else if (Array.isArray(event.item.content)) {
+                    const part = event.item.content.find(item => item.type === 'text');
+                    if (part && part.text) text = part.text;
+                }
             }
         } catch {
             // Not every line is JSON.
@@ -220,6 +328,92 @@ function parseGrokOutput(stdout) {
 }
 
 /**
+ * Read the events Grok prints with `--output-format streaming-json`.
+ *
+ * The answer is every `text` piece joined, which is what the single-answer `json` mode
+ * returns as `text`. The session id arrives with the closing `end` event.
+ *
+ * @param {string} stdout - Everything Grok printed.
+ * @returns {{text: string|null, sessionId: string|null, error: string|null}}
+ */
+function parseGrokStream(stdout) {
+    let text = null;
+    let sessionId = null;
+    let error = null;
+
+    for (const line of String(stdout || '').split(/\r?\n/)) {
+        if (!line.trim().startsWith('{')) continue;
+        let event;
+        try {
+            event = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        if (event.type === 'text' && typeof event.data === 'string') {
+            text = (text || '') + event.data;
+        } else if (event.type === 'end' && typeof event.sessionId === 'string') {
+            sessionId = event.sessionId;
+        } else if (event.type === 'error') {
+            error = (typeof event.message === 'string' && event.message.trim())
+                || (typeof event.data === 'string' && event.data.trim())
+                || 'grok failed';
+        }
+    }
+
+    return { text: error ? null : text, sessionId, error };
+}
+
+/**
+ * Read the events Antigravity prints with `--output-format stream-json`.
+ *
+ * The closing `result` event carries the same fields as the `json` mode. When it is missing
+ * the answer is rebuilt from the pieces of the agent's last reply.
+ *
+ * @param {string} stdout - Everything Antigravity printed.
+ * @returns {{text: string|null, sessionId: string|null, error: string|null}}
+ */
+function parseAgyStream(stdout) {
+    let result = null;
+    let sessionId = null;
+    const replies = new Map();
+
+    for (const line of String(stdout || '').split(/\r?\n/)) {
+        if (!line.trim().startsWith('{')) continue;
+        let event;
+        try {
+            event = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        if (event.event === 'init' && event.conversation_id) sessionId = event.conversation_id;
+        if (event.event === 'result' && event.result) result = event.result;
+        const step = event.event === 'step_update' ? event.step_update : null;
+        if (step && step.step_type === 'agent_response' && typeof step.text_delta === 'string') {
+            replies.set(step.step_index, (replies.get(step.step_index) || '') + step.text_delta);
+        }
+    }
+
+    if (result && (result.response || result.text)) {
+        const failed = result.status && result.status !== 'SUCCESS';
+        return {
+            text: result.response || result.text,
+            sessionId: result.conversation_id || sessionId,
+            error: failed ? (result.error || 'Antigravity run failed') : null
+        };
+    }
+
+    const lastReply = [...replies.entries()].sort((a, b) => a[0] - b[0]).pop();
+    const rebuilt = lastReply ? lastReply[1].trim() : '';
+    return {
+        text: rebuilt || null,
+        sessionId: (result && result.conversation_id) || sessionId,
+        error: result && result.status && result.status !== 'SUCCESS'
+            ? (result.error || 'Antigravity run failed')
+            : null
+    };
+}
+
+/**
  * Find the first complete JSON object in a string that may have noise around it.
  *
  * @param {string} text - Raw output.
@@ -256,6 +450,20 @@ function sanitize(text) {
         .replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-***')
         .replace(/Bearer\s+\S+/g, 'Bearer ***')
         .replace(/[a-f0-9]{40,}/gi, '***');
+}
+
+/**
+ * Open the OS null device for stdin redirection.
+ * On Windows, passing this handle guarantees EOF rather than blocking on stdin.
+ *
+ * @returns {number|'ignore'} File descriptor or 'ignore' on fallback.
+ */
+function getDevNullFd() {
+    try {
+        return fs.openSync(process.platform === 'win32' ? '\\\\.\\NUL' : '/dev/null', 'r');
+    } catch {
+        return 'ignore';
+    }
 }
 
 /**
@@ -328,6 +536,7 @@ function createCliRunner({ workDir, logger = console }) {
         const { binary, args, parse } = buildArgs({
             cli: config.cli,
             model: config.model,
+            effort: config.effort || null,
             prompt,
             sessionId,
             cwd,
@@ -346,22 +555,30 @@ function createCliRunner({ workDir, logger = console }) {
             // A visible window is a setting, not a problem: there is nothing wrong with the
             // person seeing the agent's window and using it directly. Helper cannot read
             // what a detached console prints, so the returned text explains that limitation.
-            const child = config.window === 'visible' && process.platform === 'win32'
-                ? spawn('cmd', ['/c', 'start', '', '/wait', binary, ...args], {
-                    cwd,
-                    shell: false,
-                    env: { ...process.env },
-                    stdio: 'ignore',
-                    windowsHide: false
-                })
-                : spawn(binary, args, {
-                    cwd,
-                    shell: false,
-                    env: { ...process.env },
-                    // Codex blocks on an open stdin, waiting for more input.
-                    stdio: ['ignore', 'pipe', 'pipe'],
-                    windowsHide: true
-                });
+            const stdinMode = config.cli === 'codex' ? getDevNullFd() : 'ignore';
+            let child;
+            try {
+                child = config.window === 'visible' && process.platform === 'win32'
+                    ? spawn('cmd', ['/c', 'start', '', '/wait', binary, ...args], {
+                        cwd,
+                        shell: false,
+                        env: { ...process.env },
+                        stdio: 'ignore',
+                        windowsHide: false
+                    })
+                    : spawn(binary, args, {
+                        cwd,
+                        shell: false,
+                        env: { ...process.env },
+                        // Avoid blocking on stdin (especially Codex on Windows).
+                        stdio: [stdinMode, 'pipe', 'pipe'],
+                        windowsHide: true
+                    });
+            } finally {
+                if (typeof stdinMode === 'number') {
+                    try { fs.closeSync(stdinMode); } catch { /* ignore */ }
+                }
+            }
 
             running = {
                 child,
@@ -505,9 +722,10 @@ function createCliRunner({ workDir, logger = console }) {
 module.exports = {
     createCliRunner,
     readAgentConfig,
-    LAUNCHABLE_CLIS,
     // Exported for testing only; production code goes through the runner.
     buildArgs,
     parseOutput,
-    sanitize
+    sanitize,
+    // Exported solely for testing purposes
+    normalizeAgyModel
 };

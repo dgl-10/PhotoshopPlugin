@@ -460,9 +460,9 @@ provider combobox along two independent axes: the API host and the model family.
 | Sub-field | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `provider` | `string` | ★ when `tags` is present | Slug of the API host used to reach the model. |
-| `family` | `string` | ★ when `tags` is present | Slug of the model line, independent of which host serves it. |
+| `family` | `string` or `string[]` | ★ when `tags` is present | Slug or list of slugs of the model lines served by this provider. |
 
-Both values are lowercase slugs (`[a-z0-9]+` with optional hyphens). They are labels
+Values are lowercase slugs (`[a-z0-9]+` with optional hyphens). They are labels
 for the client, not request-template inputs, and they are **not** stripped by
 `GET /api/webhelper/providers`.
 
@@ -499,13 +499,15 @@ is offered through several hosts.
 | `"seedream"` | Seedream 4.5 / 5.0 (any host) |
 | `"flux"` | FLUX.1 Fill, FLUX.2 |
 | `"gpt-image"` | GPT-Image-1.5 / GPT-Image-2 |
-| `"alibaba"` | Bundled Wan / Qwen dropdown (`alibaba_fal`) |
-| `"qwen"` | Dedicated Qwen provider (not the Alibaba bundle) |
+| `"alibaba"` | Umbrella family for Alibaba models (Wan, Qwen) |
+| `"wan"` | Wan video/image models (2.5, 2.6, 2.7) |
+| `"qwen"` | Qwen image models (2.0, 3.0 Pro) |
 | `"p-image"` | Pruna P-Image |
 
-A provider object is one dropdown entry. If one provider bundles several families
-(for example Wan and Qwen under `alibaba_fal`), use **one** family slug for that
-bundle. Do not use an array: the combobox groups provider entries, not inner models.
+A provider object can specify a single family slug as a string (e.g. `"family": "seedream"`),
+or an array of slugs when it serves multiple models or sub-families (e.g. `"family": ["alibaba", "wan", "qwen"]`).
+For providers that offer Alibaba models (`wan` and/or `qwen`), always include `"alibaba"` as the umbrella slug,
+alongside the specific line (`"wan"` and/or `"qwen"`).
 
 Reuse an existing family slug whenever the new configuration is another host or
 version of the same line. Create a new slug only for a distinct line.
@@ -514,7 +516,8 @@ version of the same line. Create a new slug only for a distinct line.
 
 - Omit `tags` entirely when grouping is unknown. Clients should treat a missing field
   as ungrouped ("Other"), not as an error.
-- If `tags` is present, both `provider` and `family` must be non-empty strings.
+- If `tags` is present, `provider` must be a non-empty string, and `family` must be either a
+  non-empty string or a non-empty array of non-empty strings.
 - Extra keys inside `tags` are reserved for future grouping axes. Current clients
   must ignore them. Do not put favorites, pricing, or capability flags here.
 
