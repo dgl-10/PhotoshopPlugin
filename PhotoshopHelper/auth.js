@@ -150,6 +150,25 @@ function sanitizeHeaders(headers) {
 }
 
 /**
+ * Check whether a request carries the expected shared secret in either accepted header.
+ *
+ * Unlike createAuthMiddleware this never answers the request and ignores Origin, so a
+ * caller can use it to decide between several access rules for one route.
+ *
+ * @param {import('express').Request} req - Incoming request.
+ * @param {string} expectedToken - Token the caller must present.
+ * @returns {boolean} True only when a token was supplied and matches exactly.
+ */
+function requestHasToken(req, expectedToken) {
+    if (!expectedToken) {
+        return false;
+    }
+
+    const suppliedToken = extractToken(req);
+    return Boolean(suppliedToken) && tokensMatch(suppliedToken, expectedToken);
+}
+
+/**
  * Create middleware that requires a shared secret, optionally trusting same-origin pages.
  *
  * The expected token is read through a callback on every request so a rotated secret
@@ -340,6 +359,7 @@ module.exports = {
     createSameOriginCorsMiddleware,
     createPasswordGate,
     maskAuthorizationHeader,
+    requestHasToken,
 
     // Not used by any runtime module — every call site is inside this file. Exported
     // only so _tests_/auth.test.js can exercise each piece in isolation instead of only

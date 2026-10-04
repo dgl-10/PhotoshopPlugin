@@ -123,25 +123,35 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
 ├── styles.css                            # Panel styling
 ├── icons/                                # Plugin icons in all sizes
 ├── modules/                              # Functional JavaScript modules
-│   ├── ps.js                             # Core Photoshop API module (Inpaint, Capture, Layers)
+│   ├── agent-capture.js                  # Imaging API visual feedback for agents (previews, viewport crops)
+│   ├── agent-document.js                 # Working document lifecycle and context resolution for agent tasks
+│   ├── agent-line.js                     # Bottom status line UI and connection controller for agent tasks
+│   ├── batchplay-watch.js                # batchPlay execution wrapper capturing silent descriptor errors
+│   ├── command-handlers.js               # Execution handlers for agent tool commands inside Photoshop
+│   ├── error-text.js                     # Error formatting utility normalizing Photoshop and script errors
 │   ├── fs.js                             # File and Base64 module (UXP File Access)
-│   ├── ui.js                             # Button and input state management
 │   ├── helper.js                         # API client for network communication with PhotoshopHelper
+│   ├── image-utils.js                    # Image processing utilities (crop, masks, resize)
+│   ├── ps.js                             # Core Photoshop API module (Inpaint, Capture, Layers)
 │   ├── settings.js                       # Settings management and UI rendering
-│   └── image-utils.js                    # Image processing utilities (crop, masks, resize)
+│   ├── ui.js                             # Button and input state management
+│   └── ws-bridge.js                      # WebSocket bridge client connecting plugin to PhotoshopHelper
 └── PhotoshopHelper/                      # Companion Electron application (UXP sandbox bypass)
     ├── package.json                      # Dependency manifest (Electron, Express, electron-store)
-    ├── main.js                           # Main process: HTTP/REST API implementation and system tray
-    ├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware for the local HTTP server
+    ├── main.js                           # Main process: HTTP/REST API implementation, system tray, and agent service
+    ├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware
     ├── plugin-pairing.js                 # Delivers the plugin token into the Photoshop plugin's UXP data folder for automatic pairing
     ├── preload.js                        # Context bridge for secure inter-process communication
     ├── providers.template.json           # Shared provider catalog source (development)
     ├── providers.user.json               # User provider overlay: additions, replacements, and disabled shared models
     ├── providers-catalog.js              # Provider catalog loader, validator, and overlay merger (shared + user models)
+    ├── providers-discovery.js            # Provider catalog discovery and filtering based on active API keys
     ├── providers-updater.js              # Background updater for the shared provider catalog from GitHub
+    ├── kb-updater.js                     # Background updater for the shared knowledge base from GitHub
     ├── .env.template                     # Template for environment variables
     ├── Prompt_Providers_Configuration.md # LLM prompt for generating new provider configurations
     ├── Providers_Configuration_Guide.md  # Detailed guide for configuring providers and APIs
+    ├── README.md                         # PhotoshopHelper documentation and technical overview
     ├── donation-manager.js               # Manages usage tracking and donation prompts
     ├── auto-start.js                     # Cross-platform login item and startup configuration manager (Windows / macOS)
     ├── updater.js                        # Update service: GitHub release checks, tray notifications, and version sync
@@ -154,10 +164,43 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     ├── apiGeneratorPreprocessors.js      # Preprocessors: resizing, MP optimization, and filtering
     ├── imageUtils.js                     # Image processing utilities (MIME, Base64, NativeImage)
     ├── atomic-write.js                   # Atomic file replacement utility (safe temporary-file write and rename)
+    ├── llm-engine.js                     # Direct LLM adapter supporting API mode and CLI execution mode
+    ├── mcp-server.js                     # Model Context Protocol (MCP) Streamable HTTP/JSON-RPC server endpoint
+    ├── ws-bridge.js                      # WebSocket server bridge managing command channel with Photoshop plugin
+    ├── webhelper-storage.js              # Temp root layout and URL resolution for WebHelper tasks and generated files
     ├── Local_Generation_API.md           # Complete local API schema and integration examples
     ├── tray-icon.png                     # Application icon for the system tray
     ├── user-settings.js                  # Persistent settings manager using electron-store
     ├── user-settings.json                # Runtime configuration state file (dev mode only, excluded from build)
+    ├── agent/                            # AI agent subsystem (MCP server, CLI runner, and UI)
+    │   ├── index.js                      # Agent service entry point (MCP tools, WS bridge, session coordinator)
+    │   ├── agent-api.js                  # Plugin REST API router (task state, abort, assist window trigger)
+    │   ├── task-session.js               # Document-bound task session coordinator and timeout tracking
+    │   ├── mcp-setup.js                  # CLI MCP registration commands and configuration generator
+    │   ├── mcp-tools.js                  # Core Photoshop document MCP tools (ps_* commands)
+    │   ├── combine-tools.js              # Aggregates document (ps_*) and generation (gen_*) tool layers
+    │   ├── gen-tools.js                  # MCP tools for image generation (gen_* commands)
+    │   ├── journal.js                    # Diagnostic logger for MCP tool calls and results
+    │   ├── knowledge-base.js             # Knowledge base loader, search index, and article provider for MCP tools
+    │   ├── cli-service.js                # Core CLI agent service, discovery, and tier execution (Light/Medium/High)
+    │   ├── cli-runner.js                 # Subprocess manager for spawning and controlling external CLI agents
+    │   ├── cli-prompts.js                # Standardized system prompts and model querying templates for CLI agents
+    │   ├── cli-transcript.js             # Output parser converting varied CLI streams into human-readable transcripts
+    │   ├── cli-image-provider.js         # Virtual WebHelper image provider adapter backed by local CLI agents
+    │   ├── cli-window.js                 # External console window for live CLI agent output streaming
+    │   ├── cli-models-cache.js           # Cache storage manager for CLI models and capabilities
+    │   ├── cli-models-window.html        # Markup for the CLI models catalog window
+    │   ├── cli-models-window.js          # Window controller for CLI models catalog
+    │   ├── cli-models-preload.js         # Secure IPC bridge for the CLI models window
+    │   ├── cli-models-renderer.js        # UI logic and renderer for CLI models catalog window
+    │   ├── cli-settings-window.html      # Markup for the CLI settings window
+    │   ├── cli-settings-window.js        # Window controller for CLI settings
+    │   ├── cli-settings-preload.js       # Secure IPC bridge for the CLI settings window
+    │   ├── cli-settings-renderer.js      # UI logic and renderer for CLI settings window
+    │   ├── assist-window.html            # Markup for the AI Assist floating status window
+    │   ├── assist-window.js              # Electron window manager for the AI Assist window
+    │   ├── assist-window-preload.js      # Secure IPC bridge for the AI Assist window
+    │   └── assist-window-renderer.js     # Live status and task step renderer for AI Assist window
     ├── setup/                            # Initial configuration and setup wizard
     │   ├── config-paths.js               # Logic for locating configuration files
     │   ├── first-run-wizard.html         # First run configuration UI
@@ -170,8 +213,8 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
         ├── index.html                    # Current UI at http://localhost:18345/webhelper
         ├── v0/                           # Previous UI at http://localhost:18345/webhelper/v0
         ├── assets/                       # UI assets and graphics
-        ├── js/
-        └── app.css
+        ├── js/                           # Web application scripts and provider handlers
+        └── app.css                       # Web application styling
 ```
 
 ## 🔧 Development

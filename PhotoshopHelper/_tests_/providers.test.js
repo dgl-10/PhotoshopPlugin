@@ -100,7 +100,8 @@ test('template and providers.user.json share the same tags for matching ids', ()
 });
 
 test('GET /api/webhelper/providers sanitization does not strip tags', () => {
-    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    // The sanitization lives in providers-discovery.js, shared by the endpoint and the MCP tools.
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'providers-discovery.js'), 'utf8');
 
     assert.doesNotMatch(mainSource, /delete\s+sanitized\.tags\b/);
     for (const field of SERVER_STRIPPED_FIELDS) {

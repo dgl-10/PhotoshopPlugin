@@ -367,26 +367,26 @@ async function executeGeneration(generation, dependencies) {
 }
 
 /**
- * Create the direct local generation API.
+ * Create the generation service shared by the HTTP router and the MCP tools.
+ *
+ * The service owns the in-memory generation store, so a generation started through one
+ * entry point can be read through the other. Local API requests never enter WebHelper's
+ * task registry and cannot affect Photoshop/UI tasks.
  *
  * @param {object} options - Runtime dependencies supplied by main.js.
  * @param {Function} options.generate - Existing provider-driven generation function.
  * @param {string} options.tempDir - Existing WebHelper generation output directory.
- * @param {Function} options.getToken - Returns the shared token required of every caller.
  * @param {Function} [options.getProvidersConfig] - Optional provider config loader.
  * @param {Function} [options.resolveRuntimeProvider] - Resolves an in-memory provider by ID.
  * @param {Function} [options.onGenerationAccepted] - Optional usage/accounting callback.
- * @returns {import('express').Router} A router mounted at LOCAL_API_PREFIX.
+ * @returns {{accept: Function, get: Function, waitForCompletion: Function}} The service.
  */
-function createLocalGenerationRouter(options) {
+function createLocalGenerationService(options) {
     if (!options || typeof options.generate !== 'function') {
         throw new TypeError('createLocalGenerationRouter requires a generate function.');
     }
     if (!options.tempDir || typeof options.tempDir !== 'string') {
         throw new TypeError('createLocalGenerationRouter requires a tempDir path.');
-    }
-    if (typeof options.getToken !== 'function') {
-        throw new TypeError('createLocalGenerationRouter requires a getToken function.');
     }
 
     const dependencies = {
@@ -396,9 +396,160 @@ function createLocalGenerationRouter(options) {
     const resolveProvidersConfig = options.getProvidersConfig || getProvidersConfig;
     const resolveRuntimeProvider = options.resolveRuntimeProvider;
 
-    // Generation state is deliberately private to this router. Local API requests
-    // never enter WebHelper's task registry and cannot affect Photoshop/UI tasks.
+    // Generation state is deliberately private to this service.
     const generations = new Map();
+
+    /**
+     * Validate and accept one complete generation request, then run it in the background.
+     *
+     * @param {unknown} body - Parsed JSON request body.
+     * @returns {Promise<{generationId: string, status: string, statusUrl: string}>} The accepted generation.
+     * @throws {Error & {statusCode: number}} When the request is rejected before acceptance.
+     */
+    async function accept(body) {
+        // Disk-backed providers are still resolved later by apiGenerator. Runtime-only
+        // providers do not exist in that catalog, so resolve only their advertised ID
+        // here and retain the resulting private object for the background invocation.
+        const requestedProviderId = isPlainObject(body)
+            && typeof body.providerId === 'string'
+            ? body.providerId.trim()
+            : '';
+        const runtimeProvider = requestedProviderId && typeof resolveRuntimeProvider === 'function'
+            ? await resolveRuntimeProvider(requestedProviderId)
+            : null;
+
+        let responseHandlers;
+        if (typeof resolveProvidersConfig === 'function') {
+            try {
+                const config = resolveProvidersConfig();
+                responseHandlers = config?.response_handlers;
+            } catch {
+                // Ignore config load error; validation will run without responseHandlers map
+            }
+        }
+
+        const request = normalizeGenerationRequest(body, {
+            responseHandlers,
+            // This exception comes from the trusted in-memory provider. Inline callers
+            // cannot enable it by adding an undocumented provider field themselves.
+            supportsAspectRatioAutoInT2i:
+                runtimeProvider?.supports_aspect_ratio_auto_in_t2i === true
+        });
+
+        // Keep providerId as the public identity, but execute with the complete runtime
+        // object because it is intentionally absent from the provider catalog on disk.
+        // This object contains a private endpoint credential and must never be echoed.
+        if (runtimeProvider) {
+            request.providerObject = runtimeProvider;
+        }
+
+        const generationId = `generation_${Date.now()}_${crypto.randomUUID()}`;
+        const createdAt = new Date().toISOString();
+        const generation = {
+            generationId,
+            status: 'queued',
+            providerId: request.providerId,
+            providerObject: request.providerObject,
+            providerSnapshot: runtimeProvider ? null : request.providerObject,
+            sourceImagePath: request.sourceImagePath,
+            maskImagePath: request.maskImagePath,
+            params: request.params,
+            numImages: request.numImages,
+            aspectRatio: request.aspectRatio,
+            referenceImagePaths: request.referenceImagePaths,
+            useMask: request.useMask,
+            forceSeparateRequests: request.forceSeparateRequests,
+            results: [],
+            createdAt,
+            startedAt: null,
+            completedAt: null,
+            error: null
+        };
+
+        // Lets waitForCompletion() return as soon as the generation ends. Not part of the
+        // public representation: serializeGeneration() copies fields explicitly.
+        generation.done = new Promise(resolve => {
+            generation.resolveDone = resolve;
+        });
+
+        generations.set(generationId, generation);
+
+        if (typeof options.onGenerationAccepted === 'function') {
+            // Accounting is intentionally detached from both the response and
+            // generation result so it can never prevent a provider invocation.
+            Promise.resolve().then(() => options.onGenerationAccepted(generation)).catch(error => {
+                console.error('[LocalGenerationAPI] Generation accounting callback failed:', error);
+            });
+        }
+
+        // Run only after the caller has received the accepted result so provider latency
+        // never turns acceptance into a synchronous generation request.
+        setImmediate(() => {
+            // executeGeneration records its own failures and never rejects.
+            void executeGeneration(generation, dependencies).then(() => generation.resolveDone());
+        });
+
+        return {
+            generationId,
+            status: generation.status,
+            statusUrl: getGenerationStatusUrl(generationId)
+        };
+    }
+
+    /**
+     * Read the public representation of one generation.
+     *
+     * @param {string} generationId - Generation identifier.
+     * @returns {object|null} Public generation representation, or null when unknown.
+     */
+    function get(generationId) {
+        const generation = generations.get(generationId);
+        return generation ? serializeGeneration(generation, dependencies.tempDir) : null;
+    }
+
+    /**
+     * Wait for a generation to finish, but no longer than the given time.
+     *
+     * @param {string} generationId - Generation identifier.
+     * @param {number} timeoutMs - Longest wait in milliseconds.
+     * @returns {Promise<object|null>} Public representation (possibly still running), or null when unknown.
+     */
+    async function waitForCompletion(generationId, timeoutMs) {
+        const generation = generations.get(generationId);
+        if (!generation) return null;
+
+        if (generation.status === 'queued' || generation.status === 'running') {
+            let timer = null;
+            const timeout = new Promise(resolve => { timer = setTimeout(resolve, Math.max(0, timeoutMs)); });
+            try {
+                await Promise.race([generation.done, timeout]);
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        return serializeGeneration(generation, dependencies.tempDir);
+    }
+
+    return { accept, get, waitForCompletion };
+}
+
+/**
+ * Create the direct local generation API.
+ *
+ * @param {object} options - Runtime dependencies supplied by main.js.
+ * @param {Function} options.getToken - Returns the shared token required of every caller.
+ * @param {object} [options.service] - Generation service to expose. When omitted, one is
+ *     created from the remaining options (generate, tempDir, getProvidersConfig,
+ *     resolveRuntimeProvider, onGenerationAccepted), exactly as before.
+ * @returns {import('express').Router} A router mounted at LOCAL_API_PREFIX.
+ */
+function createLocalGenerationRouter(options) {
+    if (!options || typeof options.getToken !== 'function') {
+        throw new TypeError('createLocalGenerationRouter requires a getToken function.');
+    }
+
+    const service = options.service || createLocalGenerationService(options);
     const router = express.Router();
 
     // These routes invoke paid providers, so the token is always required. Same-origin
@@ -408,87 +559,8 @@ function createLocalGenerationRouter(options) {
     // Accept one complete provider invocation without a preliminary task resource.
     router.post('/generations', async (req, res) => {
         try {
-            // Disk-backed providers are still resolved later by apiGenerator. Runtime-only
-            // providers do not exist in that catalog, so resolve only their advertised ID
-            // here and retain the resulting private object for the background invocation.
-            const requestedProviderId = isPlainObject(req.body)
-                && typeof req.body.providerId === 'string'
-                ? req.body.providerId.trim()
-                : '';
-            const runtimeProvider = requestedProviderId && typeof resolveRuntimeProvider === 'function'
-                ? await resolveRuntimeProvider(requestedProviderId)
-                : null;
-
-            let responseHandlers;
-            if (typeof resolveProvidersConfig === 'function') {
-                try {
-                    const config = resolveProvidersConfig();
-                    responseHandlers = config?.response_handlers;
-                } catch {
-                    // Ignore config load error; validation will run without responseHandlers map
-                }
-            }
-
-            const request = normalizeGenerationRequest(req.body, {
-                responseHandlers,
-                // This exception comes from the trusted in-memory provider. Inline callers
-                // cannot enable it by adding an undocumented provider field themselves.
-                supportsAspectRatioAutoInT2i:
-                    runtimeProvider?.supports_aspect_ratio_auto_in_t2i === true
-            });
-
-            // Keep providerId as the public identity, but execute with the complete runtime
-            // object because it is intentionally absent from the provider catalog on disk.
-            // This object contains a private endpoint credential and must never be echoed.
-            if (runtimeProvider) {
-                request.providerObject = runtimeProvider;
-            }
-
-            const generationId = `generation_${Date.now()}_${crypto.randomUUID()}`;
-            const createdAt = new Date().toISOString();
-            const generation = {
-                generationId,
-                status: 'queued',
-                providerId: request.providerId,
-                providerObject: request.providerObject,
-                providerSnapshot: runtimeProvider ? null : request.providerObject,
-                sourceImagePath: request.sourceImagePath,
-                maskImagePath: request.maskImagePath,
-                params: request.params,
-                numImages: request.numImages,
-                aspectRatio: request.aspectRatio,
-                referenceImagePaths: request.referenceImagePaths,
-                useMask: request.useMask,
-                forceSeparateRequests: request.forceSeparateRequests,
-                results: [],
-                createdAt,
-                startedAt: null,
-                completedAt: null,
-                error: null
-            };
-
-            generations.set(generationId, generation);
-
-            if (typeof options.onGenerationAccepted === 'function') {
-                // Accounting is intentionally detached from both the response and
-                // generation result so it can never prevent a provider invocation.
-                Promise.resolve().then(() => options.onGenerationAccepted(generation)).catch(error => {
-                    console.error('[LocalGenerationAPI] Generation accounting callback failed:', error);
-                });
-            }
-
-            const statusUrl = getGenerationStatusUrl(generationId);
-            res.location(statusUrl).status(202).json({
-                generationId,
-                status: generation.status,
-                statusUrl
-            });
-
-            // Run only after the accepted response is committed so provider latency
-            // never turns this endpoint into a synchronous generation request.
-            setImmediate(() => {
-                void executeGeneration(generation, dependencies);
-            });
+            const accepted = await service.accept(req.body);
+            res.location(accepted.statusUrl).status(202).json(accepted);
         } catch (error) {
             const statusCode = error.statusCode || 500;
             if (statusCode >= 500) {
@@ -500,13 +572,13 @@ function createLocalGenerationRouter(options) {
 
     // Return the status and output paths for one specific generation attempt.
     router.get('/generations/:generationId', (req, res) => {
-        const generation = generations.get(req.params.generationId);
+        const generation = service.get(req.params.generationId);
 
         if (!generation) {
             return res.status(404).json({ error: 'Generation not found.' });
         }
 
-        return res.json(serializeGeneration(generation, dependencies.tempDir));
+        return res.json(generation);
     });
 
     return router;
@@ -514,11 +586,13 @@ function createLocalGenerationRouter(options) {
 
 module.exports = {
     LOCAL_API_PREFIX,
+    createLocalGenerationService,
     createLocalGenerationRouter,
 
-    // TEST-ONLY EXPORTS: Production code imports only createLocalGenerationRouter
-    // and LOCAL_API_PREFIX. The helpers below are exported solely for unit testing
-    // request normalization, serialization invariants, and path resolution.
+    // TEST-ONLY EXPORTS: Production code imports only createLocalGenerationRouter,
+    // createLocalGenerationService and LOCAL_API_PREFIX. The helpers below are exported
+    // solely for unit testing request normalization, serialization invariants, and path
+    // resolution.
     normalizeGenerationRequest,
     serializeGeneration,
     resultToAbsolutePath
