@@ -28,17 +28,6 @@ import {
 
 const DEFAULT_NUM_IMAGES = 1;
 
-// New task from a generated result.
-// true: image count resets to DEFAULT_NUM_IMAGES.
-// false: image count is copied from the source task.
-const RESET_NUM_IMAGES_ON_NEW_TASK = true;
-
-function clampNumImages(value) {
-    const n = parseInt(value, 10);
-    if (!Number.isFinite(n)) return DEFAULT_NUM_IMAGES;
-    return Math.min(10, Math.max(1, n));
-}
-
 function errorMessageHtml(message) {
     const text = message || 'Unknown error';
     const escaped = escapeHtml(text);
@@ -69,8 +58,7 @@ class App {
         this.taskOrder = [];
         this.activeId = null;
         this.globalImages = [];
-        this.aliasState = {};
-        this.pendingFromResult = null;
+        this.sharedState = P.createSharedState(DEFAULT_NUM_IMAGES);
         this.colorIndex = 0;
         this.favs = new Set(readStorageJson(STORAGE_FAVS, []));
         const savedCombo = readStorageJson(STORAGE_COMBO, {});
@@ -192,6 +180,43 @@ class App {
                 this.openViewer(parseInt(card.dataset.card, 10));
             }
         });
+        this.paneResults.addEventListener('mousedown', (e) => {
+            const card = e.target.closest('[data-card]');
+            const filmItem = e.target.closest('[data-go]');
+            let index = -1;
+            if (card) index = parseInt(card.dataset.card, 10);
+            else if (filmItem) index = parseInt(filmItem.dataset.go, 10);
+            if (index === -1) return;
+            const task = this.task();
+            const res = task?.results?.[index];
+            if (res) this.ensureResultData(res).catch(() => {});
+        });
+        this.paneResults.addEventListener('dragstart', (e) => {
+            const card = e.target.closest('[data-card]');
+            const filmItem = e.target.closest('[data-go]');
+            let index = -1;
+            if (card && !e.target.closest('button, a, input, select, textarea')) {
+                index = parseInt(card.dataset.card, 10);
+            } else if (filmItem) {
+                index = parseInt(filmItem.dataset.go, 10);
+            }
+            if (index === -1) return;
+            const task = this.task();
+            const res = task?.results?.[index];
+            if (!res || !res.image) return;
+
+            e.dataTransfer.setData('text/plain', `res:${task.id}:${index}`);
+            if (res._dataUrl) {
+                e.dataTransfer.setData('wh/ref-image', res._dataUrl);
+            }
+            e.dataTransfer.effectAllowed = 'copy';
+
+            if (this.env.isLocal && e.altKey && res._dataUrl) {
+                if (tryElectronDrag(e, res._dataUrl)) {
+                    e.preventDefault();
+                }
+            }
+        });
         document.addEventListener('keydown', (e) => this.onResultsKey(e));
         document.getElementById('btn-t2i').addEventListener('click', () => this.createTextTask());
         document.getElementById('btn-image').addEventListener('click', () => this.fileTask.click());
@@ -304,8 +329,11 @@ class App {
     mountTask(id, data, activate = true) {
         const color = TASK_COLORS[this.colorIndex % TASK_COLORS.length];
         this.colorIndex += 1;
-        const fromResult = this.pendingFromResult && this.pendingFromResult.taskId === id;
         const isImg2Img = Boolean(data?.sourceImage);
+        // Any I2I task starts at Match Input and one image; T2I tasks inherit the
+        // last T2I aspect ratio and image count from the shared state.
+        const initialAspectRatio = isImg2Img ? '' : this.sharedState.t2i.aspect_ratio;
+        const initialNumImages = isImg2Img ? DEFAULT_NUM_IMAGES : this.sharedState.t2i.num_images;
         const task = {
             id,
             data,
@@ -313,14 +341,15 @@ class App {
             createdAt: new Date(),
             state: {
                 selectedProviderId: null,
+                // Fixed at creation: adding a reference later does not change it.
+                // Only 't2i' tasks write aspect ratio / image count to the shared state.
+                origin: isImg2Img ? 'i2i' : 't2i',
                 formState: {
                     prompt: '',
-                    num_images: fromResult ? this.pendingFromResult.numImages : DEFAULT_NUM_IMAGES,
-                    aspect_ratio: ''
+                    num_images: initialNumImages,
+                    aspect_ratio: initialAspectRatio
                 },
-                // New img2img tasks start at Match Input and do not take the text-to-image ratio.
-                ...(isImg2Img ? { useSessionAspectRatio: false } : {}),
-                ...(fromResult ? { fromResultCountApplied: true } : {}),
+                aspectRatioIntent: initialAspectRatio,
                 references: [],
                 useMask: true,
                 viewMode: 'overlay'
@@ -334,7 +363,6 @@ class App {
         }
         this.tasks.set(id, task);
         this.taskOrder.unshift(id);
-        if (fromResult) this.pendingFromResult = null;
         if (activate) this.activate(id);
         else this.render();
     }
@@ -390,6 +418,17 @@ class App {
         return task._sourceDataUrl;
     }
 
+    async ensureResultData(res) {
+        if (!res?.image) return null;
+        if (res._dataUrl) return res._dataUrl;
+        if (typeof res.image === 'string' && res.image.startsWith('data:')) {
+            res._dataUrl = res.image;
+            return res._dataUrl;
+        }
+        res._dataUrl = await urlToDataUrl(res.image);
+        return res._dataUrl;
+    }
+
     async handleStageDrop(e) {
         const plain = e.dataTransfer.getData('text/plain');
         const refImage = e.dataTransfer.getData('wh/ref-image');
@@ -417,10 +456,43 @@ class App {
             }
             return;
         }
+        if (plain && plain.startsWith('res:')) {
+            const parts = plain.slice(4).split(':');
+            const taskId = parts[0];
+            const resIdx = parseInt(parts[1], 10);
+            const task = this.tasks.get(taskId) || this.task();
+            const res = task?.results?.[resIdx];
+            if (res?.image) {
+                try {
+                    const data = await this.ensureResultData(res);
+                    if (data) {
+                        this.globalImages.push(data);
+                        this.renderStage();
+                        this.bindDnd();
+                    }
+                } catch (err) {
+                    this.toast('Could not add result to Stage');
+                }
+            }
+            return;
+        }
         if (refImage) {
             this.globalImages.push(refImage);
             this.renderStage();
             this.bindDnd();
+            return;
+        }
+        if (plain && (plain.startsWith('data:image/') || plain.startsWith('http://') || plain.startsWith('https://') || plain.startsWith('/api/'))) {
+            try {
+                const data = plain.startsWith('data:') ? plain : await urlToDataUrl(plain);
+                if (data) {
+                    this.globalImages.push(data);
+                    this.renderStage();
+                    this.bindDnd();
+                }
+            } catch (err) {
+                // fall through
+            }
             return;
         }
         if (e.dataTransfer.files?.length) {
@@ -610,7 +682,7 @@ class App {
                 ? 'after_prompt'
                 : 'before_prompt';
             if (parameterPosition !== position) continue;
-            const val = P.resolveParamDefault(p, this.aliasState, task.state.formState);
+            const val = P.resolveParamDefault(p, this.sharedState, task.state.formState, provider.id);
             task.state.formState[P.paramStateKey(p)] = val;
             if (p.alias === 'negative_prompt') continue;
             const attrs = `data-param-name="${escapeHtml(p.name)}" data-alias="${escapeHtml(p.alias || '')}"`;
@@ -671,11 +743,11 @@ class App {
         }
 
         const provider = this.provider(task);
-        P.seedForceSeparate(task, this.aliasState);
+        P.seedForceSeparate(task, this.sharedState);
         const paramsHtml = this.renderDynamicParams(task, provider);
         const afterPromptParamsHtml = this.renderDynamicParams(task, provider, 'after_prompt');
         const mode = P.effectiveGenerationMode(task);
-        const ar = P.resolveAspectRatio(task, provider, this.aliasState);
+        const ar = P.resolveAspectRatio(task, provider);
         const mask = P.maskCheckboxState(provider, task);
         const maxRefs = P.effectiveMaxRefs(provider, task);
         const refs = task.state.references || [];
@@ -903,6 +975,7 @@ class App {
                 if (n < 1) n = 1;
                 if (n > 10) n = 10;
                 task.state.formState.num_images = n;
+                if (task.state.origin === 't2i') this.sharedState.t2i.num_images = n;
                 this.syncGenerateCluster(task);
             };
         }
@@ -910,9 +983,8 @@ class App {
         if (arSel) {
             arSel.onchange = () => {
                 task.state.formState.aspect_ratio = arSel.value;
-                if (task.state.useSessionAspectRatio !== false) {
-                    this.aliasState.aspect_ratio = arSel.value;
-                }
+                task.state.aspectRatioIntent = arSel.value;
+                if (task.state.origin === 't2i') this.sharedState.t2i.aspect_ratio = arSel.value;
                 this.syncSourceWarnings(task);
             };
         }
@@ -920,7 +992,7 @@ class App {
         if (sep) {
             sep.onchange = () => {
                 task.state.formState.force_separate_requests = sep.checked;
-                this.aliasState.force_separate_requests = sep.checked;
+                this.sharedState.force_separate_requests = sep.checked;
             };
         }
         const gen = this.paneSource.querySelector('#btn-generate');
@@ -943,7 +1015,7 @@ class App {
             if (!t.dataset?.paramName) return;
             const alias = t.dataset.alias;
             let val = t.type === 'checkbox' ? t.checked : (t.type === 'number' || t.type === 'range' ? parseFloat(t.value) : t.value);
-            P.applyParamValue(task, this.aliasState, t.dataset.paramName, alias || '', val);
+            P.applyParamValue(task, this.sharedState, task.state.selectedProviderId, t.dataset.paramName, alias || '', val);
             if (t.type === 'range') {
                 const lab = this.paneSource.querySelector(`[data-val="${t.dataset.paramName}"]`);
                 if (lab) lab.textContent = val;
@@ -1057,6 +1129,23 @@ class App {
                     task.state.references.push(refImage);
                     this.renderSource();
                     this.bindDnd();
+                    return;
+                }
+                if (internal && internal.startsWith('res:')) {
+                    const parts = internal.slice(4).split(':');
+                    const taskId = parts[0];
+                    const resIdx = parseInt(parts[1], 10);
+                    const t = this.tasks.get(taskId) || this.task();
+                    const res = t?.results?.[resIdx];
+                    if (res?.image) {
+                        this.ensureResultData(res).then((data) => {
+                            if (data) {
+                                task.state.references.push(data);
+                                this.renderSource();
+                                this.bindDnd();
+                            }
+                        }).catch(() => {});
+                    }
                     return;
                 }
                 if (e.dataTransfer.files?.length) this.addRefsFromFiles(e.dataTransfer.files);
@@ -1565,7 +1654,7 @@ class App {
                         this.renderStage();
                         this.bindDnd();
                     }
-                } else if (token.startsWith('src:')) {
+                } else if (token.startsWith('src:') || token.startsWith('res:')) {
                     this.handleStageDrop({ dataTransfer: { getData: (k) => (k === 'text/plain' ? token : ''), files: null } });
                 } else if (token.startsWith('glb:')) {
                     const t = this.task();
@@ -1699,47 +1788,26 @@ class App {
         if (result.num_images !== undefined) params.num_images = result.num_images;
         if (result.aspect_ratio !== undefined) params.aspect_ratio = result.aspect_ratio;
         Object.assign(task.state.formState, params);
-        if (params.aspect_ratio !== undefined) this.aliasState.aspect_ratio = params.aspect_ratio;
+        if (params.aspect_ratio !== undefined) {
+            task.state.aspectRatioIntent = params.aspect_ratio;
+            if (task.state.origin === 't2i') this.sharedState.t2i.aspect_ratio = params.aspect_ratio;
+        }
         this.renderSource();
         this.bindDnd();
         this.paneSource.querySelector('#prompt-input')?.focus();
-    }
-
-    applyFromResultDefaults(taskId) {
-        const pending = this.pendingFromResult;
-        if (!pending || pending.taskId !== taskId) return;
-        const task = this.tasks.get(taskId);
-        if (!task || task.state.fromResultCountApplied) return;
-        task.state.fromResultCountApplied = true;
-        task.state.formState.num_images = pending.numImages;
-        if (this.activeId === taskId) {
-            this.renderSource();
-            this.bindDnd();
-        }
     }
 
     async handleNewTaskFromResult(result, btn) {
         const task = this.task();
         const original = btn.innerHTML;
         btn.disabled = true;
-        this.pendingFromResult = {
-            taskId: null,
-            numImages: RESET_NUM_IMAGES_ON_NEW_TASK
-                ? DEFAULT_NUM_IMAGES
-                : clampNumImages(task?.state?.formState?.num_images)
-        };
         try {
-            const created = await api.createTaskFromFile({
+            await api.createTaskFromFile({
                 filename: filenameFromUrl(result.image),
                 sourceTaskId: task ? task.id : null,
                 threadId: this.env.threadId
             });
-            if (created?.taskId && this.pendingFromResult) {
-                this.pendingFromResult.taskId = created.taskId;
-                this.applyFromResultDefaults(created.taskId);
-            }
             await this.pollOnce();
-            if (created?.taskId) this.applyFromResultDefaults(created.taskId);
             btn.textContent = 'Created';
             btn.classList.add('flash');
             setTimeout(() => {
@@ -1750,9 +1818,6 @@ class App {
         } catch (err) {
             btn.disabled = false;
             this.toast(err.message);
-        } finally {
-            const pending = this.pendingFromResult;
-            if (!pending?.taskId || this.tasks.has(pending.taskId)) this.pendingFromResult = null;
         }
     }
 
@@ -1834,6 +1899,27 @@ class App {
                 this.setViewerScale('100');
             }
         };
+
+        this.viewerImg.addEventListener('dragstart', (e) => {
+            if (this.viewerState.scale === '100') {
+                e.preventDefault();
+                return;
+            }
+            const task = this.task();
+            const index = this.viewerState.index;
+            const res = task?.results?.[index];
+            if (!res || !res.image) return;
+            e.dataTransfer.setData('text/plain', `res:${task.id}:${index}`);
+            if (res._dataUrl) {
+                e.dataTransfer.setData('wh/ref-image', res._dataUrl);
+            }
+            e.dataTransfer.effectAllowed = 'copy';
+            if (this.env.isLocal && e.altKey && res._dataUrl) {
+                if (tryElectronDrag(e, res._dataUrl)) {
+                    e.preventDefault();
+                }
+            }
+        });
 
         this.viewerBody.onmousedown = (e) => {
             if (this.viewerState.scale !== '100') return;

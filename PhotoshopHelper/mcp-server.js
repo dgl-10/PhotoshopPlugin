@@ -43,7 +43,10 @@ const SERVER_INSTRUCTIONS =
     + 'ToPS AI. Closing only that window pauses rather than cancels the task. Reopening it in '
     + 'the same plugin runtime resumes the same task automatically; use ps_resume_task only '
     + 'when the tool says the plugin runtime restarted. Never repeat an uncertain change blindly.\n'
-    + 'Finish with ps_finish_task.';
+    + 'Finish with ps_finish_task.\n'
+    + 'The gen_ tools are a separate thing: they generate images through paid providers and '
+    + 'do not touch the Photoshop document, so they need no ps_start_task and no task id. '
+    + 'Their descriptions say where the full documentation is.';
 
 /**
  * Pick the protocol version to answer with.
@@ -62,7 +65,8 @@ function negotiateProtocolVersion(requested) {
  * Build the Express router for POST /mcp.
  *
  * @param {object} options
- * @param {object} options.tools - Tool layer from agent/mcp-tools.js: { list, call }.
+ * @param {object} options.tools - Tool layer: { list, call }, the ps_ tools from
+ *   agent/mcp-tools.js merged with the gen_ tools by agent/combine-tools.js.
  * @returns {import('express').Router}
  */
 function createMcpRouter({ tools }) {

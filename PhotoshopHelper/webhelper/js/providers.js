@@ -91,12 +91,11 @@ export function allowedAspectRatios(provider, formState) {
     return ALL_ASPECT_RATIOS.slice();
 }
 
-export function resolveAspectRatio(task, provider, aliasState) {
-    // New img2img tasks opt out of the session ratio and start empty (Match Input).
-    // Text-to-image keeps reading the session alias.
-    const raw = task.state.useSessionAspectRatio === false
-        ? (task.state.formState?.aspect_ratio ?? '')
-        : (aliasState?.aspect_ratio ?? '');
+export function resolveAspectRatio(task, provider) {
+    // The user's raw choice is stored per task in aspectRatioIntent and survives
+    // provider switches. It is seeded at task creation (see App.mountTask):
+    // T2I tasks start from the last T2I ratio, I2I tasks start empty (Match Input).
+    const raw = task.state.aspectRatioIntent ?? '';
     const allowed = allowedAspectRatios(provider, task.state.formState);
     const isT2I = effectiveGenerationMode(task) === 't2i';
     // Fully functional and tested, but intentionally omitted from public docs
@@ -237,10 +236,37 @@ export function paramStateKey(param) {
     return param.alias || param.name;
 }
 
-export function resolveParamDefault(param, aliasState, formState) {
+// Parameters that must never be remembered between tasks.
+const NON_SHARED_ALIASES = new Set(['prompt', 'negative_prompt']);
+
+function isSharedParam(param) {
+    return !NON_SHARED_ALIASES.has(param.alias);
+}
+
+/**
+ * Create the empty state shared between tasks (in memory only, not persisted).
+ * aspect_ratio / num_images are written only by text-to-image tasks.
+ *
+ * @param {number} defaultNumImages - Initial image count.
+ * @returns {object} Shared state.
+ */
+export function createSharedState(defaultNumImages = 1) {
+    return {
+        aliasValues: {},      // { [alias]: value } shared across providers
+        providerValues: {},   // { [providerId]: { [paramName]: value } } params without alias
+        t2i: { aspect_ratio: '', num_images: defaultNumImages },
+        force_separate_requests: false
+    };
+}
+
+export function resolveParamDefault(param, sharedState, formState, providerId) {
     const stateKey = paramStateKey(param);
     let val = formState[stateKey];
-    if (val === undefined && param.alias) val = aliasState[param.alias];
+    if (val === undefined && isSharedParam(param)) {
+        val = param.alias
+            ? sharedState.aliasValues[param.alias]
+            : sharedState.providerValues[providerId]?.[param.name];
+    }
     if (val === undefined) {
         let defVal = param.default;
         if (param.type === 'dropdown' && param.options) {
@@ -371,14 +397,20 @@ export function resolveNiceName(provider, context = {}) {
     return substituteNiceName(template, resolved);
 }
 
-export function applyParamValue(task, aliasState, name, alias, rawVal) {
+export function applyParamValue(task, sharedState, providerId, name, alias, rawVal) {
     const stateKey = alias || name;
     task.state.formState[stateKey] = rawVal;
-    if (alias) aliasState[alias] = rawVal;
+    if (NON_SHARED_ALIASES.has(alias)) return;
+    if (alias) {
+        sharedState.aliasValues[alias] = rawVal;
+    } else if (providerId) {
+        if (!sharedState.providerValues[providerId]) sharedState.providerValues[providerId] = {};
+        sharedState.providerValues[providerId][name] = rawVal;
+    }
 }
 
-export function seedForceSeparate(task, aliasState) {
+export function seedForceSeparate(task, sharedState) {
     if (task.state.formState.force_separate_requests === undefined) {
-        task.state.formState.force_separate_requests = aliasState.force_separate_requests || false;
+        task.state.formState.force_separate_requests = sharedState.force_separate_requests || false;
     }
 }

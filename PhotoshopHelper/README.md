@@ -107,12 +107,35 @@ WebHelper works from its own page without any setup.
 
 ```text
 PhotoshopHelper/
-├── webhelper/                        # Frontend application (SPA)
-│   ├── index.html                    # Current generator UI (`/webhelper`)
-│   ├── app.css
-│   ├── assets/                       # UI assets and graphics
-│   ├── js/
-│   └── v0/                           # Previous Spectre UI (`/webhelper/v0`)
+├── agent/                            # AI agent subsystem (MCP server, CLI runner, and UI)
+│   ├── index.js                      # Agent service entry point (MCP tools, WS bridge, session coordinator)
+│   ├── agent-api.js                  # Plugin REST API router (task state, abort, assist window trigger)
+│   ├── task-session.js               # Document-bound task session coordinator and timeout tracking
+│   ├── mcp-setup.js                  # CLI MCP registration commands and configuration generator
+│   ├── mcp-tools.js                  # Core Photoshop document MCP tools (ps_* commands)
+│   ├── combine-tools.js              # Aggregates document (ps_*) and generation (gen_*) tool layers
+│   ├── gen-tools.js                  # MCP tools for image generation (gen_* commands)
+│   ├── journal.js                    # Diagnostic logger for MCP tool calls and results
+│   ├── knowledge-base.js             # Knowledge base loader, search index, and article provider for MCP tools
+│   ├── cli-service.js                # Core CLI agent service, discovery, and tier execution (Light/Medium/High)
+│   ├── cli-runner.js                 # Subprocess manager for spawning and controlling external CLI agents
+│   ├── cli-prompts.js                # Standardized system prompts and model querying templates for CLI agents
+│   ├── cli-transcript.js             # Output parser converting varied CLI streams into human-readable transcripts
+│   ├── cli-image-provider.js         # Virtual WebHelper image provider adapter backed by local CLI agents
+│   ├── cli-window.js                 # External console window for live CLI agent output streaming
+│   ├── cli-models-cache.js           # Cache storage manager for CLI models and capabilities
+│   ├── cli-models-window.html        # Markup for the CLI models catalog window
+│   ├── cli-models-window.js          # Window controller for CLI models catalog
+│   ├── cli-models-preload.js         # Secure IPC bridge for the CLI models window
+│   ├── cli-models-renderer.js        # UI logic and renderer for CLI models catalog window
+│   ├── cli-settings-window.html      # Markup for the CLI settings window
+│   ├── cli-settings-window.js        # Window controller for CLI settings
+│   ├── cli-settings-preload.js       # Secure IPC bridge for the CLI settings window
+│   ├── cli-settings-renderer.js      # UI logic and renderer for CLI settings window
+│   ├── assist-window.html            # Markup for the AI Assist floating status window
+│   ├── assist-window.js              # Electron window manager for the AI Assist window
+│   ├── assist-window-preload.js      # Secure IPC bridge for the AI Assist window
+│   └── assist-window-renderer.js     # Live status and task step renderer for AI Assist window
 ├── setup/                            # Initial configuration and setup wizard
 │   ├── config-paths.js               # Logic for locating configuration files
 │   ├── first-run-wizard.html         # First run configuration UI
@@ -121,15 +144,23 @@ PhotoshopHelper/
 │   ├── license-activation.html       # License activation UI
 │   ├── license-activation.js         # License activation logic
 │   └── license-activation-preload.js # Secure bridge for license activation window
+├── webhelper/                        # Frontend application (SPA)
+│   ├── index.html                    # Current generator UI (`/webhelper`)
+│   ├── app.css                       # Web application styling
+│   ├── assets/                       # UI assets and graphics
+│   ├── js/                           # Web application scripts and provider handlers
+│   └── v0/                           # Previous Spectre UI (`/webhelper/v0`)
 ├── package.json                      # Dependencies (Electron, Express, electron-store)
-├── main.js                           # Main process: HTTP/REST API and system tray
+├── main.js                           # Main process: HTTP/REST API, system tray, and agent service
 ├── auth.js                           # Shared token generation, timing-safe comparison, and access-control middleware
 ├── plugin-pairing.js                 # Delivers the plugin token into the Photoshop plugin's UXP data folder
 ├── preload.js                        # Context bridge for secure inter-process communication
 ├── providers.template.json           # Shared provider catalog source (development)
 ├── providers.user.json               # User provider overlay: additions, replacements, and disabled shared models
 ├── providers-catalog.js              # Provider catalog loader, validator, and overlay merger (shared + user models)
+├── providers-discovery.js            # Provider catalog discovery and filtering based on active API keys
 ├── providers-updater.js              # Background updater for the shared provider catalog from GitHub
+├── kb-updater.js                     # Background updater for the shared knowledge base from GitHub
 ├── Prompt_Providers_Configuration.md # LLM prompt for generating new provider configurations
 ├── Providers_Configuration_Guide.md  # Detailed guide for provider and API configuration
 ├── Local_Generation_API.md           # File-path-based localhost automation API guide
@@ -145,6 +176,10 @@ PhotoshopHelper/
 ├── apiGeneratorPreprocessors.js      # Preprocessors: resizing, MP optimization, and filtering
 ├── imageUtils.js                     # Image processing utilities (MIME, Base64, NativeImage)
 ├── atomic-write.js                   # Atomic file replacement utility (safe temporary-file write and rename)
+├── llm-engine.js                     # Direct LLM adapter supporting API mode and CLI execution mode
+├── mcp-server.js                     # Model Context Protocol (MCP) Streamable HTTP/JSON-RPC server endpoint
+├── ws-bridge.js                      # WebSocket server bridge managing command channel with Photoshop plugin
+├── webhelper-storage.js              # Temp root layout and URL resolution for WebHelper tasks and generated files
 ├── tray-icon.png                     # Application icon for the system tray
 ├── user-settings.js                  # Persistent settings manager using electron-store
 ├── user-settings.json                # Runtime configuration state file (dev mode only, excluded from build)

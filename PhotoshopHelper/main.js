@@ -77,14 +77,17 @@ const { generate } = require('./apiGenerator');
 const { loadProvidersCatalog, findMissingEnvKeys } = require('./providers-catalog');
 const { createCatalogUpdater } = require('./providers-updater');
 const { createKbUpdater } = require('./kb-updater');
-const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
-const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest, maskAuthorizationHeader } = require('./auth');
+const { LOCAL_API_PREFIX, createLocalGenerationRouter, createLocalGenerationService } = require('./localGenerationApi');
+const { listClientProviders } = require('./providers-discovery');
+const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest, maskAuthorizationHeader, requestHasToken } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
 const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment, isAgentJournalEnabled, setAgentJournalEnabled, isAgentSeen, markAgentSeen } = require('./user-settings');
 const { createWsBridgeServer } = require('./ws-bridge');
 const { createMcpRouter } = require('./mcp-server');
 const { createAgentService, resolveAgentPaths } = require('./agent');
 const { createAgentRouter } = require('./agent/agent-api');
+const { createGenerationTools } = require('./agent/gen-tools');
+const { combineTools } = require('./agent/combine-tools');
 const { initAssistWindow, openAssistWindow } = require('./agent/assist-window');
 const { initCliSettingsWindow, openCliSettingsWindow } = require('./agent/cli-settings-window');
 const { initCliModelsWindow, openCliModelsWindow } = require('./agent/cli-models-window');
@@ -1042,13 +1045,59 @@ function startHttpServer() {
     });
     expressApp.use('/api/file', requirePluginToken);
     expressApp.use('/webhelper', webHelperPasswordGate);
-    expressApp.use('/api/webhelper', webHelperPasswordGate, requireWebHelperAccess);
+    // The provider list is also what the Local Generation API's own clients (and the MCP
+    // gen_ tools' documentation) tell callers to read. Those callers hold the Local API
+    // token, not the WebHelper password or the plugin token, so that token is accepted for
+    // this one read-only route. Every other /api/webhelper route keeps the gates below, and
+    // the Local API token opens nothing else there.
+    expressApp.use('/api/webhelper', (req, res, next) => {
+        const isProviderList = req.method === 'GET' && req.path.replace(/\/+$/, '') === '/providers';
+        if (isProviderList && requestHasToken(req, localApiToken)) {
+            return next();
+        }
+        return webHelperPasswordGate(req, res, error => {
+            if (error) return next(error);
+            return requireWebHelperAccess(req, res, next);
+        });
+    });
+
+    // One generation service behind both entry points to generation: the Local Generation
+    // API over HTTP and the gen_ tools of the MCP server. A generation started through one
+    // can be read through the other, and both are counted the same way.
+    const listProviders = () => listClientProviders({
+        loadProvidersCatalog,
+        findMissingEnvKeys,
+        getRuntimeCliImageProvider
+    });
+    const generationService = createLocalGenerationService({
+        generate,
+        tempDir: WEBHELPER_TEMP_DIR,
+        // Runtime providers are discoverable by external Local API clients just like
+        // catalog providers. Resolve only the matching private provider ID here; regular
+        // IDs remain the responsibility of apiGenerator's existing catalog lookup.
+        resolveRuntimeProvider: async providerId => (
+            providerId === CLI_IMAGE_PROVIDER_ID
+                ? getRuntimeCliImageProvider()
+                : null
+        ),
+        onGenerationAccepted: () => trackUsage(2)
+    });
 
     // MCP server — the entry point for CLI agents (Claude Code, Codex, Grok, Antigravity),
     // both the one Helper launches and the one the user opens themselves.
-    // Protected by localApiToken, the same secret as the Local Generation API, because the
-    // same server will later publish generation tools that do spend money.
+    // Protected by localApiToken, the same secret as the Local Generation API, because it
+    // publishes the gen_ generation tools, which do spend money.
     const requireMcpAccess = createAuthMiddleware({ getToken: () => localApiToken });
+    const mcpTools = combineTools([
+        agentService.tools,
+        createGenerationTools({
+            service: generationService,
+            listProviders,
+            // Both guides sit in the resources folder: next to the project in development
+            // and in the app's resources folder once packaged (see extraResources).
+            docsDir: getConfigPaths().resourcesPath
+        })
+    ]);
     expressApp.use('/mcp', (req, _res, next) => {
         // Diagnostic log: prints incoming HTTP method, URL, and raw Authorization header to console
         console.log(`\n>>> [MCP INCOMING] ${req.method} ${req.originalUrl || req.url}`);
@@ -1056,7 +1105,7 @@ function startHttpServer() {
         console.log(`>>> [MCP INCOMING] Accept:        "${req.get('accept') || '(none)'}"`);
         next();
     }, requireMcpAccess, createMcpRouter({
-        tools: agentService.tools
+        tools: mcpTools
     }));
 
     // What the plugin's FromPS / ToPS AI line talks to. These routes expose task state,
@@ -1072,18 +1121,8 @@ function startHttpServer() {
     // pipeline. Its token is deliberately distinct from the plugin token: the plugin's
     // secret is delivered as a file on disk, and must not unlock paid generation.
     expressApp.use(LOCAL_API_PREFIX, createLocalGenerationRouter({
-        generate,
-        tempDir: WEBHELPER_TEMP_DIR,
-        getToken: () => localApiToken,
-        // Runtime providers are discoverable by external Local API clients just like
-        // catalog providers. Resolve only the matching private provider ID here; regular
-        // IDs remain the responsibility of apiGenerator's existing catalog lookup.
-        resolveRuntimeProvider: async providerId => (
-            providerId === CLI_IMAGE_PROVIDER_ID
-                ? getRuntimeCliImageProvider()
-                : null
-        ),
-        onGenerationAccepted: () => trackUsage(2)
+        service: generationService,
+        getToken: () => localApiToken
     }));
 
     // GET /api/status - Health check endpoint
@@ -1364,36 +1403,7 @@ function startHttpServer() {
     // GET /api/webhelper/providers - Get list of models/providers
     expressApp.get('/api/webhelper/providers', async (req, res) => {
         try {
-            const catalog = loadProvidersCatalog();
-
-            // 1. Filter out providers for which API keys are not defined in the system
-            const availableProviders = catalog.providers.filter(p => (
-                findMissingEnvKeys(p, catalog.response_handlers).length === 0
-            ));
-
-            // The CLI provider is runtime state, not user-editable provider catalog data.
-            const cliImageProvider = await getRuntimeCliImageProvider();
-            if (cliImageProvider) availableProviders.push(cliImageProvider);
-
-            // 2. Sanitize and elevate properties for the client
-            const sanitizedProviders = availableProviders.map(p => {
-                const sanitized = { ...p };
-
-                // Elevate single_image_per_request to client level if it exists in request_config
-                if (p.request_config && p.request_config.single_image_per_request) {
-                    sanitized.single_image_per_request = true;
-                } else {
-                    sanitized.single_image_per_request = false;
-                }
-
-                delete sanitized.request_config;
-                delete sanitized.response_config;
-                delete sanitized.image_format;
-                delete sanitized.filename_suffix;
-                delete sanitized.preprocessor;
-                return sanitized;
-            });
-            res.json({ providers: sanitizedProviders });
+            res.json({ providers: await listProviders() });
         } catch (error) {
             console.error('Error reading providers:', error);
             res.status(500).json({ error: error.message });
