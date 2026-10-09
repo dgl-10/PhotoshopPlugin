@@ -12,6 +12,8 @@ const { app, action, core, imaging, constants } = photoshop;
 const agentDocument = require('./agent-document.js');
 const agentCapture = require('./agent-capture.js');
 const batchPlayWatch = require('./batchplay-watch.js');
+const ps = require('./ps.js');
+const settings = require('./settings.js');
 const { describeError } = require('./error-text.js');
 
 // Photoshop lets only one plugin hold a modal scope at a time, and by default a request
@@ -23,6 +25,50 @@ const MODAL_TIMEOUT_MS = 10_000;
 // the connection closes. Refusing well short of that keeps a greedy capture from taking
 // the channel down, while still leaving room to find out what agents actually accept.
 const MAX_IMAGE_BASE64_BYTES = 60 * 1024 * 1024;
+
+// The agent's names for the panel's capture sources and place back modes. They are the
+// same operations as the panel's "Copy merged" / "Copy layer" picker and Place Back menu.
+const CAPTURE_SOURCES = {
+    visible: 'copyMerged',
+    current_layer: 'currentLayer'
+};
+const PLACE_BACK_MODES = {
+    smart_object: 'so',
+    editable_smart_object: 'editableSo',
+    inpaint_mask: 'mask',
+    selection_only: 'selection'
+};
+// The panel's Feather buttons: Outward, Center, Inward.
+const FEATHER_BIAS = {
+    outward: 1.0,
+    center: 0.0,
+    inward: -1.0
+};
+
+// The FromPS / ToPS cards of the panel, handed over by index.js at start-up. A capture made
+// by the agent lands in the same list the person drags from, and its place back uses the
+// image the person put into the ToPS card.
+let panel = null;
+
+/**
+ * @param {object} link - The panel's side, see createPanelLink in index.js.
+ */
+function connectPanel(link) {
+    panel = link;
+}
+
+/**
+ * @returns {object} The panel link.
+ * @throws {Error} When the panel has not handed it over yet.
+ */
+function requirePanel() {
+    if (!panel) {
+        throw new Error(
+            'The FromPS / ToPS panel is not ready yet. Ask the person to open it, then try again.'
+        );
+    }
+    return panel;
+}
 
 /**
  * Run something in a modal scope, with a message the agent can act on when Photoshop
@@ -285,6 +331,257 @@ async function agentGetImage(payload) {
 }
 
 /**
+ * from_ps_capture: press the panel's Capture button on the current selection of the
+ * working document — the same padding, the same choice of aspect ratio — and put the piece
+ * into the FromPS card, where the person drags it out as usual. Neither the document nor
+ * its selection is changed.
+ *
+ * @param {object} payload - { taskId, source, fullDocument, keepTransparency, padding }.
+ * @returns {Promise<object>} The capture's id, number and box, and the status.
+ */
+async function agentFromPsCapture(payload) {
+    const link = requirePanel();
+
+    return agentDocument.withWorkingDocument(payload.taskId, async (doc) => {
+        if (!(await hasSelection(doc))) {
+            throw new Error(
+                `There is no selection in "${doc.name}". Select the area first — with `
+                + 'ps_execute_script, or ask the person to — then capture again.'
+            );
+        }
+
+        const sourceMode = CAPTURE_SOURCES[payload.source] || CAPTURE_SOURCES.visible;
+
+        // The agent's own margin around the selection, or the button's default.
+        const padding = Number.isFinite(payload.padding) && payload.padding >= 0
+            ? Math.round(payload.padding)
+            : ps.CAPTURE_PADDING;
+
+        // A plain capture, exactly as the button makes it: this is what goes to the generator,
+        // so it is never reduced. The agent looks at it separately, with ps_get_image.
+        const captured = await inModalScope(
+            executionContext => ps.captureSelectionInModal(
+                executionContext,
+                sourceMode,
+                payload.keepTransparency === true,
+                payload.fullDocument === true,
+                padding
+            ),
+            'Agent: capture'
+        );
+
+        const added = await link.addCapture(captured);
+        const bounds = captured.bounds;
+
+        return {
+            capture: {
+                id: added.id,
+                number: added.number,
+                bounds: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom },
+                width: bounds.width,
+                height: bounds.height,
+                aspectRatio: captured.aspectRatio,
+                source: payload.source || 'visible',
+                padding,
+                fullDocument: payload.fullDocument === true,
+                keepTransparency: payload.keepTransparency === true
+            },
+            status: agentDocument.buildStatus(payload.taskId)
+        };
+    });
+}
+
+/**
+ * from_ps_get_capture: hand over a capture of the FromPS card — its image, and its mask when
+ * asked — for the agent to look at. Helper reduces the copy; the card is not switched and
+ * nothing in Photoshop changes.
+ *
+ * @param {object} payload - { taskId, captureId, includeMask }.
+ * @returns {Promise<object>} The capture's facts and pixels, the list of captures, and the status.
+ */
+async function agentFromPsGetCapture(payload) {
+    const link = requirePanel();
+    // Bound to the task like every other command, although the document itself is not read.
+    agentDocument.resolveWorkingDocument(payload.taskId);
+
+    const id = Number.isInteger(payload.captureId) ? payload.captureId : null;
+    const capture = await link.readCapture(id, payload.includeMask === true);
+    if (!capture) {
+        const ids = link.listCaptures().map(item => item.id);
+        throw new Error(
+            id === null
+                ? 'The FromPS card shows no capture right now. '
+                + (ids.length > 0 ? `It holds ids ${ids.join(', ')}; name one with capture_id.` : 'It is empty.')
+                : `There is no capture with id ${id} in the FromPS card. `
+                + (ids.length > 0 ? `It holds ids ${ids.join(', ')}.` : 'The card is empty.')
+        );
+    }
+
+    const size = (capture.imageBase64 || '').length + (capture.maskBase64 || '').length;
+    if (size > MAX_IMAGE_BASE64_BYTES) {
+        throw new Error(
+            `Capture ${capture.id} came to about ${Math.round(size / (1024 * 1024))} MB, more than `
+            + 'the channel to Photoshop carries in one message. Ask for it without the mask.'
+        );
+    }
+
+    const { imageBase64, maskBase64, ...facts } = capture;
+    return {
+        capture: facts,
+        imageBase64,
+        maskBase64,
+        captures: link.listCaptures(),
+        status: agentDocument.buildStatus(payload.taskId)
+    };
+}
+
+/**
+ * The feather options for the agent's own choice of the panel's Feather buttons.
+ *
+ * @param {string} choice - 'outward', 'center', 'inward', or anything else for off.
+ * @param {boolean} isSelectAll - The capture was Select All; its mask says nothing.
+ * @returns {object} Feather options for ps.placeBackInModal.
+ */
+function featherFor(choice, isSelectAll) {
+    const bias = FEATHER_BIAS[choice];
+    const enabled = bias !== undefined;
+    return Object.assign({}, settings.getFeatherSettings(), {
+        enabled,
+        bias: enabled ? bias : 1.0,
+        skip: Boolean(isSelectAll)
+    });
+}
+
+/**
+ * @param {object} options - Feather options handed to ps.placeBackInModal.
+ * @returns {string} The name of the Feather button they amount to.
+ */
+function describeFeather(options) {
+    if (!options.enabled || options.skip) return 'off';
+    const name = Object.keys(FEATHER_BIAS).find(key => FEATHER_BIAS[key] === options.bias);
+    return name || `bias ${options.bias}`;
+}
+
+/**
+ * to_ps_place_back: put the image from the ToPS card back into the task's document over a
+ * capture of the FromPS card, the way the panel's Place Back does. The capture is named by
+ * its id, never taken as "whatever the card shows now": the person may have switched it
+ * while the agent was thinking.
+ *
+ * @param {object} payload - { taskId, captureId, mode, feather }.
+ * @returns {Promise<object>} What was placed and where, and the status.
+ */
+async function agentToPsPlaceBack(payload) {
+    const link = requirePanel();
+
+    if (!Number.isInteger(payload.captureId)) {
+        throw new Error('to_ps_place_back needs capture_id: the id from_ps_capture gave you.');
+    }
+
+    return agentDocument.withWorkingDocument(payload.taskId, async (doc) => {
+        const modeName = PLACE_BACK_MODES[payload.mode] ? payload.mode : 'smart_object';
+        const mode = PLACE_BACK_MODES[modeName];
+
+        const current = await link.useCapture(payload.captureId);
+        if (!current) {
+            const ids = link.listCaptures().map(item => item.id);
+            throw new Error(
+                `There is no capture with id ${payload.captureId} in the FromPS card. `
+                + (ids.length > 0 ? `It holds ids ${ids.join(', ')}. ` : 'The card is empty. ')
+                + 'Clear All in the panel removes every capture; if yours is gone, capture again.'
+            );
+        }
+
+        const capture = current.payload;
+        if (!capture.context || capture.context.documentId !== doc.id) {
+            const otherName = capture.context ? capture.context.documentName : 'another document';
+            throw new Error(
+                `Capture ${payload.captureId} was taken from "${otherName}", not from "${doc.name}", `
+                + 'the document of this task. Name a capture of this document, or capture again.'
+            );
+        }
+
+        const result = link.getResult();
+        if (mode !== 'selection' && !result) {
+            throw new Error(
+                'The ToPS card of the FromPS / ToPS panel is empty. Load the finished image into '
+                + 'it with to_ps_load_file, or ask the person to put it there (Paste or Load File) '
+                + 'and to tell you when it is in; then call again.'
+            );
+        }
+
+        // Without the agent's own choice, the feather is what the person's Place Back would use.
+        const feather = payload.feather
+            ? featherFor(payload.feather, capture.isSelectAll)
+            : link.getFeatherOptions(capture.isSelectAll);
+
+        // The History panel is read by the person, who knows the capture by its number in the list.
+        const historyName = mode === 'selection'
+            ? `Agent: restore selection of capture ${current.number}`
+            : `Agent: place back over capture ${current.number}`;
+
+        const report = await inModalScope(
+            executionContext => ps.placeBackInModal(
+                executionContext,
+                mode,
+                result ? result.token : null,
+                capture.bounds,
+                capture.maskData,
+                feather,
+                historyName
+            ),
+            historyName
+        );
+        agentDocument.noteOwnHistoryStep(payload.taskId);
+
+        link.showInfo('tops', mode === 'selection' ? 'Agent restored the selection' : 'Agent placed it back');
+
+        const bounds = capture.bounds;
+        // What Place Back actually did — the layer, the mask edge, the blur — so the agent
+        // does not mistake the smart filter or the mask feather for someone else's work.
+        const done = report || {};
+        return {
+            placed: {
+                mode: modeName,
+                captureId: payload.captureId,
+                captureNumber: current.number,
+                bounds: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom },
+                feather: describeFeather(feather),
+                featherFromPanel: !payload.feather,
+                layer: done.layer || null,
+                mask: done.mask || null,
+                gaussianBlur: done.gaussianBlur === undefined ? null : done.gaussianBlur
+            },
+            status: agentDocument.buildStatus(payload.taskId)
+        };
+    });
+}
+
+/**
+ * to_ps_load_file: put an image into the ToPS card, as the panel's Load File does, from a
+ * file Helper has already read — so there is no dialog. The document is not touched.
+ *
+ * @param {object} payload - { taskId, base64, fileName }.
+ * @returns {Promise<object>} What was loaded, and the status.
+ */
+async function agentToPsLoadFile(payload) {
+    const link = requirePanel();
+    // Bound to the task like every other command, although the document itself is not touched.
+    agentDocument.resolveWorkingDocument(payload.taskId);
+
+    if (!payload.base64) {
+        throw new Error('The file came through empty, so nothing was loaded into the ToPS card.');
+    }
+
+    await link.loadResult(payload.base64, payload.fileName || 'image.png');
+
+    return {
+        loaded: { fileName: payload.fileName },
+        status: agentDocument.buildStatus(payload.taskId)
+    };
+}
+
+/**
  * ps_execute_script: run the agent's code as one named step of the History panel.
  *
  * The suspension is what makes a whole script — however many batchPlay calls it contains —
@@ -376,6 +673,10 @@ const HANDLERS = {
     agent_get_layer: agentGetLayer,
     agent_get_image: agentGetImage,
     agent_execute_script: agentExecuteScript,
+    agent_from_ps_capture: agentFromPsCapture,
+    agent_from_ps_get_capture: agentFromPsGetCapture,
+    agent_to_ps_place_back: agentToPsPlaceBack,
+    agent_to_ps_load_file: agentToPsLoadFile,
     agent_ping: agentPing
 };
 
@@ -397,6 +698,7 @@ async function handleCommand(name, payload = {}) {
 
 module.exports = {
     handleCommand,
+    connectPanel,
     // Exported for testing only; production code dispatches through handleCommand.
     describeLayer
 };

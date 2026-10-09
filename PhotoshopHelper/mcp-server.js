@@ -32,7 +32,8 @@ const SERVER_INSTRUCTIONS =
     + 'If the person is only asking you something — which key does what, how some part of '
     + 'Photoshop works — just answer them. None of this is needed for that.\n'
     + 'Before you look at the document or change it, call ps_start_task. It returns the task '
-    + 'id that every other ps_ tool requires, the rules for working with Photoshop, and a '
+    + 'id that every other ps_, from_ps_ and to_ps_ tool requires, the rules for working with '
+    + 'Photoshop, and a '
     + 'knowledge base of recipes that are known to work. Photoshop\'s scripting documentation '
     + 'is poor and action descriptors are easy to invent: read the knowledge base before you '
     + 'trust your own memory of a property name.\n'
@@ -65,7 +66,7 @@ function negotiateProtocolVersion(requested) {
  * Build the Express router for POST /mcp.
  *
  * @param {object} options
- * @param {object} options.tools - Tool layer: { list, call }, the ps_ tools from
+ * @param {object} options.tools - Tool layer: { list, call }, the ps_, from_ps_ and to_ps_ tools from
  *   agent/mcp-tools.js merged with the gen_ tools by agent/combine-tools.js.
  * @returns {import('express').Router}
  */

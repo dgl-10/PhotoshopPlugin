@@ -6,6 +6,9 @@
 const { app, action, core, imaging, constants } = require('photoshop');
 const settings = require('./settings.js');
 
+// Default margin, in pixels, a capture adds around the selection on every side.
+const CAPTURE_PADDING = 50;
+
 /**
  * Check if there is an active document
  * @returns {boolean}
@@ -154,9 +157,11 @@ function getDocAspectRatioLabel(w, h) {
  * Capture the current selection with image and mask data
  * @param {string} sourceMode - 'copyMerged' or 'currentLayer'
  * @param {boolean} viaTempDocCreation - If true, uses a slower method that preserves transparency by creating a temporary document.
+ * @param {boolean} [fullDocMask=false] - Capture the whole document, with the selection as the mask.
+ * @param {number} [padding=CAPTURE_PADDING] - Minimum margin in pixels around the selection; ignored with fullDocMask.
  * @returns {Promise<{imageData: ImageData, maskData: ImageData, bounds: object, context: object}>}
  */
-async function captureSelection(sourceMode, viaTempDocCreation, fullDocMask = false) {
+async function captureSelection(sourceMode, viaTempDocCreation, fullDocMask = false, padding = CAPTURE_PADDING) {
     if (!hasActiveDocument()) {
         throw new Error("No active document");
     }
@@ -166,374 +171,391 @@ async function captureSelection(sourceMode, viaTempDocCreation, fullDocMask = fa
     }
 
     // Wrap in executeAsModal for imaging API operations
-    return await core.executeAsModal(async (executionContext) => {
-        const doc = app.activeDocument;
-        const activeLayer = doc.activeLayers[0];
+    return await core.executeAsModal(
+        executionContext => captureSelectionInModal(executionContext, sourceMode, viaTempDocCreation, fullDocMask, padding),
+        { commandName: "Capture Selection" }
+    );
+}
+
+/**
+ * The capture itself, for a caller that already holds a modal scope — the agent's
+ * from_ps_capture opens its own and must not open a second one inside it. Works on the
+ * active document and its selection; the caller checks that both exist.
+ *
+ * @param {object} executionContext - Context of the caller's executeAsModal.
+ * @param {string} sourceMode - 'copyMerged' or 'currentLayer'.
+ * @param {boolean} viaTempDocCreation - See captureSelection.
+ * @param {boolean} [fullDocMask=false] - See captureSelection.
+ * @param {number} [padding=CAPTURE_PADDING] - See captureSelection.
+ * @returns {Promise<{imageData: ImageData, maskData: ImageData, bounds: object, context: object}>}
+ */
+async function captureSelectionInModal(executionContext, sourceMode, viaTempDocCreation, fullDocMask = false, padding = CAPTURE_PADDING) {
+    const doc = app.activeDocument;
+    const activeLayer = doc.activeLayers[0];
 
 
-        // Get selection bounds
-        const bounds = await getSelectionBounds();
+    // Get selection bounds
+    const bounds = await getSelectionBounds();
 
-        // Get document dimensions
-        const docWidth = doc.width;
-        const docHeight = doc.height;
+    // Get document dimensions
+    const docWidth = doc.width;
+    const docHeight = doc.height;
 
-        let expandedBounds;
-        let bestRatioName;
+    let expandedBounds;
+    let bestRatioName;
 
-        if (fullDocMask) {
-            // Full Doc Mask mode: use the entire document as the capture area.
-            // The mask will be black (document) with white only at the selection area.
-            expandedBounds = {
-                left: 0,
-                top: 0,
-                right: docWidth,
-                bottom: docHeight,
-                width: docWidth,
-                height: docHeight
-            };
-            const fullDocRatioLabel = getDocAspectRatioLabel(docWidth, docHeight);
-            bestRatioName = `Full Doc ${fullDocRatioLabel ? ' ' + fullDocRatioLabel : ''}`;
-            console.log('Full Doc Mask mode: expandedBounds set to entire document:', expandedBounds);
-        } else {
-            // 1. Set minimum padding
-            const MIN_PADDING = 50;
-
-            // Original selection dimensions
-            const selLeft = Math.round(bounds.left);
-            const selTop = Math.round(bounds.top);
-            const selRight = Math.round(bounds.right);
-            const selBottom = Math.round(bounds.bottom);
-            const selWidth = (selRight - selLeft) || 1; // protection against zero width
-            const selHeight = (selBottom - selTop) || 1;
-
-            // Determine the center of the selection
-            const centerX = selLeft + (selWidth / 2);
-            const centerY = selTop + (selHeight / 2);
-
-            // Target minimum dimensions of the bounds (current size + 50px on each side)
-            const targetMinW = selWidth + (MIN_PADDING * 2);
-            const targetMinH = selHeight + (MIN_PADDING * 2);
-
-            // 2. Available aspect ratios depending on selection orientation
-            // 1:1 square is always available
-            const aspectRatios = [
-                { name: '1:1', value: 1.0, weight: 1.0 }
-            ];
-
-            // Add enabled settings aspect ratios based on strict orientation
-            const enabledConfigs = settings.getEnabledRatios();
-            enabledConfigs.forEach((config, idx) => {
-                const penalty = 1.0 + idx * 0.05; // 0th = 1.0, 1st = 1.05, 2nd = 1.10
-                if (selWidth > selHeight) {
-                    // aspectRatios.push({ name: '3:2', value: 1.5, weight: 1.0 });
-                    // aspectRatios.push({ name: '16:9', value: 16 / 9, weight: 1.05 }); // +5% penalty
-                    // aspectRatios.push({ name: '4:3', value: 4 / 3, weight: 1.1 }); // +10% penalty
-                    aspectRatios.push({
-                        name: config.landscapeName,
-                        value: config.landscapeValue,
-                        weight: penalty
-                    });
-                } else if (selWidth < selHeight) {
-                    // aspectRatios.push({ name: '2:3', value: 2 / 3, weight: 1.0 });
-                    // aspectRatios.push({ name: '9:16', value: 9 / 16, weight: 1.05 }); // +5% penalty
-                    // aspectRatios.push({ name: '3:4', value: 3 / 4, weight: 1.1 }); // +10% penalty
-                    aspectRatios.push({
-                        name: config.portraitName,
-                        value: config.portraitValue,
-                        weight: penalty
-                    });
-                }
-            });
-
-            // 3. Choosing the best ratio — simulate full pipeline per candidate to guarantee
-            // that the final captured dimensions will exactly match the reported aspect ratio.
-            let bestW = targetMinW;  // Padded fallback (selection + padding, clamped later)
-            let bestH = targetMinH;
-            let minScore = Infinity;
-            bestRatioName = "Padded"; // Default if no valid ratio fits within canvas
-
-            // finalCoords: pre-computed exact pixel bounds from simulation (set only when a ratio wins)
-            let finalCoords = null;
-
-            // Only enforce aspect ratio if the document is large enough to support the target size at ALL
-            // If the document is smaller than the selection + 100px padding, aspect ratio enforcement might look weird.
-            const canFitAnyPadding = docWidth >= targetMinW || docHeight >= targetMinH;
-
-            // If it's the whole document, we just return the document bounds without forcing an aspect ratio
-            if (!canFitAnyPadding || (selWidth >= docWidth - 2 && selHeight >= docHeight - 2)) {
-                if (selWidth >= docWidth - 2 && selHeight >= docHeight - 2) {
-                    const fullDocRatioLabel = getDocAspectRatioLabel(docWidth, docHeight);
-                    bestRatioName = `Full Doc ${fullDocRatioLabel ? ' ' + fullDocRatioLabel : ''}`;
-                } else {
-                    bestRatioName = "Padded";
-                }
-                // bestW/bestH remain at targetMinW/targetMinH; shift+clamp follows below
-            } else {
-                for (const ratio of aspectRatios) {
-                    // a) Minimum bounding box at this ratio that still covers targetMinW × targetMinH
-                    const candW = Math.max(targetMinW, targetMinH * ratio.value);
-                    const candH = Math.max(targetMinH, targetMinW / ratio.value);
-
-                    // b) Center on the selection
-                    let simLeft = Math.round(centerX - (candW / 2));
-                    let simTop = Math.round(centerY - (candH / 2));
-                    let simRight = Math.round(centerX + (candW / 2));
-                    let simBottom = Math.round(centerY + (candH / 2));
-
-                    // c) Shift to keep within canvas boundaries
-                    if (simLeft < 0) { simRight += Math.abs(simLeft); simLeft = 0; }
-                    else if (simRight > docWidth) { simLeft -= (simRight - docWidth); simRight = docWidth; }
-                    if (simTop < 0) { simBottom += Math.abs(simTop); simTop = 0; }
-                    else if (simBottom > docHeight) { simTop -= (simBottom - docHeight); simBottom = docHeight; }
-
-                    // d) Hard clamp to canvas bounds
-                    simLeft = Math.max(0, simLeft);
-                    simTop = Math.max(0, simTop);
-                    simRight = Math.min(docWidth, simRight);
-                    simBottom = Math.min(docHeight, simBottom);
-
-                    const simW = simRight - simLeft;
-                    const simH = simBottom - simTop;
-
-                    // e) Enforce exact ratio by trimming the over-large side symmetrically from center
-                    const simCenterX = (simLeft + simRight) / 2;
-                    const simCenterY = (simTop + simBottom) / 2;
-                    let finalW, finalH;
-                    if (simW / simH > ratio.value) {
-                        // Too wide after clamping — trim width to match ratio
-                        finalH = simH;
-                        finalW = Math.round(simH * ratio.value);
-                    } else {
-                        // Too tall or exact — trim height to match ratio
-                        finalW = simW;
-                        finalH = Math.round(simW / ratio.value);
-                    }
-                    const fLeft = Math.round(simCenterX - finalW / 2);
-                    const fTop = Math.round(simCenterY - finalH / 2);
-                    const fRight = fLeft + finalW;
-                    const fBottom = fTop + finalH;
-
-                    // f) Verify the original selection still fits inside the trimmed box
-                    if (fLeft > selLeft || fRight < selRight ||
-                        fTop > selTop || fBottom < selBottom) {
-                        continue; // This ratio cannot contain the selection — skip
-                    }
-
-                    // g) Score: smaller area wins; weight is a tie-breaker penalty
-                    const score = (finalW * finalH) * ratio.weight;
-                    if (score < minScore) {
-                        minScore = score;
-                        bestW = finalW;
-                        bestH = finalH;
-                        bestRatioName = ratio.name;
-                        finalCoords = { left: fLeft, top: fTop, right: fRight, bottom: fBottom };
-                    }
-                }
-            }
-
-            // 4. Build expandedBounds
-            if (finalCoords) {
-                // A valid ratio won: use pre-computed coordinates — dimensions are guaranteed to match the ratio
-                expandedBounds = {
-                    left: finalCoords.left,
-                    top: finalCoords.top,
-                    right: finalCoords.right,
-                    bottom: finalCoords.bottom,
-                    width: bestW,
-                    height: bestH
-                };
-            } else {
-                // Padded / Full Doc: center + shift + clamp with targetMinW × targetMinH (no ratio enforced)
-                let newLeft = Math.round(centerX - (bestW / 2));
-                let newTop = Math.round(centerY - (bestH / 2));
-                let newRight = Math.round(centerX + (bestW / 2));
-                let newBottom = Math.round(centerY + (bestH / 2));
-
-                if (newLeft < 0) { newRight += Math.abs(newLeft); newLeft = 0; }
-                else if (newRight > docWidth) { newLeft -= (newRight - docWidth); newRight = docWidth; }
-                if (newTop < 0) { newBottom += Math.abs(newTop); newTop = 0; }
-                else if (newBottom > docHeight) { newTop -= (newBottom - docHeight); newBottom = docHeight; }
-
-                newLeft = Math.max(0, newLeft);
-                newTop = Math.max(0, newTop);
-                newRight = Math.min(docWidth, newRight);
-                newBottom = Math.min(docHeight, newBottom);
-
-                expandedBounds = {
-                    left: newLeft,
-                    top: newTop,
-                    right: newRight,
-                    bottom: newBottom,
-                    width: newRight - newLeft,
-                    height: newBottom - newTop
-                };
-            }
-
-            console.log('Original Bounds:', bounds);
-            console.log('Expanded Bounds (with padding):', expandedBounds);
-        }
-
-        // Get the selection mask
-        // API often returns tight bounds even if we request expanded ones.
-        // We must handle the potential size mismatch manually.
-        const selectionResult = await imaging.getSelection({
-            documentID: doc.id,
-            sourceBounds: expandedBounds
-        });
-
-        // Resolve the actual returned bounds and data
-        const returnedBounds = selectionResult.sourceBounds || expandedBounds;
-        const psImageData = selectionResult.imageData;
-        let finalMaskBuffer;
-
-        // Get raw data from the returned image object
-        const rawMaskData = await psImageData.getData();
-        const tightMaskBuffer = new Uint8Array(rawMaskData);
-
-        // Check if we need to manually pad
-        // Compare logic: check if returned width/height matches requested dimensions
-        const returnedWidth = returnedBounds.right - returnedBounds.left;
-        const returnedHeight = returnedBounds.bottom - returnedBounds.top;
-
-        // DOCUMENTATION: Manual Mask Padding Strategy
-        // The imaging.getSelection API tends to "auto-crop" the result to the bounding box of the non-empty selection pixels,
-        // ignoring the requested 'sourceBounds' if they contain empty (transparent/black) headers.
-        // To strictly enforce the requested padding (context), we must:
-        // 1. Detect if the returned image is smaller than requested.
-        // 2. Create a new zero-filled buffer (black) of the full requested size.
-        // 3. Composite the returned mask data into this buffer at the correct relative offset.
-
-        if (returnedWidth < expandedBounds.width || returnedHeight < expandedBounds.height) {
-            console.log(`[Padding Fix] Returned bounds (${returnedWidth}x${returnedHeight}) < Requested (${expandedBounds.width}x${expandedBounds.height}). Applying manual padding.`);
-
-            // Create full-size black buffer (0 initialized)
-            finalMaskBuffer = new Uint8Array(expandedBounds.width * expandedBounds.height);
-
-            // Calculate offsets for placement
-            const offsetX = returnedBounds.left - expandedBounds.left;
-            const offsetY = returnedBounds.top - expandedBounds.top;
-
-            // Copy tight mask into the full buffer
-            for (let y = 0; y < returnedHeight; y++) {
-                // Source row start
-                const srcStart = y * returnedWidth;
-
-                // Dest row start
-                const dstRow = y + offsetY;
-                const dstStart = (dstRow * expandedBounds.width) + offsetX;
-
-                // Copy row with bounds validation
-                if (dstRow >= 0 && dstRow < expandedBounds.height) {
-                    // Safety: clamp width to prevent overflow
-                    const copyLen = Math.min(returnedWidth, expandedBounds.width - offsetX);
-                    if (copyLen > 0) {
-                        const sub = tightMaskBuffer.subarray(srcStart, srcStart + copyLen);
-                        finalMaskBuffer.set(sub, dstStart);
-                    }
-                }
-            }
-        } else {
-            console.log('[Padding Fix] Bounds match requested. No manual padding needed.');
-            finalMaskBuffer = tightMaskBuffer;
-        }
-
-        // Determine if the selection is a trivial "Select All" — the mask is entirely white
-        // and carries no spatial information for the model.
-        // NOTE: Bounds-based check alone is not sufficient: Full Doc mode also produces
-        // expandedBounds equal to the document size but with a real mask (black background,
-        // white selection area). Only a pixel-level check is reliable here.
-        // Short-circuit: for non-Select-All masks the loop exits on the first dark pixel.
-        const isSelectAll = finalMaskBuffer.every(v => v >= 250);
-        if (isSelectAll) {
-            console.log('[Capture] Select All detected — mask is trivially all-white, will suppress mask-related operations.');
-        }
-
-        // Create a compliant object for the payload
-        // We use a plain object structure that fs.js can understand
-        const maskData = {
-            width: expandedBounds.width,
-            height: expandedBounds.height,
-            components: 1, // Grayscale
-            imageData: finalMaskBuffer,
-            sourceBounds: expandedBounds
+    if (fullDocMask) {
+        // Full Doc Mask mode: use the entire document as the capture area.
+        // The mask will be black (document) with white only at the selection area.
+        expandedBounds = {
+            left: 0,
+            top: 0,
+            right: docWidth,
+            bottom: docHeight,
+            width: docWidth,
+            height: docHeight
         };
+        const fullDocRatioLabel = getDocAspectRatioLabel(docWidth, docHeight);
+        bestRatioName = `Full Doc ${fullDocRatioLabel ? ' ' + fullDocRatioLabel : ''}`;
+        console.log('Full Doc Mask mode: expandedBounds set to entire document:', expandedBounds);
+    } else {
+        // 1. Set minimum padding
+        const MIN_PADDING = padding;
 
-        // Get image content
-        let imageData;
+        // Original selection dimensions
+        const selLeft = Math.round(bounds.left);
+        const selTop = Math.round(bounds.top);
+        const selRight = Math.round(bounds.right);
+        const selBottom = Math.round(bounds.bottom);
+        const selWidth = (selRight - selLeft) || 1; // protection against zero width
+        const selHeight = (selBottom - selTop) || 1;
 
-        if (viaTempDocCreation) {
-            console.log("Using native PNG save method for capture...");
-            imageData = await captureSelectionAsBase64PNG(sourceMode, expandedBounds, activeLayer, doc, psImageData, returnedBounds, executionContext);
-        } else {
-            console.log("Using traditional getPixels method for capture...");
+        // Determine the center of the selection
+        const centerX = selLeft + (selWidth / 2);
+        const centerY = selTop + (selHeight / 2);
 
-            // Determine if the document requires 8-bit depth or sRGB profile conversion
-            const isHighBitDepth = doc.bitsPerChannel === 16 ||
-                                   doc.bitsPerChannel === 32 ||
-                                   String(doc.bitsPerChannel).includes('16') ||
-                                   String(doc.bitsPerChannel).includes('32');
+        // Target minimum dimensions of the bounds (current size + 50px on each side)
+        const targetMinW = selWidth + (MIN_PADDING * 2);
+        const targetMinH = selHeight + (MIN_PADDING * 2);
 
-            const profileName = (doc.colorProfileName || '').toLowerCase();
-            const isWideGamutOrCustom = profileName.includes('prophoto') ||
-                                        profileName.includes('adobe rgb') ||
-                                        profileName.includes('display p3') ||
-                                        profileName.includes('dci-p3') ||
-                                        profileName.includes('wide gamut');
+        // 2. Available aspect ratios depending on selection orientation
+        // 1:1 square is always available
+        const aspectRatios = [
+            { name: '1:1', value: 1.0, weight: 1.0 }
+        ];
 
-            const pixelOptions = {
-                documentID: doc.id,
-                sourceBounds: expandedBounds,
-                components: 4,
-                applyAlpha: true
-            };
-
-            if (isHighBitDepth) {
-                console.log(`[Capture] High bit depth detected (${doc.bitsPerChannel}). Enforcing componentSize: 8.`);
-                pixelOptions.componentSize = 8;
-            }
-
-            if (isWideGamutOrCustom) {
-                console.log(`[Capture] Wide gamut profile detected (${doc.colorProfileName}). Enforcing sRGB conversion.`);
-                pixelOptions.colorSpace = 'RGB';
-                pixelOptions.colorProfile = 'sRGB IEC61966-2.1';
-            }
-
-            if (sourceMode === 'copyMerged') {
-                // Get merged (composite) pixels
-                imageData = await imaging.getPixels(pixelOptions);
-            } else {
-                // Get pixels from current layer only
-                if (!activeLayer) {
-                    throw new Error("No active layer");
-                }
-                imageData = await imaging.getPixels({
-                    ...pixelOptions,
-                    layerID: activeLayer.id
+        // Add enabled settings aspect ratios based on strict orientation
+        const enabledConfigs = settings.getEnabledRatios();
+        enabledConfigs.forEach((config, idx) => {
+            const penalty = 1.0 + idx * 0.05; // 0th = 1.0, 1st = 1.05, 2nd = 1.10
+            if (selWidth > selHeight) {
+                // aspectRatios.push({ name: '3:2', value: 1.5, weight: 1.0 });
+                // aspectRatios.push({ name: '16:9', value: 16 / 9, weight: 1.05 }); // +5% penalty
+                // aspectRatios.push({ name: '4:3', value: 4 / 3, weight: 1.1 }); // +10% penalty
+                aspectRatios.push({
+                    name: config.landscapeName,
+                    value: config.landscapeValue,
+                    weight: penalty
+                });
+            } else if (selWidth < selHeight) {
+                // aspectRatios.push({ name: '2:3', value: 2 / 3, weight: 1.0 });
+                // aspectRatios.push({ name: '9:16', value: 9 / 16, weight: 1.05 }); // +5% penalty
+                // aspectRatios.push({ name: '3:4', value: 3 / 4, weight: 1.1 }); // +10% penalty
+                aspectRatios.push({
+                    name: config.portraitName,
+                    value: config.portraitValue,
+                    weight: penalty
                 });
             }
+        });
+
+        // 3. Choosing the best ratio — simulate full pipeline per candidate to guarantee
+        // that the final captured dimensions will exactly match the reported aspect ratio.
+        let bestW = targetMinW;  // Padded fallback (selection + padding, clamped later)
+        let bestH = targetMinH;
+        let minScore = Infinity;
+        bestRatioName = "Padded"; // Default if no valid ratio fits within canvas
+
+        // finalCoords: pre-computed exact pixel bounds from simulation (set only when a ratio wins)
+        let finalCoords = null;
+
+        // Only enforce aspect ratio if the document is large enough to support the target size at ALL
+        // If the document is smaller than the selection + 100px padding, aspect ratio enforcement might look weird.
+        const canFitAnyPadding = docWidth >= targetMinW || docHeight >= targetMinH;
+
+        // If it's the whole document, we just return the document bounds without forcing an aspect ratio
+        if (!canFitAnyPadding || (selWidth >= docWidth - 2 && selHeight >= docHeight - 2)) {
+            if (selWidth >= docWidth - 2 && selHeight >= docHeight - 2) {
+                const fullDocRatioLabel = getDocAspectRatioLabel(docWidth, docHeight);
+                bestRatioName = `Full Doc ${fullDocRatioLabel ? ' ' + fullDocRatioLabel : ''}`;
+            } else {
+                bestRatioName = "Padded";
+            }
+            // bestW/bestH remain at targetMinW/targetMinH; shift+clamp follows below
+        } else {
+            for (const ratio of aspectRatios) {
+                // a) Minimum bounding box at this ratio that still covers targetMinW × targetMinH
+                const candW = Math.max(targetMinW, targetMinH * ratio.value);
+                const candH = Math.max(targetMinH, targetMinW / ratio.value);
+
+                // b) Center on the selection
+                let simLeft = Math.round(centerX - (candW / 2));
+                let simTop = Math.round(centerY - (candH / 2));
+                let simRight = Math.round(centerX + (candW / 2));
+                let simBottom = Math.round(centerY + (candH / 2));
+
+                // c) Shift to keep within canvas boundaries
+                if (simLeft < 0) { simRight += Math.abs(simLeft); simLeft = 0; }
+                else if (simRight > docWidth) { simLeft -= (simRight - docWidth); simRight = docWidth; }
+                if (simTop < 0) { simBottom += Math.abs(simTop); simTop = 0; }
+                else if (simBottom > docHeight) { simTop -= (simBottom - docHeight); simBottom = docHeight; }
+
+                // d) Hard clamp to canvas bounds
+                simLeft = Math.max(0, simLeft);
+                simTop = Math.max(0, simTop);
+                simRight = Math.min(docWidth, simRight);
+                simBottom = Math.min(docHeight, simBottom);
+
+                const simW = simRight - simLeft;
+                const simH = simBottom - simTop;
+
+                // e) Enforce exact ratio by trimming the over-large side symmetrically from center
+                const simCenterX = (simLeft + simRight) / 2;
+                const simCenterY = (simTop + simBottom) / 2;
+                let finalW, finalH;
+                if (simW / simH > ratio.value) {
+                    // Too wide after clamping — trim width to match ratio
+                    finalH = simH;
+                    finalW = Math.round(simH * ratio.value);
+                } else {
+                    // Too tall or exact — trim height to match ratio
+                    finalW = simW;
+                    finalH = Math.round(simW / ratio.value);
+                }
+                const fLeft = Math.round(simCenterX - finalW / 2);
+                const fTop = Math.round(simCenterY - finalH / 2);
+                const fRight = fLeft + finalW;
+                const fBottom = fTop + finalH;
+
+                // f) Verify the original selection still fits inside the trimmed box
+                if (fLeft > selLeft || fRight < selRight ||
+                    fTop > selTop || fBottom < selBottom) {
+                    continue; // This ratio cannot contain the selection — skip
+                }
+
+                // g) Score: smaller area wins; weight is a tie-breaker penalty
+                const score = (finalW * finalH) * ratio.weight;
+                if (score < minScore) {
+                    minScore = score;
+                    bestW = finalW;
+                    bestH = finalH;
+                    bestRatioName = ratio.name;
+                    finalCoords = { left: fLeft, top: fTop, right: fRight, bottom: fBottom };
+                }
+            }
         }
 
-        // Build context info
-        const context = {
-            documentId: doc.id,
-            documentName: doc.name,
-            resolution: doc.resolution,
-            layerName: activeLayer ? activeLayer.name : null,
-            layerId: activeLayer ? activeLayer.id : null,
-            layerKind: activeLayer ? activeLayer.kind : null,
-            originalBounds: bounds // Store original selection bounds just in case
+        // 4. Build expandedBounds
+        if (finalCoords) {
+            // A valid ratio won: use pre-computed coordinates — dimensions are guaranteed to match the ratio
+            expandedBounds = {
+                left: finalCoords.left,
+                top: finalCoords.top,
+                right: finalCoords.right,
+                bottom: finalCoords.bottom,
+                width: bestW,
+                height: bestH
+            };
+        } else {
+            // Padded / Full Doc: center + shift + clamp with targetMinW × targetMinH (no ratio enforced)
+            let newLeft = Math.round(centerX - (bestW / 2));
+            let newTop = Math.round(centerY - (bestH / 2));
+            let newRight = Math.round(centerX + (bestW / 2));
+            let newBottom = Math.round(centerY + (bestH / 2));
+
+            if (newLeft < 0) { newRight += Math.abs(newLeft); newLeft = 0; }
+            else if (newRight > docWidth) { newLeft -= (newRight - docWidth); newRight = docWidth; }
+            if (newTop < 0) { newBottom += Math.abs(newTop); newTop = 0; }
+            else if (newBottom > docHeight) { newTop -= (newBottom - docHeight); newBottom = docHeight; }
+
+            newLeft = Math.max(0, newLeft);
+            newTop = Math.max(0, newTop);
+            newRight = Math.min(docWidth, newRight);
+            newBottom = Math.min(docHeight, newBottom);
+
+            expandedBounds = {
+                left: newLeft,
+                top: newTop,
+                right: newRight,
+                bottom: newBottom,
+                width: newRight - newLeft,
+                height: newBottom - newTop
+            };
+        }
+
+        console.log('Original Bounds:', bounds);
+        console.log('Expanded Bounds (with padding):', expandedBounds);
+    }
+
+    // Get the selection mask
+    // API often returns tight bounds even if we request expanded ones.
+    // We must handle the potential size mismatch manually.
+    const selectionResult = await imaging.getSelection({
+        documentID: doc.id,
+        sourceBounds: expandedBounds
+    });
+
+    // Resolve the actual returned bounds and data
+    const returnedBounds = selectionResult.sourceBounds || expandedBounds;
+    const psImageData = selectionResult.imageData;
+    let finalMaskBuffer;
+
+    // Get raw data from the returned image object
+    const rawMaskData = await psImageData.getData();
+    const tightMaskBuffer = new Uint8Array(rawMaskData);
+
+    // Check if we need to manually pad
+    // Compare logic: check if returned width/height matches requested dimensions
+    const returnedWidth = returnedBounds.right - returnedBounds.left;
+    const returnedHeight = returnedBounds.bottom - returnedBounds.top;
+
+    // DOCUMENTATION: Manual Mask Padding Strategy
+    // The imaging.getSelection API tends to "auto-crop" the result to the bounding box of the non-empty selection pixels,
+    // ignoring the requested 'sourceBounds' if they contain empty (transparent/black) headers.
+    // To strictly enforce the requested padding (context), we must:
+    // 1. Detect if the returned image is smaller than requested.
+    // 2. Create a new zero-filled buffer (black) of the full requested size.
+    // 3. Composite the returned mask data into this buffer at the correct relative offset.
+
+    if (returnedWidth < expandedBounds.width || returnedHeight < expandedBounds.height) {
+        console.log(`[Padding Fix] Returned bounds (${returnedWidth}x${returnedHeight}) < Requested (${expandedBounds.width}x${expandedBounds.height}). Applying manual padding.`);
+
+        // Create full-size black buffer (0 initialized)
+        finalMaskBuffer = new Uint8Array(expandedBounds.width * expandedBounds.height);
+
+        // Calculate offsets for placement
+        const offsetX = returnedBounds.left - expandedBounds.left;
+        const offsetY = returnedBounds.top - expandedBounds.top;
+
+        // Copy tight mask into the full buffer
+        for (let y = 0; y < returnedHeight; y++) {
+            // Source row start
+            const srcStart = y * returnedWidth;
+
+            // Dest row start
+            const dstRow = y + offsetY;
+            const dstStart = (dstRow * expandedBounds.width) + offsetX;
+
+            // Copy row with bounds validation
+            if (dstRow >= 0 && dstRow < expandedBounds.height) {
+                // Safety: clamp width to prevent overflow
+                const copyLen = Math.min(returnedWidth, expandedBounds.width - offsetX);
+                if (copyLen > 0) {
+                    const sub = tightMaskBuffer.subarray(srcStart, srcStart + copyLen);
+                    finalMaskBuffer.set(sub, dstStart);
+                }
+            }
+        }
+    } else {
+        console.log('[Padding Fix] Bounds match requested. No manual padding needed.');
+        finalMaskBuffer = tightMaskBuffer;
+    }
+
+    // Determine if the selection is a trivial "Select All" — the mask is entirely white
+    // and carries no spatial information for the model.
+    // NOTE: Bounds-based check alone is not sufficient: Full Doc mode also produces
+    // expandedBounds equal to the document size but with a real mask (black background,
+    // white selection area). Only a pixel-level check is reliable here.
+    // Short-circuit: for non-Select-All masks the loop exits on the first dark pixel.
+    const isSelectAll = finalMaskBuffer.every(v => v >= 250);
+    if (isSelectAll) {
+        console.log('[Capture] Select All detected — mask is trivially all-white, will suppress mask-related operations.');
+    }
+
+    // Create a compliant object for the payload
+    // We use a plain object structure that fs.js can understand
+    const maskData = {
+        width: expandedBounds.width,
+        height: expandedBounds.height,
+        components: 1, // Grayscale
+        imageData: finalMaskBuffer,
+        sourceBounds: expandedBounds
+    };
+
+    // Get image content
+    let imageData;
+
+    if (viaTempDocCreation) {
+        console.log("Using native PNG save method for capture...");
+        imageData = await captureSelectionAsBase64PNG(sourceMode, expandedBounds, activeLayer, doc, psImageData, returnedBounds, executionContext);
+    } else {
+        console.log("Using traditional getPixels method for capture...");
+
+        // Determine if the document requires 8-bit depth or sRGB profile conversion
+        const isHighBitDepth = doc.bitsPerChannel === 16 ||
+                               doc.bitsPerChannel === 32 ||
+                               String(doc.bitsPerChannel).includes('16') ||
+                               String(doc.bitsPerChannel).includes('32');
+
+        const profileName = (doc.colorProfileName || '').toLowerCase();
+        const isWideGamutOrCustom = profileName.includes('prophoto') ||
+                                    profileName.includes('adobe rgb') ||
+                                    profileName.includes('display p3') ||
+                                    profileName.includes('dci-p3') ||
+                                    profileName.includes('wide gamut');
+
+        const pixelOptions = {
+            documentID: doc.id,
+            sourceBounds: expandedBounds,
+            components: 4,
+            applyAlpha: true
         };
 
-        return {
-            imageData,
-            maskData,
-            bounds: expandedBounds, // Return the expanded bounds as the primary bounds
-            aspectRatio: bestRatioName,
-            isSelectAll, // true when Ctrl+A / Select All: mask is all-white, no spatial info
-            context
-        };
-    }, { commandName: "Capture Selection" });
+        if (isHighBitDepth) {
+            console.log(`[Capture] High bit depth detected (${doc.bitsPerChannel}). Enforcing componentSize: 8.`);
+            pixelOptions.componentSize = 8;
+        }
+
+        if (isWideGamutOrCustom) {
+            console.log(`[Capture] Wide gamut profile detected (${doc.colorProfileName}). Enforcing sRGB conversion.`);
+            pixelOptions.colorSpace = 'RGB';
+            pixelOptions.colorProfile = 'sRGB IEC61966-2.1';
+        }
+
+        if (sourceMode === 'copyMerged') {
+            // Get merged (composite) pixels
+            imageData = await imaging.getPixels(pixelOptions);
+        } else {
+            // Get pixels from current layer only
+            if (!activeLayer) {
+                throw new Error("No active layer");
+            }
+            imageData = await imaging.getPixels({
+                ...pixelOptions,
+                layerID: activeLayer.id
+            });
+        }
+    }
+
+    // Build context info
+    const context = {
+        documentId: doc.id,
+        documentName: doc.name,
+        resolution: doc.resolution,
+        layerName: activeLayer ? activeLayer.name : null,
+        layerId: activeLayer ? activeLayer.id : null,
+        layerKind: activeLayer ? activeLayer.kind : null,
+        originalBounds: bounds // Store original selection bounds just in case
+    };
+
+    return {
+        imageData,
+        maskData,
+        bounds: expandedBounds, // Return the expanded bounds as the primary bounds
+        aspectRatio: bestRatioName,
+        isSelectAll, // true when Ctrl+A / Select All: mask is all-white, no spatial info
+        context
+    };
 }
 
 /**
@@ -1100,10 +1122,12 @@ async function applyLayerMaskToLayer(doc, layer, psImageData, bounds, maskWidth,
         // drag the Feather slider in Properties without redoing the place back.
         try {
             layer.layerMaskFeather = featherRadius;
+            return featherRadius;
         } catch (featherError) {
             console.warn("Could not set layer mask feather:", featherError);
         }
     }
+    return 0;
 }
 
 /**
@@ -1180,208 +1204,255 @@ async function restoreSelection(doc, bounds, maskImageData, featherOptions = {})
  *        the mask with a hard edge, as it was before this option existed.
  */
 async function placeBack(placeBackMode, fileToken, bounds, maskImageData, featherOptions = {}) {
+    const isSelectionOnly = placeBackMode === 'selection';
+
+    await core.executeAsModal(
+        executionContext => placeBackInModal(executionContext, placeBackMode, fileToken, bounds, maskImageData, featherOptions),
+        { commandName: isSelectionOnly ? "Restore Selection FromPS" : "Place Back FromPS/ToPS" }
+    );
+}
+
+/**
+ * The place back itself, for a caller that already holds a modal scope — the agent's
+ * to_ps_place_back opens its own and must not open a second one inside it. Works on the
+ * active document, as placeBack does; the parameters are the same as there.
+ *
+ * @param {object} executionContext - Context of the caller's executeAsModal.
+ * @param {'so'|'editableSo'|'mask'|'selection'} placeBackMode - See placeBack.
+ * @param {string} fileToken - See placeBack.
+ * @param {object} bounds - See placeBack.
+ * @param {object} [maskImageData] - See placeBack.
+ * @param {object} [featherOptions={}] - See placeBack.
+ * @param {string|null} [historyName=null] - Name of the History step. By default the
+ *        panel's own name for this mode.
+ * @returns {Promise<object|undefined>} For a placement, what was done: the new layer, the
+ *        mask's edge shift and feather, and the Gaussian Blur radius (null when it was not
+ *        applied). Nothing for 'selection'.
+ */
+async function placeBackInModal(executionContext, placeBackMode, fileToken, bounds, maskImageData, featherOptions = {}, historyName = null) {
     const doc = app.activeDocument;
 
     const isSelectionOnly = placeBackMode === 'selection';
     const applyPlaceBackAsMask = placeBackMode === 'mask';
     const CREATE_EDITABLE_SMART_OBJECTS = applyPlaceBackAsMask || placeBackMode === 'editableSo';
 
-    await core.executeAsModal(async (executionContext) => {
-        const hostControl = executionContext.hostControl;
-        const documentID = doc.id;
+    const hostControl = executionContext.hostControl;
+    const documentID = doc.id;
 
-        // Suspend history for single undo
-        const suspensionID = await hostControl.suspendHistory({
-            documentID: documentID,
-            name: isSelectionOnly ? "Restore Selection FromPS" : "Place Back FromPS/ToPS"
-        });
+    // Suspend history for single undo
+    const suspensionID = await hostControl.suspendHistory({
+        documentID: documentID,
+        name: historyName || (isSelectionOnly ? "Restore Selection FromPS" : "Place Back FromPS/ToPS")
+    });
 
-        console.log(`Starting Place Back operation (mode: ${placeBackMode})...`);
-        console.log("File Token:", fileToken ? "Present" : "Missing");
-        console.log("Bounds:", JSON.stringify(bounds));
-        console.log("Mask Data:", maskImageData ? "Present" : "Missing");
-        const effectiveFeatherConfig = Object.assign({}, MASK_FEATHER, featherOptions);
-        console.log("Feather Config:", JSON.stringify(effectiveFeatherConfig));
+    console.log(`Starting Place Back operation (mode: ${placeBackMode})...`);
+    console.log("File Token:", fileToken ? "Present" : "Missing");
+    console.log("Bounds:", JSON.stringify(bounds));
+    console.log("Mask Data:", maskImageData ? "Present" : "Missing");
+    const effectiveFeatherConfig = Object.assign({}, MASK_FEATHER, featherOptions);
+    console.log("Feather Config:", JSON.stringify(effectiveFeatherConfig));
 
-        try {
-            if (isSelectionOnly) {
-                await restoreSelection(doc, bounds, maskImageData, featherOptions);
-                return;
-            }
-
-            // Step 1 to 3: Placement & Transformation
-            let placedImageWidth = 0;
-            let placedImageHeight = 0;
-
-            if (CREATE_EDITABLE_SMART_OBJECTS) {
-                // NEW PATH: High-Res Editable Smart Object via Temp Document 
-                // useful when pasted image is larger than the document. 
-                // it prevents automatic resizing of pasted image
-                console.log("Using High-Res Editable Smart Object path...");
-                const result = await placeAsEditableSmartObject(fileToken, bounds, doc);
-                placedImageWidth = result.placedImageWidth;
-                placedImageHeight = result.placedImageHeight;
-            } else {
-                // ORIGINAL PATH: Standard Place (may scale down, but honors false flag)
-                console.log("Using original placement path...");
-
-                // Step 1: Place the image as new layer
-                try {
-                    console.log("Step 1: Placing image...");
-                    await action.batchPlay([
-                        {
-                            _obj: "placeEvent",
-                            null: {
-                                _path: fileToken,
-                                _kind: "local"
-                            },
-                            freeTransformCenterState: {
-                                _enum: "quadCenterState",
-                                _value: "QCSAverage"
-                            },
-                            offset: {
-                                _obj: "offset",
-                                horizontal: { _unit: "pixelsUnit", _value: 0 },
-                                vertical: { _unit: "pixelsUnit", _value: 0 }
-                            }
-                        }
-                    ], { synchronousExecution: true });
-                } catch (placeError) {
-                    console.error("Step 1 Failed (Place):", placeError);
-                    throw new Error(`Failed to place image: ${placeError.message}`);
-                }
-
-                const placedLayer = doc.activeLayers[0];
-                if (!placedLayer) {
-                    throw new Error("Placement finished but no active layer found.");
-                }
-
-                // Step 1.5: Rasterize (Dead code technically if CREATE_EDITABLE_SMART_OBJECTS is false, but kept as requested)
-                try {
-                    if (CREATE_EDITABLE_SMART_OBJECTS) {
-                        console.log("Step 1.5: Rasterizing placed layer to enable editable Smart Object...");
-                        await action.batchPlay([
-                            {
-                                _obj: "rasterizeLayer",
-                                _target: [
-                                    { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }
-                                ]
-                            }
-                        ], { synchronousExecution: true });
-                    }
-                } catch (rasterizeError) {
-                    console.warn("Step 1.5 Warning (Rasterization failed):", rasterizeError);
-                }
-
-                // Step 2: Ensure it is a Smart Object
-                try {
-                    const activeLayer = doc.activeLayers[0];
-                    if (activeLayer.kind !== "smartObject") {
-                        console.log("Step 2: Converting to Smart Object...");
-                        await action.batchPlay([
-                            {
-                                _obj: "newPlacedLayer"
-                            }
-                        ], { synchronousExecution: true });
-                    } else {
-                        console.log("Step 2: Already a Smart Object.");
-                    }
-                } catch (e) {
-                    console.warn("Step 2 Warning (Smart Object verification):", e);
-                }
-
-                // Step 3: Resize and position
-                try {
-                    console.log("Step 3: Transforming Smart Object...");
-                    const placedLayer = doc.activeLayers[0];
-                    const dimensions = await transformLayerToBounds(placedLayer, bounds);
-
-                    placedImageWidth = dimensions.width;
-                    placedImageHeight = dimensions.height;
-                } catch (transformError) {
-                    console.error("Step 3 Failed (Transform):", transformError);
-                    throw new Error(`Failed to transform image: ${transformError.message}`);
-                }
-            }
-
-            if (applyPlaceBackAsMask) {
-                try {
-                    await applySmartObjectNativeMask(doc);
-                } catch (nativeMaskError) {
-                    console.error("Native Masking Workflow failed:", nativeMaskError);
-                    throw new Error(`Failed to apply native mask: ${nativeMaskError.message}`);
-                }
-            }
-
-            // Step 4: Apply layer mask from captured mask
-            if (maskImageData && !applyPlaceBackAsMask) {
-                try {
-                    console.log("Step 4: Applying mask...");
-                    const maskPrep = await prepareMaskBufferAndImageData(doc, bounds, maskImageData, featherOptions);
-                    const updatedLayer = doc.activeLayers[0];
-                    await applyLayerMaskToLayer(doc, updatedLayer, maskPrep.psImageData, bounds, maskPrep.maskWidth, maskPrep.maskHeight, maskPrep.feather.radius);
-                } catch (maskError) {
-                    console.error("Step 4 Failed (Mask):", maskError);
-                    throw new Error(`Failed to apply mask: ${maskError.message}`);
-                }
-            }
-
-            // Step 5: Apply Gaussian Blur as Smart Filter to the Object (RGB)
-            if (!applyPlaceBackAsMask) {
-                try {
-                    console.log("Step 5: Applying Smart Filter (Gaussian Blur)...");
-
-                    // Ensure RGB channel is selected (target the layer content)
-                    await action.batchPlay([
-                        {
-                            _obj: "select",
-                            _target: [
-                                { _ref: "channel", _enum: "channel", _value: "RGB" }
-                            ],
-                            makeVisible: false
-                        }
-                    ], { synchronousExecution: true });
-
-                    // Apply Gaussian Blur - on Smart Object this becomes a Smart Filter.
-                    // Radius is calculated dynamically based on how much the image was scaled down:
-                    //   scaleFactor = average of (placedWidth / maskWidth) and (placedHeight / maskHeight)
-                    //   OLD: blurRadius = 0.2 + 2.0 * log2(scaleFactor), capped at 12px
-                    //   NEW: blurRadius = 0.1 + 0.5 * log2(scaleFactor), capped at 1.1px, rounded to 0.1
-                    const scaleW = placedImageWidth > 0 ? placedImageWidth / bounds.width : 1;
-                    const scaleH = placedImageHeight > 0 ? placedImageHeight / bounds.height : 1;
-                    const scaleFactor = (scaleW + scaleH) / 2;
-
-                    // Old formula:
-                    // const blurRadius = Math.min(12.0, 0.2 + 2.0 * Math.log2(Math.max(1, scaleFactor)));
-
-                    // New formula (0.1 - 1.1 range, rounded to 0.1):
-                    const rawBlurRadius = 0.1 + 0.5 * Math.log2(Math.max(1, scaleFactor));
-                    const blurRadius = Math.round(Math.min(1.1, rawBlurRadius) * 10) / 10;
-                    console.log(`Blur radius: ${blurRadius.toFixed(2)}px (scaleW=${scaleW.toFixed(2)}, scaleH=${scaleH.toFixed(2)}, factor=${scaleFactor.toFixed(2)})`);
-
-                    await action.batchPlay([
-                        {
-                            _obj: "gaussianBlur",
-                            radius: { _unit: "pixelsUnit", _value: blurRadius }
-                        }
-                    ], { synchronousExecution: true });
-
-                    console.log("Gaussian Blur (Smart Filter) applied.");
-
-                } catch (blurError) {
-                    console.warn("Step 5 Failed (Smart Filter):", blurError);
-                }
-            }
-
-        } catch (fatalError) {
-            console.error("PlaceBack Fatal Error:", fatalError);
-            throw fatalError;
-        } finally {
-            // Resume history
-            await hostControl.resumeHistory(suspensionID);
+    try {
+        if (isSelectionOnly) {
+            await restoreSelection(doc, bounds, maskImageData, featherOptions);
+            return;
         }
 
-    }, { commandName: isSelectionOnly ? "Restore Selection FromPS" : "Place Back FromPS/ToPS" });
+        // Step 1 to 3: Placement & Transformation
+        let placedImageWidth = 0;
+        let placedImageHeight = 0;
+
+        if (CREATE_EDITABLE_SMART_OBJECTS) {
+            // NEW PATH: High-Res Editable Smart Object via Temp Document
+            // An editable (PSB) smart object needs the image rasterized first, and rasterizing
+            // bakes in whatever size Place gave it. Placed straight into a document smaller than
+            // the image, Place scales it down to fit the canvas, so the raster would come out
+            // reduced. Placing it into a huge temporary document keeps it at 100% for the raster.
+            console.log("Using High-Res Editable Smart Object path...");
+            const result = await placeAsEditableSmartObject(fileToken, bounds, doc);
+            placedImageWidth = result.placedImageWidth;
+            placedImageHeight = result.placedImageHeight;
+        } else {
+            // ORIGINAL PATH: Standard Place
+            // Place may scale an image larger than the document down to fit the canvas, but only
+            // as the smart object's transform: the file inside stays whole, and Step 3 sets the
+            // final size anyway. That is why this path needs no temporary document.
+            console.log("Using original placement path...");
+
+            // Step 1: Place the image as new layer
+            try {
+                console.log("Step 1: Placing image...");
+                await action.batchPlay([
+                    {
+                        _obj: "placeEvent",
+                        null: {
+                            _path: fileToken,
+                            _kind: "local"
+                        },
+                        freeTransformCenterState: {
+                            _enum: "quadCenterState",
+                            _value: "QCSAverage"
+                        },
+                        offset: {
+                            _obj: "offset",
+                            horizontal: { _unit: "pixelsUnit", _value: 0 },
+                            vertical: { _unit: "pixelsUnit", _value: 0 }
+                        }
+                    }
+                ], { synchronousExecution: true });
+            } catch (placeError) {
+                console.error("Step 1 Failed (Place):", placeError);
+                throw new Error(`Failed to place image: ${placeError.message}`);
+            }
+
+            const placedLayer = doc.activeLayers[0];
+            if (!placedLayer) {
+                throw new Error("Placement finished but no active layer found.");
+            }
+
+            // Step 1.5: Rasterize (Dead code technically if CREATE_EDITABLE_SMART_OBJECTS is false, but kept as requested)
+            try {
+                if (CREATE_EDITABLE_SMART_OBJECTS) {
+                    console.log("Step 1.5: Rasterizing placed layer to enable editable Smart Object...");
+                    await action.batchPlay([
+                        {
+                            _obj: "rasterizeLayer",
+                            _target: [
+                                { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }
+                            ]
+                        }
+                    ], { synchronousExecution: true });
+                }
+            } catch (rasterizeError) {
+                console.warn("Step 1.5 Warning (Rasterization failed):", rasterizeError);
+            }
+
+            // Step 2: Ensure it is a Smart Object
+            try {
+                const activeLayer = doc.activeLayers[0];
+                if (activeLayer.kind !== "smartObject") {
+                    console.log("Step 2: Converting to Smart Object...");
+                    await action.batchPlay([
+                        {
+                            _obj: "newPlacedLayer"
+                        }
+                    ], { synchronousExecution: true });
+                } else {
+                    console.log("Step 2: Already a Smart Object.");
+                }
+            } catch (e) {
+                console.warn("Step 2 Warning (Smart Object verification):", e);
+            }
+
+            // Step 3: Resize and position
+            try {
+                console.log("Step 3: Transforming Smart Object...");
+                const placedLayer = doc.activeLayers[0];
+                const dimensions = await transformLayerToBounds(placedLayer, bounds);
+
+                placedImageWidth = dimensions.width;
+                placedImageHeight = dimensions.height;
+            } catch (transformError) {
+                console.error("Step 3 Failed (Transform):", transformError);
+                throw new Error(`Failed to transform image: ${transformError.message}`);
+            }
+        }
+
+        if (applyPlaceBackAsMask) {
+            try {
+                await applySmartObjectNativeMask(doc);
+            } catch (nativeMaskError) {
+                console.error("Native Masking Workflow failed:", nativeMaskError);
+                throw new Error(`Failed to apply native mask: ${nativeMaskError.message}`);
+            }
+        }
+
+        // What was done, for a caller that reports it (the agent's to_ps_place_back)
+        let maskReport = null;
+        let blurApplied = null;
+
+        // Step 4: Apply layer mask from captured mask
+        if (maskImageData && !applyPlaceBackAsMask) {
+            try {
+                console.log("Step 4: Applying mask...");
+                const maskPrep = await prepareMaskBufferAndImageData(doc, bounds, maskImageData, featherOptions);
+                const updatedLayer = doc.activeLayers[0];
+                const featherApplied = await applyLayerMaskToLayer(doc, updatedLayer, maskPrep.psImageData, bounds, maskPrep.maskWidth, maskPrep.maskHeight, maskPrep.feather.radius);
+                maskReport = { edgeShift: maskPrep.feather.offset, featherRadius: featherApplied };
+            } catch (maskError) {
+                console.error("Step 4 Failed (Mask):", maskError);
+                throw new Error(`Failed to apply mask: ${maskError.message}`);
+            }
+        }
+
+        // Step 5: Apply Gaussian Blur as Smart Filter to the Object (RGB)
+        if (!applyPlaceBackAsMask) {
+            try {
+                console.log("Step 5: Applying Smart Filter (Gaussian Blur)...");
+
+                // Ensure RGB channel is selected (target the layer content)
+                await action.batchPlay([
+                    {
+                        _obj: "select",
+                        _target: [
+                            { _ref: "channel", _enum: "channel", _value: "RGB" }
+                        ],
+                        makeVisible: false
+                    }
+                ], { synchronousExecution: true });
+
+                // Apply Gaussian Blur - on Smart Object this becomes a Smart Filter.
+                // Radius is calculated dynamically based on how much the image was scaled down:
+                //   scaleFactor = average of (placedWidth / maskWidth) and (placedHeight / maskHeight)
+                //   OLD: blurRadius = 0.2 + 2.0 * log2(scaleFactor), capped at 12px
+                //   NEW: blurRadius = 0.1 + 0.5 * log2(scaleFactor), capped at 1.1px, rounded to 0.1
+                const scaleW = placedImageWidth > 0 ? placedImageWidth / bounds.width : 1;
+                const scaleH = placedImageHeight > 0 ? placedImageHeight / bounds.height : 1;
+                const scaleFactor = (scaleW + scaleH) / 2;
+
+                // Old formula:
+                // const blurRadius = Math.min(12.0, 0.2 + 2.0 * Math.log2(Math.max(1, scaleFactor)));
+
+                // New formula (0.1 - 1.1 range, rounded to 0.1):
+                const rawBlurRadius = 0.1 + 0.5 * Math.log2(Math.max(1, scaleFactor));
+                const blurRadius = Math.round(Math.min(1.1, rawBlurRadius) * 10) / 10;
+                console.log(`Blur radius: ${blurRadius.toFixed(2)}px (scaleW=${scaleW.toFixed(2)}, scaleH=${scaleH.toFixed(2)}, factor=${scaleFactor.toFixed(2)})`);
+
+                const [blurResult] = await action.batchPlay([
+                    {
+                        _obj: "gaussianBlur",
+                        radius: { _unit: "pixelsUnit", _value: blurRadius }
+                    }
+                ], { synchronousExecution: true });
+
+                // batchPlay reports a rejected command in its result instead of throwing.
+                if (blurResult && blurResult._obj === "error") {
+                    console.warn("Step 5 Failed (Smart Filter):", blurResult.message);
+                } else {
+                    blurApplied = blurRadius;
+                    console.log("Gaussian Blur (Smart Filter) applied.");
+                }
+
+            } catch (blurError) {
+                console.warn("Step 5 Failed (Smart Filter):", blurError);
+            }
+        }
+
+        const placedLayer = doc.activeLayers[0];
+        return {
+            layer: placedLayer ? { id: placedLayer.id, name: placedLayer.name, visible: placedLayer.visible } : null,
+            mask: maskReport,
+            nativeMask: applyPlaceBackAsMask,
+            gaussianBlur: blurApplied
+        };
+
+    } catch (fatalError) {
+        console.error("PlaceBack Fatal Error:", fatalError);
+        throw fatalError;
+    } finally {
+        // Resume history
+        await hostControl.resumeHistory(suspensionID);
+    }
 }
 
 /**
@@ -1689,8 +1760,11 @@ module.exports = {
     hasActiveSelection,
     getSelectionBounds,
     captureSelection,
+    captureSelectionInModal,
     imageDataToDataURL,
     placeBack,
+    placeBackInModal,
+    CAPTURE_PADDING,
     getActiveLayerInfo,
     MASK_FEATHER
 };

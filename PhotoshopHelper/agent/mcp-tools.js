@@ -5,11 +5,13 @@
  *
  * Naming. MCP has no namespaces and no groups: a server publishes one flat list, so the
  * only thing that says what a tool touches is its name. Everything in this file works on
- * the Photoshop document and is therefore prefixed `ps_` without exception — reading the
- * document, running a script, capturing an image, starting and finishing a task, and the
- * knowledge base. The same server will later publish tools that have nothing to do with
- * the document (generation through the Local Generation API and WebHelper); those get the
- * prefix `gen_`, so one look at the list separates the two.
+ * the Photoshop document and is therefore prefixed `ps_` — reading the document, running a
+ * script, capturing an image, starting and finishing a task, and the knowledge base. The
+ * two exceptions do what the FromPS / ToPS panel itself does and carry the product's own
+ * prefixes: `from_ps_` takes a piece out of Photoshop into the panel's FromPS card, and
+ * `to_ps_` puts an image from the ToPS card back. They are still task tools and need the
+ * task id. The tools that have nothing to do with the document (generation through the
+ * Local Generation API) carry the prefix `gen_`, so one look at the list separates them.
  *
  * There are few ready-made tools on purpose. Everything that changes the document goes
  * through ps_execute_script, where batchPlay, the DOM and the Imaging API are all in
@@ -19,7 +21,11 @@
  * wrong even with an article in front of it, that action becomes a tool of its own.
  */
 
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { TaskError } = require('./task-session');
+const { createImageReducer } = require('./reduce-image');
 
 // The plugin answers fast for reads, slowly for anything that touches pixels. A heavy
 // filter was measured at up to 12 seconds during the stage 1 channel tests, and a script
@@ -50,6 +56,30 @@ const DIALOG_WAIT_MS = 40_000;
 // one or for the original when it actually needs to look closely.
 const DEFAULT_IMAGE_MAX_SIZE = 512;
 const HARD_IMAGE_MAX_SIZE = 8192;
+
+// to_ps_load_file takes what the panel's Load File takes.
+const LOADABLE_EXTENSIONS = ['.png', '.jpg', '.jpeg'];
+// The file crosses the channel as base64, about a third larger than its bytes, and the
+// channel drops a message over 100 MiB; 40 MB of file stays well under that.
+const MAX_LOAD_FILE_BYTES = 40 * 1024 * 1024;
+
+// Where from_ps_get_capture saves a capture for a generator: next to the WebHelper task
+// files (main.js, WEBHELPER_TEMP_DIR), which the CLI generators already read from.
+const DEFAULT_CAPTURE_DIR = path.join(os.tmpdir(), 'ps_webhelper_tasks', '_Agent_Captures');
+
+/**
+ * Tell PNG from JPEG by the first bytes of their base64. The plugin encodes a capture as
+ * PNG but a mask without naming the format, so the type is read, not assumed.
+ *
+ * @param {string} base64 - Image bytes as base64.
+ * @returns {{mimeType: string, extension: string}}
+ */
+function sniffImageType(base64) {
+    if (typeof base64 === 'string' && base64.startsWith('/9j/')) {
+        return { mimeType: 'image/jpeg', extension: '.jpg' };
+    }
+    return { mimeType: 'image/png', extension: '.png' };
+}
 
 const ASSISTANT_CLOSED_MESSAGE =
     'The connection to Photoshop is unavailable. Ask the person to check that Photoshop is open '
@@ -219,6 +249,62 @@ function formatRejectedCommands(report, { interactive = false } = {}) {
 }
 
 /**
+ * Describe what to_ps_place_back did. Place Back puts a blur smart filter and a mask
+ * feather on the new layer by itself; without this report the agent would take them for
+ * someone else's work, or for a mistake.
+ *
+ * @param {object} placed - The plugin's report of the place back.
+ * @returns {string} A few lines for the agent.
+ */
+function describePlacement(placed) {
+    const bounds = placed.bounds || {};
+    const box = `left ${bounds.left}, top ${bounds.top}, right ${bounds.right}, bottom ${bounds.bottom}`;
+    const kind = placed.mode === 'inpaint_mask' ? 'hidden "[ai mask]" smart object' : 'smart object';
+    const layer = placed.layer;
+
+    const lines = [
+        (layer
+            ? `New layer "${layer.name}" (id ${layer.id}), a ${kind}`
+            : `A new ${kind}; its layer could not be read back, check the layers with ps_get_document`)
+        + `, placed over capture id ${placed.captureId} (${box}) as ${placed.mode}.`
+    ];
+
+    if (placed.mode === 'inpaint_mask') {
+        lines.push(
+            'It is a special layer for a selection: load it as a selection, as Ctrl+click on its '
+            + 'thumbnail does — select the layer by id, then { _obj: "set", _target: [{ _ref: '
+            + '"channel", _property: "selection" }], to: { _ref: "channel", _enum: "channel", '
+            + '_value: "transparencyEnum" } } — and the white of the mask is selected. It works as '
+            + 'it is — no need to inspect or measure the layer.',
+            'Then look at the selection: ps_get_image with target "selection" and the capture\'s box.'
+        );
+        return lines.join('\n');
+    }
+
+    const mask = placed.mask;
+    if (mask) {
+        const parts = [];
+        if (mask.edgeShift > 0) parts.push(`edge moved ${mask.edgeShift} px outward`);
+        if (mask.edgeShift < 0) parts.push(`edge moved ${-mask.edgeShift} px inward`);
+        parts.push(mask.featherRadius > 0
+            ? `the mask's own Feather is ${mask.featherRadius} px (Properties panel, still adjustable)`
+            : 'hard edge, no Feather');
+        const chosen = placed.featherFromPanel ? ', as the panel is set' : '';
+        lines.push(`Mask: the capture's selection, feather ${placed.feather}${chosen}: ${parts.join(', ')}.`);
+    } else {
+        lines.push('No mask: the capture carried none.');
+    }
+
+    lines.push(placed.gaussianBlur !== null && placed.gaussianBlur !== undefined
+        ? `Smart filter: Gaussian Blur ${placed.gaussianBlur} px, added by Place Back itself `
+            + '(more blur the more the image was scaled down).'
+        : 'No Gaussian Blur filter was added: Photoshop refused it.');
+
+    lines.push('Look at the result with ps_get_image.');
+    return lines.join('\n');
+}
+
+/**
  * Wait for a promise, but no longer than the given time. The promise itself is left running.
  *
  * @param {Promise} promise - A promise that never rejects.
@@ -283,6 +369,10 @@ function explainRejectedCommandsInError(error, options = {}) {
  * @param {object} [options.progress] - Sink for human-readable progress, shown in the panel.
  * @param {number} [options.dialogWaitMs] - How long one call waits for the person to finish
  *   in a dialog before answering "still open". Defaults to DIALOG_WAIT_MS; tests shorten it.
+ * @param {Function} [options.reduceImage] - Reduces an image the agent looks at; see
+ *   reduce-image.js. Defaults to the Electron one; tests pass their own.
+ * @param {string} [options.captureDir] - Folder from_ps_get_capture saves captures into.
+ *   Defaults to DEFAULT_CAPTURE_DIR; tests pass a temporary one.
  * @returns {object} { list, call, ASSISTANT_CLOSED_MESSAGE }
  */
 function createAgentTools({
@@ -291,7 +381,9 @@ function createAgentTools({
     knowledgeBase,
     journal,
     progress,
-    dialogWaitMs = DIALOG_WAIT_MS
+    dialogWaitMs = DIALOG_WAIT_MS,
+    reduceImage = createImageReducer(),
+    captureDir = DEFAULT_CAPTURE_DIR
 }) {
     // Seconds, for the tool descriptions and answers.
     const dialogWaitSeconds = Math.max(1, Math.round(dialogWaitMs / 1000));
@@ -632,6 +724,201 @@ function createAgentTools({
             }
         },
         {
+            name: 'from_ps_capture',
+            description:
+                'Press the Capture button of the FromPS / ToPS panel on the current selection of '
+                + 'the task\'s document. The piece lands in the panel\'s FromPS card. From there '
+                + 'the person drags it to a chatbot or an image generator of their own, with a '
+                + 'request such as "fix the fingers" or "redraw the hair"; when you generate from '
+                + 'it yourself, from_ps_get_capture with save_to_file gives you the original as a '
+                + 'file. This tool generates nothing, and neither the document nor its selection '
+                + 'changes. Select the '
+                + 'problem area first — with ps_execute_script, or ask the person to — with a '
+                + 'generous margin of its surroundings, so the generator sees the anatomy and the '
+                + 'light around it. A plain rectangle or ellipse is usually enough; an exact '
+                + 'outline is rarely worth it. The capture adds `padding` px on every side and then widens the box '
+                + 'to an aspect ratio from the panel settings, so the piece can come out larger '
+                + 'than the selection. The piece is the original, never reduced: it is what goes '
+                + 'to the generator. You get the capture\'s id and the piece\'s box in the '
+                + 'document; look at the piece with from_ps_get_capture. Keep the id: '
+                + 'to_ps_place_back needs it. The number the person sees '
+                + 'in the card\'s list starts again after Clear All; the id does not. Unless you '
+                + 'generate from it yourself, tell the person the piece is ready to drag. Public '
+                + 'generators and chatbots refuse '
+                + 'pictures with nudity, underwear or swimwear: if the area has any of them in '
+                + 'or near it, read the generator-moderation- articles of the knowledge base '
+                + 'before you select.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    task_id: { type: 'string' },
+                    source: {
+                        type: 'string',
+                        enum: ['visible', 'current_layer'],
+                        description: '"visible" takes everything visible, merged — the usual choice '
+                            + '("Copy merged" in the panel). "current_layer" takes only the active '
+                            + 'layer ("Copy layer"). Default "visible".'
+                    },
+                    full_document: {
+                        type: 'boolean',
+                        description: 'Capture the whole document instead of a piece, with the '
+                            + 'selection as its mask ("Full Doc Mask" in the panel). For a '
+                            + 'generator that has to see the whole picture. Default false.'
+                    },
+                    keep_transparency: {
+                        type: 'boolean',
+                        description: 'Keep transparent pixels transparent ("Slow with transparency" '
+                            + 'in the panel). Slower and rarely needed: only when the piece itself '
+                            + 'must carry transparency. Default false.'
+                    },
+                    padding: {
+                        type: 'number',
+                        minimum: 0,
+                        description: 'Margin in pixels the capture adds around the selection on '
+                            + 'every side. Default 50, as the panel\'s Capture button. A smaller one '
+                            + 'suits a small selection or a small picture, where 50 px would bring '
+                            + 'in a lot of what is not needed. Ignored with full_document.'
+                    }
+                },
+                required: ['task_id'],
+                additionalProperties: false
+            }
+        },
+        {
+            name: 'from_ps_get_capture',
+            description:
+                'Look at a capture of the FromPS card — the piece itself and, if you ask, its mask '
+                + '— or save it as files for an image generator. Use it when the person captured '
+                + 'something and wants a prompt for it, to check what went into a piece, or to '
+                + 'hand a piece to your own built-in image generator. To look, you get a reduced '
+                + `copy, at most ${DEFAULT_IMAGE_MAX_SIZE} pixels on the long side, for your eyes `
+                + 'only. A generator always gets the original: ask for it with save_to_file, which '
+                + 'returns file paths instead of pictures. A capture has no mask when it was made '
+                + 'from Select All: then nothing is masked, and no mask goes to a generator with '
+                + 'it. The answer also lists every capture in the card, with ids. Nothing in '
+                + 'Photoshop changes.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    task_id: { type: 'string' },
+                    capture_id: {
+                        type: 'integer',
+                        description: 'Which capture. Default: the one the card shows now.'
+                    },
+                    include_mask: {
+                        type: 'boolean',
+                        description: 'Also return the mask: white is what Place Back replaces, black '
+                            + 'is kept. Default false.'
+                    },
+                    save_to_file: {
+                        type: 'boolean',
+                        description: 'Save the original piece, and its mask with include_mask, as '
+                            + 'files and return their absolute paths instead of pictures. This is '
+                            + 'what you give an image generator. Default false.'
+                    },
+                    max_size: {
+                        type: 'number',
+                        description: `Longest side of the copy you look at. Default ${DEFAULT_IMAGE_MAX_SIZE}.`
+                    },
+                    full_size: {
+                        type: 'boolean',
+                        description: 'Look at the original size. Use it only when you really need '
+                            + 'to look closely; for a generator use save_to_file.'
+                    }
+                },
+                required: ['task_id'],
+                additionalProperties: false
+            }
+        },
+        {
+            name: 'to_ps_load_file',
+            description:
+                'Press the Load File button of the FromPS / ToPS panel without its dialog: put an '
+                + 'image file into the panel\'s ToPS card, ready for to_ps_place_back. The person '
+                + 'sees it in the card. Give the absolute path of a PNG or JPEG file — for example '
+                + 'one an image generator saved. The document is not touched.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    task_id: { type: 'string' },
+                    path: {
+                        type: 'string',
+                        description: 'Absolute path of a PNG or JPEG file.'
+                    }
+                },
+                required: ['task_id', 'path'],
+                additionalProperties: false
+            }
+        },
+        {
+            name: 'to_ps_place_back',
+            description:
+                'Press the Place Back button of the FromPS / ToPS panel: put the image from the '
+                + 'panel\'s ToPS card back over a capture, as a smart object in the capture\'s box. '
+                + 'It always goes into the task\'s document, even when the person is looking at '
+                + 'another one. Fill the ToPS card first: with to_ps_load_file from a file, or the '
+                + 'person pastes or loads the image there and tells you to continue. Each call is '
+                + 'one named History step. Generators return their own standard sizes (1024, 1536 '
+                + 'px and so on), almost always larger than the capture; that is expected, and '
+                + 'fitting the image into the box is Place Back\'s job. Do not measure, compare or '
+                + 'recompute the pixel sizes of the image or of the new layer — look at the result '
+                + 'with ps_get_image. In the picture modes the capture\'s selection becomes the new '
+                + 'layer\'s mask; Place Back also puts a light Gaussian Blur smart filter on the '
+                + 'layer and, with feather on, moves the mask\'s edge and sets the mask\'s own '
+                + 'Feather in Properties. That is Place Back\'s own work, not someone else\'s: the '
+                + 'answer reports the new layer and the exact values. Work on the layer afterwards '
+                + 'as needed: narrow its mask to the part that was really fixed, hide the temporary '
+                + 'cover layer you made for the capture.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    task_id: { type: 'string' },
+                    capture_id: {
+                        type: 'integer',
+                        description: 'The id from_ps_capture gave. Required: the person may have '
+                            + 'switched the card to another capture since.'
+                    },
+                    mode: {
+                        type: 'string',
+                        enum: ['smart_object', 'editable_smart_object', 'inpaint_mask', 'selection_only'],
+                        description: '"smart_object" — the usual choice, fast ("Fast & Recommended" '
+                            + 'in the panel): the smart object holds the image file as it is. '
+                            + '"editable_smart_object" — the smart object holds a Photoshop document '
+                            + '(PSB) with the image as a layer instead, so its contents can be '
+                            + 'edited; slower, and the file grows ("Editable, Slow & Larger File '
+                            + 'Size"). "inpaint_mask" ("Custom Inpaint Mask") — the image in the '
+                            + 'card is a black-and-white mask, not a picture, for example one a '
+                            + 'generator drew to mark the hair. It becomes a special hidden layer '
+                            + '"[ai mask] ..." exactly over the capture, made for one thing: the '
+                            + 'selection. Load the layer as a selection, as Ctrl+click on its '
+                            + 'thumbnail does — select the layer by id, then { _obj: "set", '
+                            + '_target: [{ _ref: "channel", _property: "selection" }], to: { _ref: '
+                            + '"channel", _enum: "channel", _value: "transparencyEnum" } } — and the '
+                            + 'white of the mask is selected. feather does nothing in this mode. It '
+                            + 'works as it is: do not inspect, read or measure that layer. '
+                            + '"selection_only" — places nothing and only '
+                            + 'restores the capture\'s selection ("Restore Selection"). Default '
+                            + '"smart_object".'
+                    },
+                    feather: {
+                        type: 'string',
+                        enum: ['off', 'outward', 'center', 'inward'],
+                        description: 'How the edge of the mask is softened, like the panel\'s Feather '
+                            + 'buttons. "outward": the new piece covers the whole selected area, '
+                            + 'and the soft transition lies outside it, over the old image. '
+                            + '"center": half of the transition inside, half outside. "inward": '
+                            + 'the transition lies inside the selection, so the edges of the new '
+                            + 'piece fade into the old image. "off": a hard edge, which shows '
+                            + 'wherever the new image differs from the old one. Omit it to use what '
+                            + 'the panel\'s own Place Back would use right now — the person\'s '
+                            + 'usual choice.'
+                    }
+                },
+                required: ['task_id', 'capture_id'],
+                additionalProperties: false
+            }
+        },
+        {
             name: 'ps_kb_list',
             description:
                 KB_READING_RULE + ' '
@@ -842,7 +1129,7 @@ function createAgentTools({
             'Nothing has been written to the document. A task that only looks leaves the '
             + 'person\'s history exactly as it was; each change script becomes one named '
             + 'Photoshop History step.',
-            'Pass task_id to every other ps_ tool. The task is bound to this document: if the '
+            'Pass task_id to every other ps_, from_ps_ and to_ps_ tool. The task is bound to this document: if the '
             + 'person switches to another one, your calls still go to this document.',
             '',
             '## How to work here',
@@ -1360,6 +1647,276 @@ function createAgentTools({
     }
 
     /**
+     * Refuse a capture or a place back while a dialog of this task is open or unseen: Photoshop
+     * is modal and would not run it, and the agent must see what the dialog did first.
+     *
+     * @param {object} task - The running task.
+     * @param {string} toolName - Tool being refused.
+     * @returns {object|null} The refusal, or null when nothing is in the way.
+     */
+    function refuseWhileDialogPending(task, toolName) {
+        const waiting = pendingDialogFor(task.id);
+        if (!waiting) return null;
+        return textResult(
+            waiting.outcome
+                ? `The dialog from "${waiting.historyName}" has closed, but you have not seen its `
+                + `result yet. Call ps_wait_for_dialog first — it answers at once — then call `
+                + `${toolName} if it is still needed.`
+                : `The dialog from "${waiting.historyName}" is still open in front of the person, `
+                + `and Photoshop does nothing else until it closes. Call ps_wait_for_dialog, then `
+                + `call ${toolName} if it is still needed.`,
+            true
+        );
+    }
+
+    /**
+     * @param {object} args - Tool arguments.
+     * @returns {Promise<object>} MCP tool result: the capture's id, number and box.
+     */
+    async function fromPsCapture(args) {
+        const task = tasks.require(args.task_id);
+        const refused = refuseWhileDialogPending(task, 'from_ps_capture');
+        if (refused) return refused;
+
+        note(task.id, 'capturing the selection into the FromPS card', 'from_ps_capture');
+
+        const answer = await callPlugin('agent_from_ps_capture', {
+            taskId: task.id,
+            source: args.source,
+            // Only a real `true` turns these on, as with the interactive flag of a script.
+            fullDocument: args.full_document === true,
+            keepTransparency: args.keep_transparency === true,
+            padding: args.padding
+        }, TIMEOUT_IMAGE_MS);
+
+        const capture = (answer && answer.capture) || {};
+        const bounds = capture.bounds || {};
+        const margin = capture.fullDocument ? 'the whole document' : `padding ${capture.padding} px`;
+        const text = [
+            `Capture id ${capture.id} is in the FromPS card, ready for the person to drag `
+            + `(number ${capture.number} in the card's list).`,
+            `The piece: left ${bounds.left}, top ${bounds.top}, `
+            + `right ${bounds.right}, bottom ${bounds.bottom} — the selection with ${margin}`
+            + (capture.aspectRatio ? `, aspect ratio ${capture.aspectRatio}.` : '.'),
+            `Pass capture_id ${capture.id} to to_ps_place_back.`
+        ].join('\n');
+
+        return textResult(withStatus(text, answer && answer.status));
+    }
+
+    /**
+     * @param {object} args - Tool arguments.
+     * @returns {Promise<object>} MCP tool result: the piece, its mask when asked for, and facts.
+     */
+    async function fromPsGetCapture(args) {
+        const task = tasks.require(args.task_id);
+
+        const hasId = args.capture_id !== undefined && args.capture_id !== null;
+        if (hasId && !Number.isInteger(args.capture_id)) {
+            return textResult('capture_id must be the integer id that from_ps_capture gave.', true);
+        }
+
+        const saveToFile = args.save_to_file === true;
+        note(
+            task.id,
+            (saveToFile ? 'saving ' : 'looking at ')
+            + (hasId ? `capture ${args.capture_id}` : 'the capture the card shows'),
+            'from_ps_get_capture'
+        );
+
+        const answer = await callPlugin('agent_from_ps_get_capture', {
+            taskId: task.id,
+            captureId: hasId ? args.capture_id : null,
+            includeMask: args.include_mask === true
+        }, TIMEOUT_IMAGE_MS);
+
+        if (!answer || !answer.imageBase64) {
+            return textResult(withStatus(
+                'The capture came back without its image.',
+                answer && answer.status
+            ), true);
+        }
+
+        const capture = answer.capture || {};
+        const bounds = capture.bounds || {};
+        // No pixel sizes here: they only invite comparing them with a generator's output.
+        const facts = `Capture id ${capture.id} (number ${capture.number} in the card's list`
+            + `${capture.current ? ', shown in the card now' : ''}), from "${capture.documentName}": `
+            + `left ${bounds.left}, top ${bounds.top}, right ${bounds.right}, bottom ${bounds.bottom}`
+            + (capture.aspectRatio ? `, aspect ratio ${capture.aspectRatio}` : '') + '.';
+        const noMask = 'This capture has no mask: it was made from Select All, so nothing is masked '
+            + 'and no mask goes to a generator with it.';
+
+        const listed = Array.isArray(answer.captures) ? answer.captures : [];
+        const list = listed.map(item => `id ${item.id} (number ${item.number}, "${item.documentName}"`
+            + `${item.current ? ', shown now' : ''})`);
+        const listLine = `Captures in the card: ${list.join('; ') || 'none'}.`;
+
+        if (saveToFile) {
+            fs.mkdirSync(captureDir, { recursive: true });
+            /**
+             * @param {string} base64 - Image bytes.
+             * @param {string} suffix - Part of the file name after the capture id.
+             * @returns {string} Absolute path of the written file.
+             */
+            const save = (base64, suffix) => {
+                const file = path.join(captureDir, `capture-${capture.id}${suffix}${sniffImageType(base64).extension}`);
+                fs.writeFileSync(file, Buffer.from(base64, 'base64'));
+                return file;
+            };
+
+            const lines = [facts, `The original piece: ${save(answer.imageBase64, '')}`];
+            if (answer.maskBase64) {
+                lines.push(`Its mask (white is what Place Back replaces): ${save(answer.maskBase64, '-mask')}`);
+            } else if (args.include_mask === true) {
+                lines.push(noMask);
+            }
+            lines.push('These are the originals: give these files to the generator.', listLine);
+            return textResult(withStatus(lines.join('\n'), answer.status));
+        }
+
+        const maxSize = args.full_size
+            ? HARD_IMAGE_MAX_SIZE
+            : Math.min(HARD_IMAGE_MAX_SIZE, Math.max(32, Number(args.max_size) || DEFAULT_IMAGE_MAX_SIZE));
+
+        /**
+         * @param {object} shown - What reduceImage returned.
+         * @returns {object} MCP image content.
+         */
+        const asImage = shown => ({
+            type: 'image',
+            data: shown.base64,
+            // A reduced copy is always PNG; an unchanged one keeps the plugin's format.
+            mimeType: shown.reduced ? 'image/png' : sniffImageType(shown.base64).mimeType
+        });
+
+        const content = [];
+        const image = reduceImage(answer.imageBase64, maxSize);
+        content.push(asImage(image));
+        content.push({
+            type: 'text',
+            text: `${facts} The copy above is ${image.reduced ? 'reduced' : 'at its original size'}, `
+                + 'for your eyes only; for a generator use save_to_file.'
+        });
+
+        if (answer.maskBase64) {
+            content.push(asImage(reduceImage(answer.maskBase64, maxSize)));
+            content.push({
+                type: 'text',
+                text: 'Its mask: white is what Place Back replaces, black is kept.'
+            });
+        } else if (args.include_mask === true) {
+            content.push({ type: 'text', text: noMask });
+        }
+
+        content.push({ type: 'text', text: withStatus(listLine, answer.status) });
+        return { content };
+    }
+
+    /**
+     * @param {object} args - Tool arguments.
+     * @returns {Promise<object>} MCP tool result.
+     */
+    async function toPsLoadFile(args) {
+        const task = tasks.require(args.task_id);
+
+        const filePath = String(args.path || '').trim();
+        if (!filePath || !path.isAbsolute(filePath)) {
+            return textResult(
+                'to_ps_load_file needs "path": the absolute path of a PNG or JPEG file.',
+                true
+            );
+        }
+
+        const fileName = path.basename(filePath);
+        if (!LOADABLE_EXTENSIONS.includes(path.extname(filePath).toLowerCase())) {
+            return textResult(
+                `"${fileName}" is not a PNG or JPEG file. The ToPS card takes only those, as the `
+                + 'panel\'s Load File does.',
+                true
+            );
+        }
+
+        let stat;
+        try {
+            stat = await fs.promises.stat(filePath);
+        } catch {
+            return textResult(`There is no file at ${filePath}.`, true);
+        }
+        if (!stat.isFile()) {
+            return textResult(`${filePath} is not a file.`, true);
+        }
+        if (stat.size > MAX_LOAD_FILE_BYTES) {
+            const megabytes = Math.round(stat.size / (1024 * 1024));
+            return textResult(
+                `"${fileName}" is about ${megabytes} MB, more than the channel to Photoshop carries `
+                + 'in one message. Save it smaller, or ask the person to load it with Load File.',
+                true
+            );
+        }
+
+        note(task.id, `loading "${fileName}" into the ToPS card`, 'to_ps_load_file');
+
+        const base64 = (await fs.promises.readFile(filePath)).toString('base64');
+        const answer = await callPlugin('agent_to_ps_load_file', {
+            taskId: task.id,
+            base64,
+            fileName
+        }, TIMEOUT_IMAGE_MS);
+
+        return textResult(withStatus(
+            `"${fileName}" is in the ToPS card. Place it with to_ps_place_back and the capture's id.`,
+            answer && answer.status
+        ));
+    }
+
+    /**
+     * @param {object} args - Tool arguments.
+     * @returns {Promise<object>} MCP tool result.
+     */
+    async function toPsPlaceBack(args) {
+        const task = tasks.require(args.task_id);
+
+        // The capture is never guessed: the person may have switched the card meanwhile.
+        if (!Number.isInteger(args.capture_id)) {
+            return textResult(
+                'to_ps_place_back needs "capture_id": the id from_ps_capture gave you.',
+                true
+            );
+        }
+
+        const refused = refuseWhileDialogPending(task, 'to_ps_place_back');
+        if (refused) return refused;
+
+        const selectionOnly = args.mode === 'selection_only';
+        note(
+            task.id,
+            selectionOnly
+                ? `restoring the selection of capture ${args.capture_id}`
+                : `placing the image from the ToPS card over capture ${args.capture_id}`,
+            'to_ps_place_back'
+        );
+
+        const answer = await callPlugin('agent_to_ps_place_back', {
+            taskId: task.id,
+            captureId: args.capture_id,
+            mode: args.mode,
+            feather: args.feather
+        }, TIMEOUT_SCRIPT_MS);
+
+        const placed = (answer && answer.placed) || {};
+        if (placed.mode === 'selection_only') {
+            const bounds = placed.bounds || {};
+            return textResult(withStatus(
+                `The selection of capture id ${placed.captureId} is restored (left ${bounds.left}, `
+                + `top ${bounds.top}, right ${bounds.right}, bottom ${bounds.bottom}).`,
+                answer && answer.status
+            ));
+        }
+        return textResult(withStatus(describePlacement(placed), answer && answer.status));
+    }
+
+    /**
      * @param {object} args - Tool arguments.
      * @returns {object} MCP tool result.
      */
@@ -1526,6 +2083,10 @@ function createAgentTools({
         ps_get_image: getImage,
         ps_execute_script: executeScript,
         ps_wait_for_dialog: waitForDialog,
+        from_ps_capture: fromPsCapture,
+        from_ps_get_capture: fromPsGetCapture,
+        to_ps_load_file: toPsLoadFile,
+        to_ps_place_back: toPsPlaceBack,
         ps_kb_list: kbList,
         ps_kb_read: kbRead,
         ps_kb_contribute: kbContribute,

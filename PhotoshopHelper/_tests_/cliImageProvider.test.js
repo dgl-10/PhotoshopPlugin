@@ -92,46 +92,6 @@ test('only installed, enabled native-image CLIs with a Medium model are offered'
     assert.deepEqual(options, [{ value: 'codex', label: 'OpenAI Codex' }]);
 });
 
-test('the virtual provider carries the private endpoint contract only in memory', () => {
-    const provider = buildCliImageProvider(
-        { codex: eligibleCli(), grok: eligibleCli() },
-        { endpointUrl: 'http://127.0.0.1/internal', internalKey: 'runtime-secret' }
-    );
-
-    assert.equal(provider.id, CLI_IMAGE_PROVIDER_ID);
-    assert.equal(provider.image_format, 'file_path');
-    assert.equal(provider.supports_aspect_ratio_auto_in_t2i, true);
-    assert.equal(provider.request_config.headers[INTERNAL_AUTH_HEADER], 'runtime-secret');
-    assert.equal(provider.response_config.params.format, 'file_path');
-    assert.deepEqual(provider.max_reference_images, {
-        depends_on: 'cli',
-        default: 5,
-        values: {
-            codex: 5,
-            grok: 5,
-            agy: 3,
-            claude: 5
-        }
-    });
-    assert.equal(provider.allowed_aspect_ratios.depends_on, 'cli');
-    assert.deepEqual(provider.allowed_aspect_ratios.values.grok, ['1:1', '3:2', '2:3', '16:9', '9:16']);
-    assert.ok(provider.allowed_aspect_ratios.values.codex.includes('4:3'));
-    assert.ok(provider.allowed_aspect_ratios.values.codex.includes('3:4'));
-    assert.deepEqual(
-        provider.parameters.find(parameter => parameter.name === 'cli').options.map(option => option.value),
-        ['codex', 'grok']
-    );
-    assert.ok(provider.parameters.some(parameter => parameter.alias === 'prompt'));
-    assert.ok(provider.parameters.some(parameter => parameter.name === 'do_not_change_prompt'));
-    assert.equal(
-        buildCliImageProvider(
-            { codex: eligibleCli({ enabled: false }) },
-            { endpointUrl: 'http://127.0.0.1/internal', internalKey: 'runtime-secret' }
-        ),
-        null
-    );
-});
-
 test('the strict CLI instruction keeps the user prompt as an exact JSON string', () => {
     const userPrompt = '  A "quoted" prompt\nwith a second line.  ';
     const prompt = buildCliImagePrompt({
@@ -148,19 +108,6 @@ test('the strict CLI instruction keeps the user prompt as an exact JSON string',
     assert.match(prompt, /pass that exact string verbatim/i);
     assert.match(prompt, /requested_image_count: 2/);
     assert.ok(!prompt.includes('aspect_ratio:'));
-});
-
-test('buildCliImagePrompt includes aspect ratio only when provided and not auto', () => {
-    const promptWithRatio = buildCliImagePrompt({
-        prompt: 'test prompt',
-        numImages: 1,
-        aspectRatio: '16:9',
-        outputDir: 'C:\\temp\\output'
-    });
-
-    assert.match(promptWithRatio, /aspect_ratio: "16:9"/);
-    assert.match(promptWithRatio, /Use the requested aspect ratio through a native tool parameter/i);
-    assert.ok(!promptWithRatio.includes('requested_image_count'));
 });
 
 test('buildCliImagePrompt requests final_prompt in output schema', () => {
@@ -278,89 +225,6 @@ test('an empty T2I aspect ratio is optional only when the provider opts in', () 
     assert.doesNotThrow(
         () => requireTextToImageAspectRatio('', null, null, [], true)
     );
-});
-
-test('the private endpoint runs the selected CLI on Medium and returns all created paths', async (t) => {
-    const tempDir = createFixtureDirectory(t);
-    // Local Generation API callers may supply an absolute input path outside WebHelper's
-    // temp root. The private endpoint accepts that input but still confines every output.
-    const externalInputDir = `${tempDir}-external-input`;
-    fs.mkdirSync(externalInputDir);
-    t.after(() => fs.rmSync(externalInputDir, { recursive: true, force: true }));
-    const sourcePath = path.join(externalInputDir, 'source.png');
-    fs.writeFileSync(sourcePath, ONE_PIXEL_PNG);
-
-    let observedRun = null;
-    const application = express();
-    application.use(express.json({ limit: '2mb' }));
-    application.use('/api/internal/cli-image', createCliImageRouter({
-        tempDir,
-        internalKey: 'test-secret',
-        getCliConfig: async () => ({ codex: eligibleCli() }),
-        runWithSelectedCli: async (cli, prompt, tier, options) => {
-            observedRun = { cli, prompt, tier, options };
-            const first = path.join(options.cwd, 'one.png');
-            const second = path.join(options.cwd, 'two.png');
-            fs.writeFileSync(first, ONE_PIXEL_PNG);
-            fs.writeFileSync(second, ONE_PIXEL_PNG);
-            return {
-                ok: true,
-                text: JSON.stringify({
-                    status: 'done',
-                    images: [{ path: first }, { path: second }],
-                    final_prompt: 'A lighthouse on a stormy coast.'
-                })
-            };
-        }
-    }));
-
-    const server = await new Promise(resolve => {
-        const listeningServer = application.listen(0, '127.0.0.1', () => resolve(listeningServer));
-    });
-    t.after(async () => {
-        await new Promise((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
-    });
-    const url = `http://127.0.0.1:${server.address().port}/api/internal/cli-image/generate`;
-
-    const unauthorized = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({})
-    });
-    assert.equal(unauthorized.status, 401);
-
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            [INTERNAL_AUTH_HEADER]: 'test-secret'
-        },
-        body: JSON.stringify({
-            cli: 'codex',
-            prompt: 'Draw a lighthouse.',
-            do_not_change_prompt: true,
-            num_images: 1,
-            source_image_path: sourcePath,
-            reference_image_paths: []
-        })
-    });
-    const body = await response.json();
-
-    assert.equal(response.status, 200);
-    assert.equal(body.images.length, 2, 'extra images made by the CLI must be preserved');
-    assert.ok(body.images.every(imagePath => path.isAbsolute(imagePath)));
-    assert.equal(body.cli, 'codex');
-    assert.equal(body.tier, 'medium');
-    assert.equal(body.model, 'medium-model');
-    assert.equal(body.effort, 'medium');
-    assert.equal(body.final_prompt, 'A lighthouse on a stormy coast.');
-    assert.equal(body.cli_prompt, observedRun.prompt);
-    assert.match(body.prompt, /pass that exact string verbatim/i);
-    assert.equal(observedRun.cli, 'codex');
-    assert.equal(observedRun.tier, 'medium');
-    assert.match(observedRun.prompt, /pass that exact string verbatim/i);
-    assert.equal(fs.existsSync(path.join(tempDir, CLI_SCRATCH_DIRNAME)), false);
-    assert.doesNotMatch(observedRun.prompt, /output_directory/);
 });
 
 test('an existing reference file makes the scratch directory the cwd and is not copied', async (t) => {

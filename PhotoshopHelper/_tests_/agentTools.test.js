@@ -18,9 +18,11 @@ const { createKnowledgeBase } = require('../agent/knowledge-base');
  * @param {object} [options]
  * @param {object} [options.taskOptions] - Passed to createTaskSession, e.g. a test clock.
  * @param {number} [options.dialogWaitMs] - Passed to createAgentTools.
+ * @param {Function} [options.reduceImage] - Passed to createAgentTools.
+ * @param {string} [options.captureDir] - Passed to createAgentTools.
  * @returns {object} { tools, tasks, kb, calls, journalLines }
  */
-function makeTools(context, pluginAnswers = {}, { taskOptions = {}, dialogWaitMs } = {}) {
+function makeTools(context, pluginAnswers = {}, { taskOptions = {}, dialogWaitMs, reduceImage, captureDir } = {}) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-tools-'));
     context.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -59,7 +61,9 @@ function makeTools(context, pluginAnswers = {}, { taskOptions = {}, dialogWaitMs
         knowledgeBase,
         journal,
         progress: { push() {} },
-        dialogWaitMs
+        dialogWaitMs,
+        reduceImage,
+        captureDir
     });
 
     return { tools, tasks, knowledgeBase, calls, journalLines };
@@ -99,13 +103,419 @@ async function startTask(tools, intent = 'work') {
     return started.content[0].text.match(/(task-[a-f0-9]+)/)[1];
 }
 
-test('every tool is prefixed ps_ so its area is readable from the flat list', context => {
+test('every tool is prefixed ps_, from_ps_ or to_ps_ so its area is readable from the flat list', context => {
     const { tools } = makeTools(context);
 
     for (const tool of tools.list()) {
-        assert.ok(tool.name.startsWith('ps_'), `${tool.name} must carry the ps_ prefix`);
+        assert.match(tool.name, /^(ps_|from_ps_|to_ps_)/, `${tool.name} must carry a Photoshop prefix`);
         assert.ok(tool.description.length > 40, `${tool.name} needs a real description`);
     }
+
+    const names = tools.list().map(tool => tool.name);
+    assert.ok(names.includes('from_ps_capture'));
+    assert.ok(names.includes('to_ps_load_file'));
+    assert.ok(names.includes('to_ps_place_back'));
+});
+
+test('from_ps_capture captures the current selection as it is and returns its id and box', async context => {
+    const { tools, calls } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_from_ps_capture: {
+            capture: {
+                id: 12,
+                number: 3,
+                bounds: { left: 100, top: 200, right: 900, bottom: 800 },
+                width: 800,
+                height: 600,
+                aspectRatio: '4:3',
+                padding: 30,
+                fullDocument: false
+            },
+            status: { documentId: 7, documentName: 'poster.psd', historyStep: 'Open', sinceLastCall: [] }
+        }
+    });
+    const taskId = await startTask(tools, 'fix the fingers');
+
+    const result = await tools.call('from_ps_capture', { task_id: taskId, padding: 30 });
+
+    const sent = calls.at(-1);
+    assert.equal(sent.action, 'agent_from_ps_capture');
+    assert.equal(sent.payload.padding, 30);
+    // Only a real true turns the rare modes on.
+    assert.equal(sent.payload.fullDocument, false);
+    assert.equal(sent.payload.keepTransparency, false);
+    // The capture is what goes to the generator: nothing asks for it smaller, and the
+    // capture does not make a selection of its own.
+    assert.equal('maxSize' in sent.payload, false);
+    assert.equal('region' in sent.payload, false);
+
+    assert.equal(result.isError, undefined);
+    assert.equal(result.content.length, 1, 'no image comes back with a capture');
+    const text = result.content[0].text;
+    assert.match(text, /Capture id 12 is in the FromPS card/);
+    assert.match(text, /number 3 in the card's list/);
+    assert.doesNotMatch(text, /×/, 'no pixel sizes in the answer');
+    assert.match(text, /aspect ratio 4:3/);
+    assert.match(text, /left 100, top 200, right 900, bottom 800 — the selection with padding 30 px/);
+    assert.match(text, /Pass capture_id 12 to to_ps_place_back/);
+    assert.match(text, /\[state\]/);
+});
+
+test('the from_ps_ and to_ps_ tools describe the panel buttons they stand for', context => {
+    const { tools } = makeTools(context);
+    const byName = Object.fromEntries(tools.list().map(tool => [tool.name, tool]));
+
+    const capture = byName.from_ps_capture;
+    assert.match(capture.description, /Capture button/);
+    assert.match(capture.description, /current selection/);
+    assert.match(capture.description, /never reduced/);
+    assert.match(capture.description, /This tool generates nothing/);
+    assert.match(capture.description, /Unless you generate from it yourself, tell the person/);
+    assert.match(capture.description, /generator-moderation- articles of the knowledge base/);
+    assert.deepEqual(Object.keys(capture.inputSchema.properties).sort(),
+        ['full_document', 'keep_transparency', 'padding', 'source', 'task_id']);
+    assert.deepEqual(capture.inputSchema.properties.source.enum, ['visible', 'current_layer']);
+    assert.deepEqual(capture.inputSchema.required, ['task_id']);
+
+    const loadFile = byName.to_ps_load_file;
+    assert.match(loadFile.description, /Load File button/);
+    assert.match(loadFile.description, /without its dialog/);
+    assert.deepEqual(loadFile.inputSchema.required, ['task_id', 'path']);
+
+    const placeBack = byName.to_ps_place_back;
+    assert.match(placeBack.description, /Place Back button/);
+    assert.match(placeBack.description, /task's document, even when the person is looking at another/);
+    assert.match(placeBack.description, /Gaussian Blur smart filter/);
+    // Generators return their own sizes; the agent must not start measuring them.
+    assert.match(placeBack.description, /Do not measure, compare or recompute the pixel sizes/);
+    // The inpaint mask layer has no layer mask; its shape is its transparency.
+    assert.match(placeBack.inputSchema.properties.mode.description, /special hidden layer/);
+    assert.match(placeBack.inputSchema.properties.mode.description, /transparencyEnum/);
+    assert.deepEqual(placeBack.inputSchema.required, ['task_id', 'capture_id']);
+    assert.deepEqual(
+        placeBack.inputSchema.properties.mode.enum,
+        ['smart_object', 'editable_smart_object', 'inpaint_mask', 'selection_only']
+    );
+    assert.deepEqual(placeBack.inputSchema.properties.feather.enum, ['off', 'outward', 'center', 'inward']);
+    assert.match(placeBack.inputSchema.properties.feather.description, /Omit it to use what the panel/);
+});
+
+test('to_ps_place_back passes its choices through and reports the layer, mask and blur it made', async context => {
+    const { tools, calls } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_to_ps_place_back: {
+            placed: {
+                mode: 'smart_object',
+                captureId: 12,
+                captureNumber: 2,
+                bounds: { left: 100, top: 200, right: 900, bottom: 800 },
+                feather: 'outward',
+                featherFromPanel: false,
+                layer: { id: 41, name: 'agent_result', visible: true },
+                mask: { edgeShift: 6, featherRadius: 9 },
+                gaussianBlur: 0.8
+            },
+            status: { documentId: 7, documentName: 'poster.psd', historyStep: 'Agent: place back over capture 2', sinceLastCall: [] }
+        }
+    });
+    const taskId = await startTask(tools, 'put the hand back');
+
+    const result = await tools.call('to_ps_place_back', { task_id: taskId, capture_id: 12, feather: 'outward' });
+
+    const sent = calls.at(-1);
+    assert.equal(sent.action, 'agent_to_ps_place_back');
+    assert.equal(sent.payload.captureId, 12);
+    assert.equal(sent.payload.feather, 'outward');
+    assert.equal(sent.payload.mode, undefined, 'the plugin picks the default mode');
+    assert.equal(sent.timeoutMs, 180_000);
+
+    assert.equal(result.isError, undefined);
+    const text = result.content[0].text;
+    assert.match(text, /New layer "agent_result" \(id 41\), a smart object, placed over capture id 12/);
+    // No pixel sizes in the report: they only invite the agent to start counting.
+    assert.doesNotMatch(text, /×/);
+    assert.match(text, /feather outward: edge moved 6 px outward, the mask's own Feather is 9 px/);
+    assert.match(text, /Gaussian Blur 0\.8 px, added by Place Back itself/);
+});
+
+test('without its own feather choice the place back says the panel setting was used', async context => {
+    const { tools, calls } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_to_ps_place_back: {
+            placed: {
+                mode: 'smart_object',
+                captureId: 3,
+                captureNumber: 1,
+                bounds: { left: 0, top: 0, right: 10, bottom: 10 },
+                feather: 'off',
+                featherFromPanel: true,
+                layer: { id: 5, name: 'x', visible: true },
+                mask: { edgeShift: 0, featherRadius: 0 },
+                gaussianBlur: null
+            },
+            status: null
+        }
+    });
+    const taskId = await startTask(tools);
+
+    const result = await tools.call('to_ps_place_back', { task_id: taskId, capture_id: 3 });
+
+    assert.equal(calls.at(-1).payload.feather, undefined);
+    const text = result.content[0].text;
+    assert.match(text, /feather off, as the panel is set: hard edge, no Feather/);
+    assert.match(text, /No Gaussian Blur filter was added/);
+});
+
+test('an inpaint mask place back names the special layer and how to get the selection from it', async context => {
+    const { tools } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_to_ps_place_back: {
+            placed: {
+                mode: 'inpaint_mask',
+                captureId: 9,
+                captureNumber: 9,
+                bounds: { left: 1295, top: 20, right: 2545, bottom: 1270 },
+                feather: 'off',
+                featherFromPanel: true,
+                layer: { id: 4, name: '[ai mask] agent_result', visible: false },
+                mask: null,
+                gaussianBlur: null
+            },
+            status: null
+        }
+    });
+    const taskId = await startTask(tools);
+
+    const result = await tools.call('to_ps_place_back', { task_id: taskId, capture_id: 9, mode: 'inpaint_mask' });
+
+    const text = result.content[0].text;
+    assert.match(text, /New layer "\[ai mask\] agent_result" \(id 4\), a hidden "\[ai mask\]" smart object/);
+    assert.match(text, /a special layer for a selection/);
+    assert.match(text, /Ctrl\+click on its thumbnail/);
+    assert.match(text, /transparencyEnum/);
+    assert.match(text, /no need to inspect or measure the layer/);
+    assert.doesNotMatch(text, /Gaussian Blur \d/);
+});
+
+test('to_ps_place_back without a capture id is refused and nothing reaches the plugin', async context => {
+    const { tools, calls } = makeTools(context, { agent_start_task: startAnswer() });
+    const taskId = await startTask(tools);
+    const sentBefore = calls.length;
+
+    const result = await tools.call('to_ps_place_back', { task_id: taskId });
+
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /needs "capture_id"/);
+    assert.equal(calls.length, sentBefore);
+});
+
+test('a refusal from the plugin, such as an empty ToPS card, reaches the agent as an error', async context => {
+    const { tools } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_to_ps_place_back: () => {
+            throw new Error('The ToPS card of the FromPS / ToPS panel is empty.');
+        }
+    });
+    const taskId = await startTask(tools);
+
+    const result = await tools.call('to_ps_place_back', { task_id: taskId, capture_id: 1 });
+
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /ToPS card .* is empty/);
+});
+
+/**
+ * A plausible answer from the plugin for from_ps_get_capture.
+ *
+ * @param {object} [overrides] - Fields to replace.
+ * @returns {object}
+ */
+function getCaptureAnswer(overrides = {}) {
+    return {
+        capture: {
+            id: 12,
+            number: 3,
+            current: true,
+            documentId: 7,
+            documentName: 'poster.psd',
+            width: 800,
+            height: 600,
+            bounds: { left: 100, top: 200, right: 900, bottom: 800 },
+            aspectRatio: '4:3',
+            hasMask: true
+        },
+        imageBase64: 'IMAGE',
+        maskBase64: 'MASK',
+        captures: [
+            { id: 4, number: 1, width: 300, height: 300, documentName: 'poster.psd', current: false },
+            { id: 12, number: 3, width: 800, height: 600, documentName: 'poster.psd', current: true }
+        ],
+        status: { documentId: 7, documentName: 'poster.psd', historyStep: 'Open', sinceLastCall: [] },
+        ...overrides
+    };
+}
+
+test('from_ps_get_capture shows the piece and its mask reduced, and lists the captures', async context => {
+    const reduced = [];
+    const { tools, calls } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_from_ps_get_capture: getCaptureAnswer()
+    }, {
+        reduceImage: (base64, maxSide) => {
+            reduced.push({ base64, maxSide });
+            return {
+                base64: `small-${base64}`, width: 512, height: 384,
+                originalWidth: 800, originalHeight: 600, reduced: true
+            };
+        }
+    });
+    const taskId = await startTask(tools);
+
+    const result = await tools.call('from_ps_get_capture', { task_id: taskId, capture_id: 12, include_mask: true });
+
+    const sent = calls.at(-1);
+    assert.equal(sent.action, 'agent_from_ps_get_capture');
+    assert.equal(sent.payload.captureId, 12);
+    assert.equal(sent.payload.includeMask, true);
+    assert.deepEqual(reduced, [{ base64: 'IMAGE', maxSide: 512 }, { base64: 'MASK', maxSide: 512 }]);
+
+    assert.equal(result.isError, undefined);
+    const [image, caption, mask, maskCaption, list] = result.content;
+    assert.equal(image.type, 'image');
+    assert.equal(image.data, 'small-IMAGE');
+    assert.match(caption.text, /Capture id 12 \(number 3 in the card's list, shown in the card now\), from "poster\.psd"/);
+    assert.match(caption.text, /The copy above is reduced, for your eyes only; for a generator use save_to_file/);
+    assert.equal(mask.type, 'image');
+    assert.equal(mask.data, 'small-MASK');
+    assert.match(maskCaption.text, /white is what Place Back replaces/);
+    assert.match(list.text, /id 4 \(number 1, "poster\.psd"\); id 12 \(number 3, "poster\.psd", shown now\)/);
+    assert.match(list.text, /\[state\]/);
+    // No pixel sizes anywhere: they only invite comparing them with a generator's output.
+    assert.doesNotMatch(result.content.filter(part => part.type === 'text').map(part => part.text).join('\n'), /×/);
+});
+
+test('from_ps_get_capture with save_to_file writes the originals and returns their paths, not pictures', async context => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-captures-'));
+    context.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString('base64');
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 4, 5, 6]).toString('base64');
+
+    const reduced = [];
+    const { tools } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_from_ps_get_capture: getCaptureAnswer({ imageBase64: png, maskBase64: jpeg })
+    }, {
+        captureDir: folder,
+        reduceImage: base64 => { reduced.push(base64); return { base64, reduced: false }; }
+    });
+    const taskId = await startTask(tools);
+
+    const result = await tools.call('from_ps_get_capture', {
+        task_id: taskId, capture_id: 12, include_mask: true, save_to_file: true
+    });
+
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(result.content.map(part => part.type), ['text'], 'paths only, no pictures');
+    assert.equal(reduced.length, 0, 'nothing is reduced on the way to a generator');
+
+    const imagePath = path.join(folder, 'capture-12.png');
+    const maskPath = path.join(folder, 'capture-12-mask.jpg');
+    assert.deepEqual(fs.readFileSync(imagePath), Buffer.from(png, 'base64'));
+    assert.deepEqual(fs.readFileSync(maskPath), Buffer.from(jpeg, 'base64'));
+    const text = result.content[0].text;
+    assert.ok(text.includes(imagePath));
+    assert.ok(text.includes(maskPath));
+    assert.match(text, /These are the originals: give these files to the generator/);
+});
+
+test('from_ps_get_capture without an id asks for the shown capture and says when there is no mask', async context => {
+    const { tools, calls } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_from_ps_get_capture: getCaptureAnswer({ maskBase64: null })
+    }, {
+        reduceImage: base64 => ({ base64, width: 800, height: 600, originalWidth: 800, originalHeight: 600, reduced: false })
+    });
+    const taskId = await startTask(tools);
+
+    const result = await tools.call('from_ps_get_capture', { task_id: taskId, include_mask: true });
+
+    assert.equal(calls.at(-1).payload.captureId, null);
+    const texts = result.content.filter(part => part.type === 'text').map(part => part.text).join('\n');
+    assert.equal(result.content.filter(part => part.type === 'image').length, 1);
+    assert.match(texts, /at its original size/);
+    assert.match(texts, /has no mask: it was made from Select All/);
+});
+
+test('to_ps_load_file reads the file in Helper and sends its bytes to the ToPS card', async context => {
+    const { tools, calls } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_to_ps_load_file: { loaded: { fileName: 'hand.png' }, status: null }
+    });
+    const taskId = await startTask(tools);
+
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-load-'));
+    context.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+    const file = path.join(folder, 'hand.png');
+    fs.writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const result = await tools.call('to_ps_load_file', { task_id: taskId, path: file });
+
+    const sent = calls.at(-1);
+    assert.equal(sent.action, 'agent_to_ps_load_file');
+    assert.equal(sent.payload.fileName, 'hand.png');
+    assert.equal(sent.payload.base64, Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'));
+    assert.equal(result.isError, undefined);
+    assert.match(result.content[0].text, /"hand\.png" is in the ToPS card/);
+});
+
+test('to_ps_load_file refuses what Load File would not take, without reaching the plugin', async context => {
+    const { tools, calls } = makeTools(context, { agent_start_task: startAnswer() });
+    const taskId = await startTask(tools);
+    const sentBefore = calls.length;
+
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-load-'));
+    context.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+    const tiff = path.join(folder, 'hand.tif');
+    fs.writeFileSync(tiff, 'x');
+
+    const relative = await tools.call('to_ps_load_file', { task_id: taskId, path: 'hand.png' });
+    assert.equal(relative.isError, true);
+    assert.match(relative.content[0].text, /absolute path/);
+
+    const wrongType = await tools.call('to_ps_load_file', { task_id: taskId, path: tiff });
+    assert.equal(wrongType.isError, true);
+    assert.match(wrongType.content[0].text, /not a PNG or JPEG/);
+
+    const missing = await tools.call('to_ps_load_file', { task_id: taskId, path: path.join(folder, 'gone.png') });
+    assert.equal(missing.isError, true);
+    assert.match(missing.content[0].text, /There is no file/);
+
+    assert.equal(calls.length, sentBefore, 'nothing reaches the plugin');
+});
+
+test('capture and place back are refused, not sent, while a dialog is open', async context => {
+    let releaseDialog;
+    const { tools, calls } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_execute_script: () => new Promise(resolve => { releaseDialog = resolve; })
+    }, { dialogWaitMs: 20 });
+    const taskId = await startTask(tools);
+
+    await tools.call('ps_execute_script', {
+        task_id: taskId, code: 'x', history_name: 'liquify', interactive: true
+    });
+    const sentBefore = calls.length;
+
+    const capture = await tools.call('from_ps_capture', { task_id: taskId });
+    const placeBack = await tools.call('to_ps_place_back', { task_id: taskId, capture_id: 1 });
+
+    assert.equal(capture.isError, true);
+    assert.match(capture.content[0].text, /ps_wait_for_dialog/);
+    assert.equal(placeBack.isError, true);
+    assert.match(placeBack.content[0].text, /ps_wait_for_dialog/);
+    assert.equal(calls.length, sentBefore, 'nothing reaches the plugin');
+
+    releaseDialog({ result: null, status: null });
 });
 
 test('every tool except ps_start_task requires the task id', context => {

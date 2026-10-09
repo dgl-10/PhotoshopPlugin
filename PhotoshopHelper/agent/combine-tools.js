@@ -3,7 +3,7 @@
 /**
  * Publish several tool layers through the one MCP server.
  *
- * MCP has a single flat tool list, so the Photoshop document tools (`ps_`) and the
+ * MCP has a single flat tool list, so the Photoshop document tools (`ps_`, `from_ps_`, `to_ps_`) and the
  * generation tools (`gen_`) are merged here. Each layer keeps its own handlers and its own
  * rules; this only decides whose call a name belongs to.
  */

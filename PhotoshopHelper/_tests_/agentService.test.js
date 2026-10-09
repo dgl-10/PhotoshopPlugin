@@ -110,7 +110,7 @@ test('MCP work requires no configuration for launching a command-line agent', as
 test('the tool layer is wired to the service', async context => {
     const { service } = makeService(context);
 
-    assert.equal(service.tools.list().length, 13);
+    assert.equal(service.tools.list().length, 17);
 
     // With no channel the answer is the sentence the MCP agent is meant to relay.
     const result = await service.tools.call('ps_start_task', { intent: 'anything' });

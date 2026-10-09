@@ -94,3 +94,43 @@ test('the line recognises the abort reason Helper records for Abort task', () =>
     assert.ok(reason, 'Helper defines the abort reason');
     assert.ok(line.includes(`const ABORTED_BY_PERSON = '${reason[1]}'`), 'the line uses the same text');
 });
+
+test('every command Helper sends to the plugin has a handler there', () => {
+    const tools = source('PhotoshopHelper', 'agent', 'mcp-tools.js');
+    const handlers = source('modules', 'command-handlers.js');
+
+    // A name that exists on one side only fails in Photoshop as "Unknown command", which no
+    // test in Node would otherwise notice.
+    const sent = [...new Set([...tools.matchAll(/callPlugin\('([a-z_]+)'/g)].map(match => match[1]))];
+    assert.ok(sent.includes('agent_from_ps_capture'));
+    assert.ok(sent.includes('agent_to_ps_load_file'));
+    assert.ok(sent.includes('agent_to_ps_place_back'));
+
+    const table = handlers.match(/const HANDLERS = \{([\s\S]*?)\};/);
+    assert.ok(table, 'command-handlers.js keeps its HANDLERS table');
+    for (const name of sent) {
+        assert.match(table[1], new RegExp(`\\b${name}:`), `the plugin has no handler for ${name}`);
+    }
+});
+
+test('the panel hands its FromPS and ToPS cards to the agent commands', () => {
+    const indexJs = source('index.js');
+    const handlers = source('modules', 'command-handlers.js');
+
+    assert.match(indexJs, /commandHandlers\.connectPanel\(createPanelLink\(\)\)/);
+    // The agent's capture goes through the same function as the Capture button.
+    assert.match(indexJs, /const payload = await ps\.captureSelection\([^)]*\);\s*await addCapture\(payload\);/);
+    assert.match(indexJs, /await addCapture\(payload, 'Agent captured'\)/);
+    // Every capture gets an id that is never reused, so the agent can name it later.
+    assert.match(indexJs, /payload\.id = nextCaptureId\+\+;/);
+    // The agent's Place Back without its own choice feathers the way the person's would.
+    assert.match(indexJs, /const effectiveFeather = currentPlaceBackFeather\(capturedPayload\.isSelectAll\);/);
+    assert.match(indexJs, /return currentPlaceBackFeather\(isSelectAll\);/);
+    // The agent's commands open one modal scope and do not open a second one inside it.
+    assert.match(handlers, /ps\.captureSelectionInModal\(/);
+    assert.match(handlers, /ps\.placeBackInModal\(/);
+    assert.doesNotMatch(handlers, /ps\.captureSelection\(|ps\.placeBack\(/);
+    // The capture is always named by id and checked against the task's document.
+    assert.match(handlers, /if \(!Number\.isInteger\(payload\.captureId\)\)/);
+    assert.match(handlers, /capture\.context\.documentId !== doc\.id/);
+});

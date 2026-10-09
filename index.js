@@ -12,6 +12,7 @@ const settings = require('./modules/settings.js');
 const helper = require('./modules/helper.js');
 const imageUtils = require('./modules/image-utils.js');
 const agentLine = require('./modules/agent-line.js');
+const commandHandlers = require('./modules/command-handlers.js');
 
 const { entrypoints, versions } = require("uxp");
 
@@ -22,6 +23,7 @@ let resultImage = null;      // Stores loaded result image data
 let resultFilePath = null;   // Native path to result file
 let resultFileToken = null;  // Session token for result file
 let currentFeatherOptions = { enabled: false }; // Mask feathering bias settings
+let nextCaptureId = 1;       // Id of the next capture; never reused while the plugin runs
 
 // Shown when PhotoshopHelper is reachable but rejects this plugin's credentials. It is a
 // distinct case from the Helper being absent, and needs a different fix from the user.
@@ -119,6 +121,9 @@ function init() {
 
     // Set up event listeners
     setupEventListeners();
+
+    // Let the agent's from_ps_ / to_ps_ commands work through the FromPS and ToPS cards
+    commandHandlers.connectPanel(createPanelLink());
 
     // Start checking Photoshop Helper status
     startHelperStatusPolling();
@@ -383,43 +388,202 @@ async function handleCapture(viaTempDocCreation, fullDocMask = false) {
         }
 
         // Capture selection
-        capturedPayload = await ps.captureSelection(sourceMode, viaTempDocCreation, fullDocMask);
-        capturedPayloads.push(capturedPayload);
-        const newIndex = capturedPayloads.length - 1;
-
-        console.log('Captured payload:', {
-            bounds: capturedPayload.bounds,
-            context: capturedPayload.context
-        });
-
-        // Get preview data URL and cache it in the payload for future switches
-        const previewUrl = await fsModule.getPreviewDataUrl(capturedPayload);
-        // Overlay is preview-only. Keep it compact and use the release-safe renderer
-        // selected in image-utils; the full-resolution mask remains untouched for
-        // save, drag and Place Back operations.
-        const overlayUrl = await imageUtils.generateOverlayMaskForPreview(capturedPayload.maskData);
-        capturedPayload.previewDataUrl = previewUrl; // Cache to avoid re-encoding on switch
-        // Extract base64 string from data URL for copy/save/drag operations after switch
-        capturedPayload.imageBase64 = previewUrl ? previewUrl.split(',')[1] : null;
-
-        if (previewUrl) {
-            ui.showFromPSPreview(previewUrl, overlayUrl);
-            const ratioInfo = capturedPayload.aspectRatio ? ` [${capturedPayload.aspectRatio}]` : '';
-            ui.showInfo('fromps', `Captured: ${capturedPayload.bounds.width}×${capturedPayload.bounds.height}${ratioInfo}`);
-        } else {
-            ui.showError('fromps', 'Failed to generate preview');
-        }
-
-        // Reflect Select All state in mask-related buttons
-        ui.setMaskButtonsEnabled(capturedPayload.isSelectAll);
-
-        // Update source-selection dropdown with all captures
-        ui.updateSourceDropdown(capturedPayloads, newIndex);
+        const payload = await ps.captureSelection(sourceMode, viaTempDocCreation, fullDocMask);
+        await addCapture(payload);
 
     } catch (error) {
         console.error('Capture error:', error);
         ui.showError('fromps', error.message || 'Capture failed');
     }
+}
+
+/**
+ * Make a fresh capture the current one and show it in the FromPS card.
+ * Used by the Capture button and by the agent's from_ps_capture.
+ * @param {object} payload - What ps.captureSelection returned
+ * @param {string} [statusPrefix='Captured'] - First word of the status line under the card
+ * @returns {Promise<number>} Index of the capture in capturedPayloads
+ */
+async function addCapture(payload, statusPrefix = 'Captured') {
+    // Positions in the list start again after Clear All; the id never repeats while the
+    // plugin runs, so the agent can name a capture long after it made it.
+    payload.id = nextCaptureId++;
+    capturedPayload = payload;
+    capturedPayloads.push(capturedPayload);
+    const newIndex = capturedPayloads.length - 1;
+
+    console.log('Captured payload:', {
+        bounds: capturedPayload.bounds,
+        context: capturedPayload.context
+    });
+
+    // Get preview data URL and cache it in the payload for future switches
+    const previewUrl = await fsModule.getPreviewDataUrl(capturedPayload);
+    // Overlay is preview-only. Keep it compact and use the release-safe renderer
+    // selected in image-utils; the full-resolution mask remains untouched for
+    // save, drag and Place Back operations.
+    const overlayUrl = await imageUtils.generateOverlayMaskForPreview(capturedPayload.maskData);
+    capturedPayload.previewDataUrl = previewUrl; // Cache to avoid re-encoding on switch
+    // Extract base64 string from data URL for copy/save/drag operations after switch
+    capturedPayload.imageBase64 = previewUrl ? previewUrl.split(',')[1] : null;
+
+    if (previewUrl) {
+        ui.showFromPSPreview(previewUrl, overlayUrl);
+        const ratioInfo = capturedPayload.aspectRatio ? ` [${capturedPayload.aspectRatio}]` : '';
+        ui.showInfo('fromps', `${statusPrefix}: ${capturedPayload.bounds.width}×${capturedPayload.bounds.height}${ratioInfo}`);
+    } else {
+        ui.showError('fromps', 'Failed to generate preview');
+    }
+
+    // Reflect Select All state in mask-related buttons
+    ui.setMaskButtonsEnabled(capturedPayload.isSelectAll);
+
+    // Update source-selection dropdown with all captures
+    ui.updateSourceDropdown(capturedPayloads, newIndex);
+
+    return newIndex;
+}
+
+/**
+ * What the agent's from_ps_ / to_ps_ tools see of the panel: the FromPS captures and the
+ * image in the ToPS card. The agent works through the same state the person does, so
+ * whatever it captures can be dragged from the card as usual.
+ * @returns {object}
+ */
+function createPanelLink() {
+    return {
+        /**
+         * @param {object} payload - What ps.captureSelectionInModal returned
+         * @returns {Promise<{id: number, number: number}>} The capture's id, and its number in the dropdown
+         */
+        async addCapture(payload) {
+            if (capturedPayload) {
+                // Offload heavy pixel data to temp files to free memory
+                await fsModule.offloadPayloadPixels(capturedPayload);
+            }
+            const index = await addCapture(payload, 'Agent captured');
+            return { id: payload.id, number: index + 1 };
+        },
+
+        /**
+         * Make a capture the current one, the same way the person does in the dropdown.
+         * @param {number} id - The capture's id
+         * @returns {Promise<{payload: object, number: number}|null>} The capture, or null when the card has no such id
+         */
+        async useCapture(id) {
+            const index = capturedPayloads.findIndex(payload => payload.id === id);
+            if (index === -1) return null;
+            if (capturedPayloads[index] !== capturedPayload) {
+                await handleSourceSelection(String(index));
+                if (capturedPayload !== capturedPayloads[index]) {
+                    throw new Error(`Capture ${id} could not be loaded back from its temporary files.`);
+                }
+                ui.updateSourceDropdown(capturedPayloads, index);
+            }
+            return { payload: capturedPayload, number: index + 1 };
+        },
+
+        /**
+         * @returns {object[]} Every capture the FromPS card holds: id, number, size, document
+         */
+        listCaptures() {
+            return capturedPayloads.map((payload, index) => ({
+                id: payload.id,
+                number: index + 1,
+                width: payload.bounds.width,
+                height: payload.bounds.height,
+                documentName: payload.context ? payload.context.documentName : null,
+                current: payload === capturedPayload
+            }));
+        },
+
+        /**
+         * Read a capture's image, and its mask when asked, without switching the card to it.
+         * @param {number|null} id - The capture's id, or null for the one the card shows
+         * @param {boolean} includeMask - Also encode the mask, when the capture has one
+         * @returns {Promise<object|null>} The capture's facts with imageBase64 and maskBase64, or null
+         */
+        async readCapture(id, includeMask) {
+            const payload = id === null ? capturedPayload : capturedPayloads.find(item => item.id === id);
+            if (!payload) return null;
+
+            // A capture that is not shown has its pixels in temporary files; bring them back
+            // only for this read, and put them away again, as switching captures does.
+            const hasMask = Boolean(payload.maskData || payload.maskTempToken) && !payload.isSelectAll;
+            const needsPixels = (!payload.imageBase64 && !payload.imageData)
+                || (includeMask && hasMask && !payload.maskData);
+            const reloaded = needsPixels && payload !== capturedPayload;
+            if (needsPixels) await fsModule.reloadPayloadPixels(payload);
+
+            try {
+                const imageBase64 = payload.imageBase64 || await fsModule.imageDataToBase64(payload.imageData);
+                const maskBase64 = includeMask && hasMask && payload.maskData
+                    ? await fsModule.maskDataToBase64(payload.maskData)
+                    : null;
+                const bounds = payload.bounds;
+                return {
+                    id: payload.id,
+                    number: capturedPayloads.indexOf(payload) + 1,
+                    current: payload === capturedPayload,
+                    documentId: payload.context ? payload.context.documentId : null,
+                    documentName: payload.context ? payload.context.documentName : null,
+                    width: bounds.width,
+                    height: bounds.height,
+                    bounds: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom },
+                    aspectRatio: payload.aspectRatio,
+                    hasMask,
+                    imageBase64,
+                    maskBase64
+                };
+            } finally {
+                if (reloaded) await fsModule.offloadPayloadPixels(payload);
+            }
+        },
+
+        /**
+         * @param {boolean} isSelectAll - The capture was Select All
+         * @returns {object} The feather options the Place Back button would use right now
+         */
+        getFeatherOptions(isSelectAll) {
+            return currentPlaceBackFeather(isSelectAll);
+        },
+
+        /**
+         * @returns {{token: string, path: string|null}|null} The image in the ToPS card, or null
+         */
+        getResult() {
+            return resultFileToken ? { token: resultFileToken, path: resultFilePath } : null;
+        },
+
+        /**
+         * Put an image into the ToPS card, as Load File does, without the file dialog.
+         * @param {string} base64 - The file's bytes
+         * @param {string} fileName - The file's name, for its extension and the status line
+         */
+        async loadResult(base64, fileName) {
+            const extension = (fileName.split('.').pop() || 'png').toLowerCase();
+            const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
+
+            const arrayBuffer = fsModule.base64ToArrayBuffer(base64);
+            const saved = await fsModule.saveToTemp(arrayBuffer, `agent_result.${extension}`);
+
+            resultImage = arrayBuffer;
+            resultFilePath = saved.nativePath;
+            resultFileToken = saved.token;
+
+            ui.showToPSPreview(`data:${mimeType};base64,${base64}`);
+            ui.showInfo('tops', `Agent loaded ${fileName}`);
+            updatePlaceButtonState();
+        },
+
+        /**
+         * @param {'fromps'|'tops'} card - Card whose status line to set
+         * @param {string} text - Status text
+         */
+        showInfo(card, text) {
+            ui.showInfo(card, text);
+        }
+    };
 }
 
 /**
@@ -1000,14 +1164,8 @@ async function handlePlaceBack(mode = 'so') {
     }
 
     try {
-        // Determine effective feather options
         const isFeatherVisible = settings.getShowFeatherPanel();
-        let effectiveFeather;
-        if (!isFeatherVisible) {
-            effectiveFeather = Object.assign({}, settings.getFeatherSettings(), { enabled: false, skip: capturedPayload.isSelectAll });
-        } else {
-            effectiveFeather = Object.assign({}, settings.getFeatherSettings(), currentFeatherOptions, { skip: capturedPayload.isSelectAll });
-        }
+        const effectiveFeather = currentPlaceBackFeather(capturedPayload.isSelectAll);
 
         // Place back into Photoshop
         await ps.placeBack(
@@ -1043,6 +1201,19 @@ async function handlePlaceBack(mode = 'so') {
         console.error('Place back error:', error);
         ui.showError('tops', error.message || 'Failed to place');
     }
+}
+
+/**
+ * The feather options Place Back uses right now: off when the Feather block is hidden,
+ * otherwise whatever its buttons are set to.
+ * @param {boolean} isSelectAll - The capture was Select All; its mask says nothing
+ * @returns {object}
+ */
+function currentPlaceBackFeather(isSelectAll) {
+    if (!settings.getShowFeatherPanel()) {
+        return Object.assign({}, settings.getFeatherSettings(), { enabled: false, skip: isSelectAll });
+    }
+    return Object.assign({}, settings.getFeatherSettings(), currentFeatherOptions, { skip: isSelectAll });
 }
 
 /**
