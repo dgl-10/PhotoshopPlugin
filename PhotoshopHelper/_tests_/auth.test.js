@@ -10,7 +10,8 @@ const {
     isSameOriginRequest,
     createAuthMiddleware,
     createSameOriginCorsMiddleware,
-    createPasswordGate
+    createPasswordGate,
+    requestHasToken
 } = require('../auth');
 
 /**
@@ -50,6 +51,19 @@ function fakeRequest(headers) {
         get: name => headers[name.toLowerCase()]
     };
 }
+
+test('requestHasToken accepts either header and fails closed', () => {
+    assert.equal(requestHasToken(fakeRequest({ authorization: 'Bearer secret' }), 'secret'), true);
+    assert.equal(requestHasToken(fakeRequest({ 'x-api-key': 'secret' }), 'secret'), true);
+
+    assert.equal(requestHasToken(fakeRequest({ authorization: 'Bearer wrong' }), 'secret'), false);
+    assert.equal(requestHasToken(fakeRequest({}), 'secret'), false);
+    // No configured secret must never match, not even an empty supplied one.
+    assert.equal(requestHasToken(fakeRequest({ authorization: 'Bearer ' }), ''), false);
+    assert.equal(requestHasToken(fakeRequest({ 'x-api-key': 'x' }), ''), false);
+    // Origin is deliberately irrelevant here, unlike createAuthMiddleware's same-origin mode.
+    assert.equal(requestHasToken(fakeRequest({ origin: 'http://127.0.0.1', host: '127.0.0.1' }), 'secret'), false);
+});
 
 test('generateToken returns a distinct 256-bit hex secret each time', () => {
     const first = generateToken();

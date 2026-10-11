@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhotoshopHelper — AI CLI Settings</title>
+    <!-- Spectre.css — same version used across all Helper windows -->
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-exp.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-icons.min.css">
+
+    <style>
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .cs-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: .8rem 1rem;
+            border-bottom: 1px solid #dadee4;
+            flex: none;
+        }
+
+        .cs-header h5 {
+            margin: 0;
+        }
+
+        .cs-subtitle {
+            font-size: .75rem;
+            color: #667;
+            margin-top: .15rem;
+        }
+
+        .cs-body {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        /* Keep the table header text from wrapping on narrow windows */
+        .cs-table th {
+            white-space: nowrap;
+            font-size: .75rem;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: #667;
+        }
+
+        .cs-table td {
+            vertical-align: middle;
+        }
+
+        /* Centered column helper */
+        .cs-center {
+            text-align: center !important;
+        }
+
+        /* CLI name cell */
+        .cs-cli-name {
+            font-weight: 600;
+            font-size: .9rem;
+            white-space: nowrap;
+        }
+
+        /* Status badge cell */
+        .cs-status {
+            white-space: nowrap;
+        }
+
+        /* Dim the entire row for an uninstalled CLI */
+        .cs-row-disabled td {
+            opacity: .5;
+        }
+
+        /* Align checkboxes centrally in their column */
+        .cs-checkbox-cell {
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .cs-checkbox-cell .form-checkbox {
+            display: inline-block;
+            margin: 0 auto;
+            padding: 0;
+            width: .8rem;
+            height: .8rem;
+            min-height: .8rem;
+            position: relative;
+            vertical-align: middle;
+        }
+
+        .cs-checkbox-cell .form-checkbox .form-icon {
+            top: 0;
+            left: 0;
+            margin: 0;
+        }
+
+        /* Configure button cell */
+        .cs-action-cell {
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        /* Info icon badge and tooltip in table header */
+        .cs-info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #5755d9;
+            color: #fff;
+            font-size: 10px;
+            font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-weight: 700;
+            font-style: normal;
+            line-height: 1;
+            margin-left: 3px;
+            cursor: help;
+            vertical-align: middle;
+            text-transform: none;
+        }
+
+        .cs-table th .tooltip::after {
+            text-transform: none;
+            font-weight: normal;
+            letter-spacing: normal;
+            white-space: normal;
+            max-width: 220px;
+            text-align: left;
+        }
+
+        /* Loading skeleton while state is being fetched */
+        .cs-loading {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            color: #667;
+            padding: .5rem 0;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="cs-header">
+        <div>
+            <h5>AI CLI Settings</h5>
+            <div class="cs-subtitle">Use your AI subscription (Chat GPT, Gemini, Calude, Grok)</div>
+        </div>
+    </div>
+
+    <div class="cs-body">
+
+        <!-- Loading state -->
+        <div id="cs-loading" class="cs-loading">
+            <div class="loading"></div>
+            <span>Loading…</span>
+        </div>
+
+        <!-- Error state -->
+        <div id="cs-error" class="toast toast-error" hidden>
+            <span id="cs-error-text"></span>
+        </div>
+
+        <!-- Table -->
+        <div id="cs-table-wrap" hidden>
+            <table class="table table-striped table-hover cs-table">
+                <thead>
+                    <tr>
+                        <th>CLI</th>
+                        <th class="cs-center">Status</th>
+                        <th class="cs-center">Enabled</th>
+                        <th class="cs-center">
+                            Image
+                            <span class="tooltip tooltip-bottom"
+                                data-tooltip="Enable if CLI supports native image generation included in your subscription.">
+                                <i class="cs-info-icon">i</i>
+                            </span>
+                        </th>
+                        <th class="cs-center"></th>
+                    </tr>
+                </thead>
+                <tbody id="cs-tbody">
+                    <!-- Rows are injected by cli-settings-renderer.js -->
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
+    <script src="cli-settings-renderer.js"></script>
+</body>
+
+</html>

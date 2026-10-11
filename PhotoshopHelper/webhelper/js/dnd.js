@@ -217,6 +217,10 @@ export function bindStrip(container, options) {
             onCrossPoolDrop?.(plain);
             return;
         }
+        if (plain && plain.startsWith('res:') && payloadPrefix === 'glb') {
+            onCrossPoolDrop?.(plain);
+            return;
+        }
         if (e.dataTransfer.files?.length) onExternalFiles?.(e.dataTransfer.files);
     };
 

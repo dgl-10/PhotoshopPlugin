@@ -131,7 +131,7 @@ For each supported mode:
 
 - choose the correct provider-level `image_format`;
 - configure `mask_handling` only according to documented mask support;
-- set `max_reference_images` to a verified limit;
+- set `max_reference_images` to the total verified API image limit (the full image budget accepted by the API endpoint, e.g., 3 for Qwen or 4 for Wan 2.7). Never subtract 1 for the source image — the runtime automatically allocates slots for `source_image` and referential masks dynamically;
 - preserve the provider's required source/reference order;
 - use the guide's canonical source and reference placeholders;
 - include a mask only in modes and fields that officially accept it;
@@ -303,15 +303,17 @@ live test.
 Always include a `tags` object on the provider as documented in the guide.
 
 - `tags.provider`: slug of the API host from `PROVIDER_NAME` (for example `replicate`,
-  `fal`, `openai`, `xai`, `bfl`, `civitai`). This is the service that owns the key and endpoint,
+  `fal`, `openai`, `spacexai`, `bfl`, `civitai`). This is the service that owns the key and endpoint,
   not the model brand. Reuse an existing host slug when the same API family is used.
 - `tags.family`: slug of the model line from `MODEL_ID` (for example `seedream`,
   `flux`, `grok`, `gpt-image`, `qwen`, `alibaba`, `p-image`). Reuse an existing family
   slug when the configuration is another host or version of the same line.
 
-Use lowercase slugs with optional hyphens. One family slug per provider object — a
-bundled dropdown (Wan + Qwen in one entry) gets a single bundle slug such as
-`alibaba`. Do not add a favorites flag or any per-user state to `tags`.
+Use lowercase slugs with optional hyphens. `tags.family` can be a single slug string
+or an array of slugs when multiple model lines or sub-families are bundled. For Alibaba
+models, always include `alibaba` as the umbrella slug, alongside the specific line
+(`wan` and/or `qwen`, e.g. `['alibaba', 'wan', 'qwen']` or `['alibaba', 'qwen']`).
+Do not add a favorites flag or any per-user state to `tags`.
 
 ## Output
 

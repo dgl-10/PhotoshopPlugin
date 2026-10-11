@@ -13,6 +13,7 @@ import {
     TASK_COLORS,
     clipboardImageFiles,
     escapeHtml,
+    downloadNameFromUrl,
     filenameFromUrl,
     filesToDataUrls,
     fileToDataUrl,
@@ -24,6 +25,17 @@ import {
     urlToDataUrl,
     writeStorageJson
 } from './util.js';
+
+const DEFAULT_NUM_IMAGES = 1;
+
+function errorMessageHtml(message) {
+    const text = message || 'Unknown error';
+    const escaped = escapeHtml(text);
+    // Provider HTML stays text. A message with breaks or tags is easier to read in a scrolling block.
+    const looksLikeHtml = /<!doctype/i.test(text) || /<\/?[a-z][^>\n]*>/i.test(text);
+    if (text.includes('\n') || looksLikeHtml) return `<pre class="card-error-pre">${escaped}</pre>`;
+    return `<p>${escaped}</p>`;
+}
 
 /** Viewer display options for error/pending generation slots. */
 export const VIEWER_CONFIG = {
@@ -46,17 +58,19 @@ class App {
         this.taskOrder = [];
         this.activeId = null;
         this.globalImages = [];
-        this.aliasState = {};
+        this.sharedState = P.createSharedState(DEFAULT_NUM_IMAGES);
         this.colorIndex = 0;
         this.favs = new Set(readStorageJson(STORAGE_FAVS, []));
+        const savedCombo = readStorageJson(STORAGE_COMBO, {});
         this.combo = {
             query: '',
-            tags: [],
+            tags: { provider: [], family: [], other: [] },
             favOnly: false,
             sort: 'name',
             providerId: '',
-            ...readStorageJson(STORAGE_COMBO, {})
+            ...savedCombo
         };
+        this.combo.tags = this.normalizeComboTags(this.combo.tags);
         this.comboOpen = false;
         this.pollTimer = null;
         this.stripCleanups = [];
@@ -98,6 +112,17 @@ class App {
     provider(task = this.task()) {
         if (!task) return null;
         return this.providers.find((p) => p.id === task.state.selectedProviderId) || null;
+    }
+
+    normalizeComboTags(raw) {
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            return {
+                provider: Array.isArray(raw.provider) ? raw.provider : [],
+                family: Array.isArray(raw.family) ? raw.family : [],
+                other: Array.isArray(raw.other) ? raw.other : []
+            };
+        }
+        return { provider: [], family: [], other: [] };
     }
 
     persistCombo() {
@@ -153,6 +178,43 @@ class App {
             const card = e.target.closest('[data-card]');
             if (card && e.target.closest('.card-stage')) {
                 this.openViewer(parseInt(card.dataset.card, 10));
+            }
+        });
+        this.paneResults.addEventListener('mousedown', (e) => {
+            const card = e.target.closest('[data-card]');
+            const filmItem = e.target.closest('[data-go]');
+            let index = -1;
+            if (card) index = parseInt(card.dataset.card, 10);
+            else if (filmItem) index = parseInt(filmItem.dataset.go, 10);
+            if (index === -1) return;
+            const task = this.task();
+            const res = task?.results?.[index];
+            if (res) this.ensureResultData(res).catch(() => {});
+        });
+        this.paneResults.addEventListener('dragstart', (e) => {
+            const card = e.target.closest('[data-card]');
+            const filmItem = e.target.closest('[data-go]');
+            let index = -1;
+            if (card && !e.target.closest('button, a, input, select, textarea')) {
+                index = parseInt(card.dataset.card, 10);
+            } else if (filmItem) {
+                index = parseInt(filmItem.dataset.go, 10);
+            }
+            if (index === -1) return;
+            const task = this.task();
+            const res = task?.results?.[index];
+            if (!res || !res.image) return;
+
+            e.dataTransfer.setData('text/plain', `res:${task.id}:${index}`);
+            if (res._dataUrl) {
+                e.dataTransfer.setData('wh/ref-image', res._dataUrl);
+            }
+            e.dataTransfer.effectAllowed = 'copy';
+
+            if (this.env.isLocal && e.altKey && res._dataUrl) {
+                if (tryElectronDrag(e, res._dataUrl)) {
+                    e.preventDefault();
+                }
             }
         });
         document.addEventListener('keydown', (e) => this.onResultsKey(e));
@@ -267,6 +329,11 @@ class App {
     mountTask(id, data, activate = true) {
         const color = TASK_COLORS[this.colorIndex % TASK_COLORS.length];
         this.colorIndex += 1;
+        const isImg2Img = Boolean(data?.sourceImage);
+        // Any I2I task starts at Match Input and one image; T2I tasks inherit the
+        // last T2I aspect ratio and image count from the shared state.
+        const initialAspectRatio = isImg2Img ? '' : this.sharedState.t2i.aspect_ratio;
+        const initialNumImages = isImg2Img ? DEFAULT_NUM_IMAGES : this.sharedState.t2i.num_images;
         const task = {
             id,
             data,
@@ -274,7 +341,15 @@ class App {
             createdAt: new Date(),
             state: {
                 selectedProviderId: null,
-                formState: { prompt: '', num_images: 1, aspect_ratio: '' },
+                // Fixed at creation: adding a reference later does not change it.
+                // Only 't2i' tasks write aspect ratio / image count to the shared state.
+                origin: isImg2Img ? 'i2i' : 't2i',
+                formState: {
+                    prompt: '',
+                    num_images: initialNumImages,
+                    aspect_ratio: initialAspectRatio
+                },
+                aspectRatioIntent: initialAspectRatio,
                 references: [],
                 useMask: true,
                 viewMode: 'overlay'
@@ -343,6 +418,17 @@ class App {
         return task._sourceDataUrl;
     }
 
+    async ensureResultData(res) {
+        if (!res?.image) return null;
+        if (res._dataUrl) return res._dataUrl;
+        if (typeof res.image === 'string' && res.image.startsWith('data:')) {
+            res._dataUrl = res.image;
+            return res._dataUrl;
+        }
+        res._dataUrl = await urlToDataUrl(res.image);
+        return res._dataUrl;
+    }
+
     async handleStageDrop(e) {
         const plain = e.dataTransfer.getData('text/plain');
         const refImage = e.dataTransfer.getData('wh/ref-image');
@@ -370,10 +456,43 @@ class App {
             }
             return;
         }
+        if (plain && plain.startsWith('res:')) {
+            const parts = plain.slice(4).split(':');
+            const taskId = parts[0];
+            const resIdx = parseInt(parts[1], 10);
+            const task = this.tasks.get(taskId) || this.task();
+            const res = task?.results?.[resIdx];
+            if (res?.image) {
+                try {
+                    const data = await this.ensureResultData(res);
+                    if (data) {
+                        this.globalImages.push(data);
+                        this.renderStage();
+                        this.bindDnd();
+                    }
+                } catch (err) {
+                    this.toast('Could not add result to Stage');
+                }
+            }
+            return;
+        }
         if (refImage) {
             this.globalImages.push(refImage);
             this.renderStage();
             this.bindDnd();
+            return;
+        }
+        if (plain && (plain.startsWith('data:image/') || plain.startsWith('http://') || plain.startsWith('https://') || plain.startsWith('/api/'))) {
+            try {
+                const data = plain.startsWith('data:') ? plain : await urlToDataUrl(plain);
+                if (data) {
+                    this.globalImages.push(data);
+                    this.renderStage();
+                    this.bindDnd();
+                }
+            } catch (err) {
+                // fall through
+            }
             return;
         }
         if (e.dataTransfer.files?.length) {
@@ -455,14 +574,28 @@ class App {
         const mode = task ? P.effectiveGenerationMode(task) : 't2i';
         let list = this.providers.slice();
         const q = String(this.combo.query || '').trim().toLowerCase();
-        const tags = this.combo.tags || [];
+        const tagsState = this.normalizeComboTags(this.combo.tags);
+
         if (this.combo.favOnly) list = list.filter((p) => this.favs.has(p.id));
         if (q) {
             list = list.filter((p) => (`${p.name} ${p.id} ${P.providerTags(p).join(' ')}`).toLowerCase().includes(q));
         }
-        if (tags.length) {
-            list = list.filter((p) => tags.some((t) => P.providerTags(p).includes(t)));
+
+        const selProviders = tagsState.provider;
+        const selFamilies = tagsState.family;
+        const selOther = tagsState.other;
+
+        if (selProviders.length || selFamilies.length || selOther.length) {
+            list = list.filter((p) => {
+                const cat = P.providerCategorizedTags(p);
+                // OR within each group; AND across active groups
+                const matchProvider = selProviders.length === 0 || selProviders.some((t) => cat.provider.includes(t));
+                const matchFamily = selFamilies.length === 0 || selFamilies.some((t) => cat.family.includes(t));
+                const matchOther = selOther.length === 0 || selOther.some((t) => cat.other.includes(t));
+                return matchProvider && matchFamily && matchOther;
+            });
         }
+
         const favRank = (p) => (this.favs.has(p.id) ? 0 : 1);
         if (this.combo.sort === 'tag') {
             list.sort((a, b) => favRank(a) - favRank(b)
@@ -478,12 +611,29 @@ class App {
         const selected = provider;
         const label = selected ? selected.name : 'Select a provider…';
         const starred = selected && this.favs.has(selected.id);
-        const tags = P.allProviderTags(this.providers);
+        const catTags = P.allCategorizedProviderTags(this.providers);
+        const tagsState = this.normalizeComboTags(this.combo.tags);
         const rows = this.filteredProviders(task);
-        const tagChips = tags.map((t) => {
-            const on = (this.combo.tags || []).includes(t);
-            return `<button type="button" class="tag ${on ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`;
-        }).join('');
+
+        const renderTagRow = (groupKey, groupLabel, list) => {
+            if (!list || list.length === 0) return '';
+            const selectedList = tagsState[groupKey] || [];
+            const chips = list.map((t) => {
+                const on = selectedList.includes(t);
+                return `<button type="button" class="tag ${on ? 'on' : ''}" data-group="${groupKey}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`;
+            }).join('');
+            return `<div class="combo-tag-row">
+                <span class="combo-tag-label">${escapeHtml(groupLabel)}</span>
+                <div class="combo-tag-chips">${chips}</div>
+            </div>`;
+        };
+
+        const tagRowsHtml = [
+            renderTagRow('provider', 'Host', catTags.provider),
+            renderTagRow('family', 'Family', catTags.family),
+            renderTagRow('other', 'Other', catTags.other)
+        ].filter(Boolean).join('');
+
         const items = rows.map(({ p, available }) => {
             const isOn = task.state.selectedProviderId === p.id;
             const fav = this.favs.has(p.id);
@@ -513,19 +663,26 @@ class App {
                             <option value="tag" ${this.combo.sort === 'tag' ? 'selected' : ''}>Tag</option>
                         </select>
                     </div>
-                    <div class="combo-tags">${tagChips}</div>
+                    ${tagRowsHtml ? `<div class="combo-tags">${tagRowsHtml}</div>` : ''}
                     <ul class="combo-list">${items}</ul>
                 </div>
             </div>
         `;
     }
 
-    renderDynamicParams(task, provider) {
+    renderDynamicParams(task, provider, position = 'before_prompt') {
         if (!provider) return '';
         let html = '';
         for (const p of provider.parameters || []) {
             if (p.alias === 'prompt' || p.alias === 'num_images') continue;
-            const val = P.resolveParamDefault(p, this.aliasState, task.state.formState);
+            // PRIVATE RUNTIME CONTRACT: `ui_position` is emitted only by the in-memory
+            // CLI provider so its prompt-preservation toggle sits beside the prompt. It is
+            // intentionally not part of the public disk-backed provider schema.
+            const parameterPosition = p.ui_position === 'after_prompt'
+                ? 'after_prompt'
+                : 'before_prompt';
+            if (parameterPosition !== position) continue;
+            const val = P.resolveParamDefault(p, this.sharedState, task.state.formState, provider.id);
             task.state.formState[P.paramStateKey(p)] = val;
             if (p.alias === 'negative_prompt') continue;
             const attrs = `data-param-name="${escapeHtml(p.name)}" data-alias="${escapeHtml(p.alias || '')}"`;
@@ -586,10 +743,11 @@ class App {
         }
 
         const provider = this.provider(task);
-        P.seedForceSeparate(task, this.aliasState);
+        P.seedForceSeparate(task, this.sharedState);
         const paramsHtml = this.renderDynamicParams(task, provider);
+        const afterPromptParamsHtml = this.renderDynamicParams(task, provider, 'after_prompt');
         const mode = P.effectiveGenerationMode(task);
-        const ar = P.resolveAspectRatio(task, provider, this.aliasState);
+        const ar = P.resolveAspectRatio(task, provider);
         const mask = P.maskCheckboxState(provider, task);
         const maxRefs = P.effectiveMaxRefs(provider, task);
         const refs = task.state.references || [];
@@ -617,7 +775,7 @@ class App {
             { id: 'note-ref-limit', t: `Too many references (${refs.length}/${maxRefs}). Server will only receive the first ${maxRefs}.`, error: false, hide: !overRefs },
             { id: 'note-mask', t: 'Provider requires a mask.', error: true, hide: !P.isMaskMissing(provider, task) },
             { id: 'note-mode', t: `Provider does not support ${mode.toUpperCase()} generation.`, error: true, hide: !modeUnsupported },
-            { id: 'note-ar', t: 'Aspect ratio is required for Text-to-Image generation.', error: true, hide: !P.isAspectRatioMissing(task) }
+            { id: 'note-ar', t: 'Aspect ratio is required for Text-to-Image generation.', error: true, hide: !P.isAspectRatioMissing(task, provider) }
         ];
 
         const forceSingle = provider ? provider.single_image_per_request === true : false;
@@ -663,6 +821,7 @@ class App {
                     <label>Prompt</label>
                     <textarea id="prompt-input" rows="3" placeholder="Describe what you want…">${escapeHtml(task.state.formState.prompt || '')}</textarea>
                 </div>
+                <div class="params ${afterPromptParamsHtml ? '' : 'is-empty'}" id="after-prompt-params">${afterPromptParamsHtml}</div>
                 <div class="field" id="neg-wrap" style="display:${provider?.supports_negative_prompt ? 'block' : 'none'}">
                     <label>Negative prompt</label>
                     <textarea id="neg-prompt-input" rows="2" placeholder="Avoid…">${escapeHtml(task.state.formState.negative_prompt || '')}</textarea>
@@ -674,7 +833,7 @@ class App {
                 <div class="field">
                     <!-- <label>Aspect</label> -->
                     <select id="aspect-ratio-select" ${ar.allowed.length === 0 ? 'disabled' : ''}>
-                        ${ar.isT2I ? '' : `<option value="" ${ar.effective === '' ? 'selected' : ''}>Match Input</option>`}
+                        ${ar.allowEmpty ? `<option value="" ${ar.effective === '' ? 'selected' : ''}>${ar.isT2I ? 'Auto' : 'Match Input'}</option>` : ''}
                         ${ar.allowed.map((r) => `<option value="${escapeHtml(r)}" ${ar.effective === r ? 'selected' : ''}>${escapeHtml(r)}</option>`).join('')}
                     </select>
                 </div>
@@ -720,7 +879,7 @@ class App {
             !modeUnsupported,
             `Provider does not support ${mode.toUpperCase()} generation.`
         );
-        setNote('note-ar', !P.isAspectRatioMissing(task));
+        setNote('note-ar', !P.isAspectRatioMissing(task, provider));
 
         const gen = this.paneSource.querySelector('#btn-generate');
         if (gen) gen.disabled = P.isGenerateBlocked(provider, task);
@@ -816,6 +975,7 @@ class App {
                 if (n < 1) n = 1;
                 if (n > 10) n = 10;
                 task.state.formState.num_images = n;
+                if (task.state.origin === 't2i') this.sharedState.t2i.num_images = n;
                 this.syncGenerateCluster(task);
             };
         }
@@ -823,7 +983,8 @@ class App {
         if (arSel) {
             arSel.onchange = () => {
                 task.state.formState.aspect_ratio = arSel.value;
-                this.aliasState.aspect_ratio = arSel.value;
+                task.state.aspectRatioIntent = arSel.value;
+                if (task.state.origin === 't2i') this.sharedState.t2i.aspect_ratio = arSel.value;
                 this.syncSourceWarnings(task);
             };
         }
@@ -831,7 +992,7 @@ class App {
         if (sep) {
             sep.onchange = () => {
                 task.state.formState.force_separate_requests = sep.checked;
-                this.aliasState.force_separate_requests = sep.checked;
+                this.sharedState.force_separate_requests = sep.checked;
             };
         }
         const gen = this.paneSource.querySelector('#btn-generate');
@@ -854,7 +1015,7 @@ class App {
             if (!t.dataset?.paramName) return;
             const alias = t.dataset.alias;
             let val = t.type === 'checkbox' ? t.checked : (t.type === 'number' || t.type === 'range' ? parseFloat(t.value) : t.value);
-            P.applyParamValue(task, this.aliasState, t.dataset.paramName, alias || '', val);
+            P.applyParamValue(task, this.sharedState, task.state.selectedProviderId, t.dataset.paramName, alias || '', val);
             if (t.type === 'range') {
                 const lab = this.paneSource.querySelector(`[data-val="${t.dataset.paramName}"]`);
                 if (lab) lab.textContent = val;
@@ -970,6 +1131,23 @@ class App {
                     this.bindDnd();
                     return;
                 }
+                if (internal && internal.startsWith('res:')) {
+                    const parts = internal.slice(4).split(':');
+                    const taskId = parts[0];
+                    const resIdx = parseInt(parts[1], 10);
+                    const t = this.tasks.get(taskId) || this.task();
+                    const res = t?.results?.[resIdx];
+                    if (res?.image) {
+                        this.ensureResultData(res).then((data) => {
+                            if (data) {
+                                task.state.references.push(data);
+                                this.renderSource();
+                                this.bindDnd();
+                            }
+                        }).catch(() => {});
+                    }
+                    return;
+                }
                 if (e.dataTransfer.files?.length) this.addRefsFromFiles(e.dataTransfer.files);
             });
         }
@@ -1023,11 +1201,14 @@ class App {
         combo.querySelectorAll('[data-tag]').forEach((chip) => {
             chip.onclick = (e) => {
                 e.stopPropagation();
+                const group = chip.dataset.group || 'other';
                 const t = chip.dataset.tag;
-                const set = new Set(this.combo.tags || []);
+                const tagsState = this.normalizeComboTags(this.combo.tags);
+                const set = new Set(tagsState[group] || []);
                 if (set.has(t)) set.delete(t);
                 else set.add(t);
-                this.combo.tags = [...set];
+                tagsState[group] = [...set];
+                this.combo.tags = tagsState;
                 this.persistCombo();
                 this.comboOpen = true;
                 this.renderSource();
@@ -1246,6 +1427,16 @@ class App {
         return `stage-bg-${bg} stage-pos-${pos}`;
     }
 
+    generatingProviderLabel(res) {
+        if (res?.nice_name) return String(res.nice_name);
+        const provider = this.providers.find((p) => p.id === res?.providerId);
+        const context = { ...(res?.params || {}) };
+        if (res?.num_images !== undefined) context.num_images = res.num_images;
+        if (res?.aspect_ratio !== undefined) context.aspect_ratio = res.aspect_ratio;
+        const nice = provider ? P.resolveNiceName(provider, context) : '';
+        return nice || res?.providerId || '';
+    }
+
     resultTitle(res) {
         const providerLabel = res.nice_name || res.providerId || 'Unknown';
         const aspect = res.aspect_ratio || (res.params ? 'Match Input' : '');
@@ -1302,7 +1493,11 @@ class App {
 
     resultCard(res, index, active, isLocal) {
         if (res.status === 'generating') {
-            return `<article class="card ${active ? 'is-active' : ''}" data-card="${index}"><div class="card-stage ${this.stageBgClass(index)}"><div class="spinner"></div></div><div class="card-meta"><div class="info">Generating…</div></div></article>`;
+            const providerLabel = this.generatingProviderLabel(res);
+            const safeLabel = escapeHtml(providerLabel);
+            const info = providerLabel ? safeLabel : 'Generating…';
+            const status = providerLabel ? '<div class="card-actions"><span class="gen-status">Generating…</span></div>' : '';
+            return `<article class="card ${active ? 'is-active' : ''}" data-card="${index}"><div class="card-stage ${this.stageBgClass(index)}"><div class="spinner"></div></div><div class="card-meta"><div class="info" title="${safeLabel}">${info}</div>${status}</div></article>`;
         }
         this.ensureResultDimensions(res);
         const title = this.resultTitle(res);
@@ -1311,7 +1506,7 @@ class App {
             return `<article class="card ${active ? 'is-active' : ''}" data-card="${index}">
                 <div class="card-error">
                     <strong>Error</strong>
-                    <p>${escapeHtml(res.error || 'Unknown error')}</p>
+                    ${errorMessageHtml(res.error)}
                     ${res.fallback_url ? `<p><a href="${escapeHtml(res.fallback_url)}" target="_blank" rel="noopener">Download manually</a></p>` : ''}
                     ${paramsBlock ? `<button type="button" class="info params-hit" data-params-toggle="${index}">${escapeHtml(title)}</button>${paramsBlock}` : ''}
                     <div class="card-error-bar">
@@ -1459,7 +1654,7 @@ class App {
                         this.renderStage();
                         this.bindDnd();
                     }
-                } else if (token.startsWith('src:')) {
+                } else if (token.startsWith('src:') || token.startsWith('res:')) {
                     this.handleStageDrop({ dataTransfer: { getData: (k) => (k === 'text/plain' ? token : ''), files: null } });
                 } else if (token.startsWith('glb:')) {
                     const t = this.task();
@@ -1484,7 +1679,7 @@ class App {
             this.toast(`Provider does not support ${mode.toUpperCase()} generation.`);
             return;
         }
-        if (P.isAspectRatioMissing(task)) {
+        if (P.isAspectRatioMissing(task, provider)) {
             this.toast('Aspect ratio is required for Text-to-Image generation.');
             return;
         }
@@ -1593,7 +1788,10 @@ class App {
         if (result.num_images !== undefined) params.num_images = result.num_images;
         if (result.aspect_ratio !== undefined) params.aspect_ratio = result.aspect_ratio;
         Object.assign(task.state.formState, params);
-        if (params.aspect_ratio !== undefined) this.aliasState.aspect_ratio = params.aspect_ratio;
+        if (params.aspect_ratio !== undefined) {
+            task.state.aspectRatioIntent = params.aspect_ratio;
+            if (task.state.origin === 't2i') this.sharedState.t2i.aspect_ratio = params.aspect_ratio;
+        }
         this.renderSource();
         this.bindDnd();
         this.paneSource.querySelector('#prompt-input')?.focus();
@@ -1701,6 +1899,27 @@ class App {
                 this.setViewerScale('100');
             }
         };
+
+        this.viewerImg.addEventListener('dragstart', (e) => {
+            if (this.viewerState.scale === '100') {
+                e.preventDefault();
+                return;
+            }
+            const task = this.task();
+            const index = this.viewerState.index;
+            const res = task?.results?.[index];
+            if (!res || !res.image) return;
+            e.dataTransfer.setData('text/plain', `res:${task.id}:${index}`);
+            if (res._dataUrl) {
+                e.dataTransfer.setData('wh/ref-image', res._dataUrl);
+            }
+            e.dataTransfer.effectAllowed = 'copy';
+            if (this.env.isLocal && e.altKey && res._dataUrl) {
+                if (tryElectronDrag(e, res._dataUrl)) {
+                    e.preventDefault();
+                }
+            }
+        });
 
         this.viewerBody.onmousedown = (e) => {
             if (this.viewerState.scale !== '100') return;
@@ -1857,7 +2076,7 @@ class App {
         const isLocal = this.env.isLocal;
         this.viewerBtnCopy.style.display = isLocal && res.image ? '' : 'none';
         this.viewerBtnDownload.href = res.image || '#';
-        this.viewerBtnDownload.download = filenameFromUrl(res.image);
+        this.viewerBtnDownload.download = downloadNameFromUrl(res.image);
 
         this.viewerBtnFit.classList.toggle('is-active', this.viewerState.scale === 'fit');
         this.viewerBtn100.classList.toggle('is-active', this.viewerState.scale === '100');

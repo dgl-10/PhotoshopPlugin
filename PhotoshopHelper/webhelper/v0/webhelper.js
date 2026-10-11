@@ -65,6 +65,15 @@ function getPreviewUrl(url) {
     return url.replace('/api/webhelper/file/', '/api/webhelper/filePreview/');
 }
 
+function filenameFromUrl(url) {
+    if (!url) return '';
+    const marker = '/api/webhelper/file/';
+    const text = String(url);
+    const index = text.indexOf(marker);
+    const relative = index === -1 ? text.split('/').pop() : text.slice(index + marker.length);
+    return relative.split('?')[0].split('#')[0];
+}
+
 
 class WebHelperApp {
     constructor() {
@@ -1828,9 +1837,9 @@ class WhResultTab extends HTMLElement {
     async handleCopy() {
         const btn = this.querySelector('#btn-copy');
         try {
-            // Extract filename from the URL (e.g., "/api/webhelper/file/task_..._res_0.png")
+            // Keep the area prefix, e.g. "generated/generated_image_....png".
             const imageUrl = this.resultData.image;
-            const filename = imageUrl.split('/').pop();
+            const filename = filenameFromUrl(imageUrl);
 
             const res = await fetch('/api/webhelper/file/copy2clipboard', {
                 method: 'POST',
@@ -1869,8 +1878,8 @@ class WhResultTab extends HTMLElement {
         const originalText = btn.innerHTML;
         btn.disabled = true;
         try {
-            // Extract filename from the image URL (e.g. /api/webhelper/file/task_..._res_0.png)
-            const filename = this.resultData.image.split('/').pop();
+            // Keep the area prefix, e.g. "generated/generated_image_....png".
+            const filename = filenameFromUrl(this.resultData.image);
             const sourceTaskId = this.taskControl ? this.taskControl.taskId : null;
 
             const res = await fetch('/api/webhelper/task/from-file', {

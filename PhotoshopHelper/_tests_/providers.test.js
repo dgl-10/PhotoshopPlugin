@@ -40,12 +40,23 @@ function assertProviderTags(provider, source) {
         `${source} ${provider.id}: tags must not be null`);
     assert.equal(typeof provider.tags.provider, 'string',
         `${source} ${provider.id}: tags.provider must be a string`);
-    assert.equal(typeof provider.tags.family, 'string',
-        `${source} ${provider.id}: tags.family must be a string`);
     assert.match(provider.tags.provider, SLUG_PATTERN,
         `${source} ${provider.id}: tags.provider must be a lowercase slug`);
-    assert.match(provider.tags.family, SLUG_PATTERN,
-        `${source} ${provider.id}: tags.family must be a lowercase slug`);
+    if (Array.isArray(provider.tags.family)) {
+        assert.ok(provider.tags.family.length > 0,
+            `${source} ${provider.id}: tags.family array must not be empty`);
+        for (const family of provider.tags.family) {
+            assert.equal(typeof family, 'string',
+                `${source} ${provider.id}: tags.family entries must be strings`);
+            assert.match(family, SLUG_PATTERN,
+                `${source} ${provider.id}: tags.family entry "${family}" must be a lowercase slug`);
+        }
+    } else {
+        assert.equal(typeof provider.tags.family, 'string',
+            `${source} ${provider.id}: tags.family must be a string or string array`);
+        assert.match(provider.tags.family, SLUG_PATTERN,
+            `${source} ${provider.id}: tags.family must be a lowercase slug`);
+    }
 }
 
 test('every shipped template provider has grouping tags', () => {
@@ -89,7 +100,8 @@ test('template and providers.user.json share the same tags for matching ids', ()
 });
 
 test('GET /api/webhelper/providers sanitization does not strip tags', () => {
-    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    // The sanitization lives in providers-discovery.js, shared by the endpoint and the MCP tools.
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', 'providers-discovery.js'), 'utf8');
 
     assert.doesNotMatch(mainSource, /delete\s+sanitized\.tags\b/);
     for (const field of SERVER_STRIPPED_FIELDS) {

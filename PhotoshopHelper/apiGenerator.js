@@ -5,6 +5,8 @@ const crypto = require('node:crypto');
 const { waitForApiResult, downloadAndSaveImages, makeRequest } = require('./apiGeneratorResultsGetter');
 const { loadProvidersCatalog } = require('./providers-catalog');
 const { resolveTemplate } = require('./templateEngine');
+const { resolveWebhelperFile } = require('./webhelper-storage');
+const { createFilePathReferenceSaver } = require('./agent/cli-image-provider');
 
 // The current generator always saves image results and has request semantics only
 // for text-to-image and image-to-image. Other modality names are intentionally not
@@ -26,7 +28,7 @@ function getProvidersConfig() {
  * same machine without copying or encoding them first.
  *
  * @param {string|null|undefined} imagePath - WebHelper URL, absolute path, or temp-relative filename.
- * @param {string} tempDir - Existing WebHelper task and output directory.
+ * @param {string} tempDir - Existing WebHelper temp root.
  * @returns {string|null} Resolved local file path, or null when no image was provided.
  */
 function resolveImageFilePath(imagePath, tempDir) {
@@ -38,18 +40,16 @@ function resolveImageFilePath(imagePath, tempDir) {
         throw new TypeError('Task image paths must be strings.');
     }
 
-    const webHelperPrefix = '/api/webhelper/file/';
-    if (imagePath.startsWith(webHelperPrefix)) {
-        return path.join(tempDir, imagePath.slice(webHelperPrefix.length));
-    }
-
-    if (path.isAbsolute(imagePath)) {
+    // A POSIX absolute check also matches the `/api/webhelper/file/` URL prefix.
+    if (path.isAbsolute(imagePath) && !imagePath.startsWith('/api/webhelper/file/')) {
         return path.normalize(imagePath);
     }
 
-    // Preserve the historic behavior for any internal caller that supplies a
-    // filename relative to the WebHelper temp directory.
-    return path.join(tempDir, imagePath);
+    const resolved = resolveWebhelperFile(tempDir, imagePath);
+    if (!resolved) {
+        throw new Error(`Image path is not inside the WebHelper file store: ${imagePath}`);
+    }
+    return resolved;
 }
 
 // Convert local file to requested format
@@ -57,6 +57,14 @@ function formatImage(filePath, format) {
     if (!filePath) return null;
     if (!fs.existsSync(filePath)) {
         throw new Error(`Image file not found: ${filePath}`);
+    }
+
+    // PRIVATE RUNTIME CONTRACT: Only the in-memory CLI image provider may request
+    // file paths. This is intentionally not part of Providers_Configuration_Guide.md
+    // and must not be treated as a supported providers.user.json image format.
+    // Existing public HTTP providers continue through the established encodings.
+    if (format === 'file_path') {
+        return path.resolve(filePath);
     }
 
     const buffer = fs.readFileSync(filePath);
@@ -135,9 +143,11 @@ function assertProviderSupportsGenerationMode(provider, generationMode) {
  * @param {number} index - Zero-based position used in validation messages.
  * @param {string} format - Provider image format.
  * @param {(imagePath: string) => string|null} resolveFilePath - Task path resolver.
- * @returns {string} Formatted image content.
+ * @param {((base64: string, mime: string, index: number) => string)|null} saveDataUriAsFile
+ *     Optional saver used by providers that consume local file paths.
+ * @returns {string} Formatted image content or an absolute local path.
  */
-function formatReferenceImage(referenceInput, index, format, resolveFilePath) {
+function formatReferenceImage(referenceInput, index, format, resolveFilePath, saveDataUriAsFile = null) {
     if (typeof referenceInput !== 'string' || referenceInput.length === 0) {
         throw new TypeError(`Reference image ${index + 1} must be a non-empty string.`);
     }
@@ -156,6 +166,15 @@ function formatReferenceImage(referenceInput, index, format, resolveFilePath) {
         }
 
         const mime = mimeMatch[1];
+        // PRIVATE RUNTIME CONTRACT: Browser Data URIs are persisted only for the
+        // in-memory CLI provider. This value is intentionally absent from the public
+        // provider-authoring guide because user-authored providers are HTTP-based.
+        if (format === 'file_path') {
+            if (typeof saveDataUriAsFile !== 'function') {
+                throw new Error('A file-path reference saver was not configured.');
+            }
+            return saveDataUriAsFile(base64, mime, index);
+        }
         if (format === 'base64_raw') return base64;
         if (format === 'data_uri' || format === 'url') {
             return `data:${mime};base64,${base64}`;
@@ -302,18 +321,20 @@ function normalizeGenerationImages(
  * @param {string|null} sourceImage - Normalized formatted source image.
  * @param {string|null} maskImage - Normalized formatted active mask image.
  * @param {string[]} referenceImages - Normalized remaining references.
+ * @param {boolean} [supportsAutoInT2i=false] - Whether T2I accepts an automatic ratio.
  * @throws {Error} When a text-to-image request has no non-empty string ratio.
  */
 function requireTextToImageAspectRatio(
     aspectRatio,
     sourceImage,
     maskImage,
-    referenceImages
+    referenceImages,
+    supportsAutoInT2i = false
 ) {
     const isTextToImage = !sourceImage && !maskImage && referenceImages.length === 0;
     const hasAspectRatio = typeof aspectRatio === 'string' && aspectRatio.trim() !== '';
 
-    if (isTextToImage && !hasAspectRatio) {
+    if (!supportsAutoInT2i && isTextToImage && !hasAspectRatio) {
         throw new Error('"aspect_ratio" is required for text-to-image generation.');
     }
 }
@@ -373,6 +394,79 @@ function computeFileSuffix(provider, context = {}, isTextToImage = false) {
 
     const modeSuffix = isTextToImage ? 't2i' : 'i2i';
     return baseSuffix ? `${baseSuffix}_${modeSuffix}` : modeSuffix;
+}
+
+function scanJsonValueEnd(text, start) {
+    const opening = text[start];
+    if (opening !== '{' && opening !== '[') return -1;
+    const stack = [opening];
+    let inString = false;
+    let escaped = false;
+    for (let i = start + 1; i < text.length; i++) {
+        const ch = text[i];
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') {
+            inString = true;
+            continue;
+        }
+        if (ch === '{' || ch === '[') {
+            stack.push(ch);
+            continue;
+        }
+        if (ch === '}' || ch === ']') {
+            const expected = stack[stack.length - 1] === '{' ? '}' : ']';
+            if (ch !== expected) return -1;
+            stack.pop();
+            if (stack.length === 0) return i + 1;
+        }
+    }
+    return -1;
+}
+
+function prettyPrintJsonRegions(text) {
+    let out = '';
+    let cursor = 0;
+    while (cursor < text.length) {
+        const objectAt = text.indexOf('{', cursor);
+        const arrayAt = text.indexOf('[', cursor);
+        let start = objectAt;
+        if (start === -1 || (arrayAt !== -1 && arrayAt < start)) start = arrayAt;
+        if (start === -1) {
+            out += text.slice(cursor);
+            break;
+        }
+        const end = scanJsonValueEnd(text, start);
+        if (end === -1) {
+            out += text.slice(cursor, start + 1);
+            cursor = start + 1;
+            continue;
+        }
+        const raw = text.slice(start, end);
+        let value;
+        try {
+            value = JSON.parse(raw);
+        } catch {
+            out += text.slice(cursor, start + 1);
+            cursor = start + 1;
+            continue;
+        }
+        const expand = raw.startsWith('{') || raw.length >= 80;
+        out += text.slice(cursor, start);
+        out += expand ? JSON.stringify(value, null, 2) : raw;
+        cursor = end;
+    }
+    return out;
+}
+
+function formatGenerationErrorMessage(err) {
+    const raw = err && err.message ? err.message : String(err);
+    const withoutImages = raw.replace(/data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+/g, '[BASE64_IMAGE_REMOVED]');
+    return prettyPrintJsonRegions(withoutImages);
 }
 
 /**
@@ -441,8 +535,19 @@ async function generate(taskOrId, providerIdOrObject, num_images, aspect_ratio, 
         throw new TypeError('referenceImages must be an array when provided.');
     }
 
+    // The file-path branch is private to the runtime-created CLI provider and is
+    // intentionally not a public extension point for disk-backed provider configs.
+    const saveDataUriAsFile = provider.image_format === 'file_path'
+        ? createFilePathReferenceSaver(tempDir)
+        : null;
     let refImagesFormatted = rawReferenceImages.map((refInput, index) => (
-        formatReferenceImage(refInput, index, provider.image_format, resolveFilePath)
+        formatReferenceImage(
+            refInput,
+            index,
+            provider.image_format,
+            resolveFilePath,
+            saveDataUriAsFile
+        )
     ));
 
     // Establish source/mask/reference roles before preprocessors inspect or resize
@@ -486,7 +591,11 @@ async function generate(taskOrId, providerIdOrObject, num_images, aspect_ratio, 
         aspect_ratio,
         sourceImageFormatted,
         maskImageFormatted,
-        refImagesFormatted
+        refImagesFormatted,
+        // Fully functional and tested, but intentionally undocumented and omitted from public
+        // provider schemas by maintainer decision. While various providers support auto aspect ratio,
+        // exposing Auto in T2I is considered unhelpful for the project's workflows.
+        provider.supports_aspect_ratio_auto_in_t2i === true
     );
 
     if (provider.preprocessor) {
@@ -619,24 +728,41 @@ async function generate(taskOrId, providerIdOrObject, num_images, aspect_ratio, 
             ).then(results => {
                 for (const result of results) {
                     if (result.status === 'done' && result.image) {
-                        const fileName = result.image.replace('/api/webhelper/file/', '');
-                        const ext = path.extname(fileName);
-                        const baseName = path.basename(fileName, ext);
+                        const imagePath = resolveWebhelperFile(tempDir, result.image);
+                        let isResultsAreIdentical = apiResult === result.final_response;
+                        if (!isResultsAreIdentical) {
+                            try {
+                                isResultsAreIdentical = JSON.stringify(apiResult) === JSON.stringify(result.final_response);
+                            } catch {
+                                isResultsAreIdentical = false;
+                            }
+                        }
 
                         const logData = {
                             provider: providerId,
                             //model: requestContext.model || undefined,
                             url: currentUrl,
                             request: currentBody,
-                            response_initial: apiResult,
-                            response_final: result.final_response
+                            ...(isResultsAreIdentical
+                                ? { response: apiResult }
+                                : {
+                                    response_initial: apiResult,
+                                    response_final: result.final_response
+                                })
                         };
 
-                        const jsonFilePath = path.join(tempDir, `${baseName}.json`);
-                        try {
-                            fs.writeFileSync(jsonFilePath, JSON.stringify(logData, null, 2), 'utf8');
-                        } catch (ioErr) {
-                            console.error('[RequestBuilder] Failed to write JSON log:', ioErr);
+                        if (!imagePath) {
+                            console.error('[RequestBuilder] Failed to locate generated image for JSON log:', result.image);
+                        } else {
+                            const jsonFilePath = path.join(
+                                path.dirname(imagePath),
+                                `${path.basename(imagePath, path.extname(imagePath))}.json`
+                            );
+                            try {
+                                fs.writeFileSync(jsonFilePath, JSON.stringify(logData, null, 2), 'utf8');
+                            } catch (ioErr) {
+                                console.error('[RequestBuilder] Failed to write JSON log:', ioErr);
+                            }
                         }
                     }
                     // Remove final_response so it doesn't get sent back to the frontend
@@ -659,14 +785,11 @@ async function generate(taskOrId, providerIdOrObject, num_images, aspect_ratio, 
             downloadPromises.push(downloadPromise);
         } catch (err) {
             console.error(`[RequestBuilder] Request ${i + 1}/${requestCount} failed:`, err);
-            
-            let errorMessage = err.message || String(err);
-            // Clean the error from huge base64 chunks and long unreadable strings
-            errorMessage = errorMessage.replace(/data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+/g, '[BASE64_IMAGE_REMOVED]');
-            errorMessage = errorMessage.replace(/[^\s]{500,}/g, match => match.substring(0, 40) + '...[TRUNCATED]');
+
+            const errorMessage = formatGenerationErrorMessage(err);
             const hashInput = err.fallback_url ? `${errorMessage}|${err.fallback_url}` : errorMessage;
             const errorHash = crypto.createHash('md5').update(hashInput).digest('hex');
-            
+
             const count = supportsMultiple ? (num_images || 1) : 1;
             for (let j = 0; j < count; j++) {
                 finalResults.push({
@@ -707,6 +830,7 @@ module.exports = {
     // If those tests are removed, remove this entire test-only export block as well and
     // keep the helpers module-private.
     resolveImageFilePath,
+    formatReferenceImage,
     resolveGenerationTask,
     normalizeGenerationImages,
     requireTextToImageAspectRatio,

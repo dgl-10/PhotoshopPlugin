@@ -449,6 +449,51 @@
             </div>
         </div>
 
+        <!--
+            The FromPS / ToPS AI line: a fixed-height status line, shown and hidden by the
+            "FromPS / ToPS AI..." panel menu item (see invokeMenu in index.js). Hidden by
+            default so the panel looks exactly as it always has. modules/agent-line.js draws
+            it and owns the channel to PhotoshopHelper; long text is never wrapped or
+            resized, only ellipsized — everything long lives in the AI Assist window that
+            Helper's own window button and link open. See ui02.00 in the PreRelease docs.
+        -->
+        <div id="agent-line" class="agent-line" style="display: none">
+            <span id="agent-line-conn" class="agent-line-conn agent-line-conn-yellow" title="Connection to Photoshop">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M6 10L10 6" fill="none" stroke="currentColor" />
+                    <path d="M8.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1" fill="none" stroke="currentColor" />
+                    <path d="M7.5 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1" fill="none" stroke="currentColor" />
+                </svg>
+            </span>
+            <div class="agent-line-text">
+                <div class="agent-line-row1">
+                    <span id="agent-line-glyph1" class="agent-line-glyph"></span>
+                    <span id="agent-line-text1" class="agent-line-text1"></span>
+                </div>
+                <div class="agent-line-row2">
+                    <span id="agent-line-glyph2" class="agent-line-glyph"></span>
+                    <span id="agent-line-text2" class="agent-line-text2"></span>
+                    <sp-link id="agent-line-link2" class="agent-line-link2" quiet style="display: none"></sp-link>
+                </div>
+            </div>
+            <sp-action-button id="agent-line-abort" class="agent-line-btn" style="display: none" title="Abort task">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"
+                    stroke-linecap="round" aria-hidden="true">
+                    <circle cx="8" cy="8" r="5.8" fill="none" stroke="currentColor" />
+                    <path d="M3.9 3.9L12.1 12.1" fill="none" stroke="currentColor" />
+                </svg>
+            </sp-action-button>
+            <sp-action-button id="agent-line-window" class="agent-line-btn" style="display: none" title="Open AI Assist">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9.5 2.5h4v4" fill="none" stroke="currentColor" />
+                    <path d="M13.5 2.5L8 8" fill="none" stroke="currentColor" />
+                    <path d="M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" fill="none" stroke="currentColor" />
+                </svg>
+            </sp-action-button>
+        </div>
+
     </div>
 
     <!-- Settings Dialog -->

@@ -76,10 +76,34 @@ const { spawnSync } = require('node:child_process');
 const { generate } = require('./apiGenerator');
 const { loadProvidersCatalog, findMissingEnvKeys } = require('./providers-catalog');
 const { createCatalogUpdater } = require('./providers-updater');
-const { LOCAL_API_PREFIX, createLocalGenerationRouter } = require('./localGenerationApi');
-const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest } = require('./auth');
+const { createKbUpdater } = require('./kb-updater');
+const { LOCAL_API_PREFIX, createLocalGenerationRouter, createLocalGenerationService } = require('./localGenerationApi');
+const { listClientProviders } = require('./providers-discovery');
+const { createAuthMiddleware, createSameOriginCorsMiddleware, createPasswordGate, isSameOriginRequest, maskAuthorizationHeader, requestHasToken } = require('./auth');
 const { writePairingFile } = require('./plugin-pairing');
-const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment } = require('./user-settings');
+const { getPluginToken, regeneratePluginToken, getLocalApiToken, regenerateLocalApiToken, saveTokenToUserEnvironment, getTokenFromUserEnvironment, isAgentJournalEnabled, setAgentJournalEnabled, isAgentSeen, markAgentSeen } = require('./user-settings');
+const { createWsBridgeServer } = require('./ws-bridge');
+const { createMcpRouter } = require('./mcp-server');
+const { createAgentService, resolveAgentPaths } = require('./agent');
+const { createAgentRouter } = require('./agent/agent-api');
+const { createGenerationTools } = require('./agent/gen-tools');
+const { combineTools } = require('./agent/combine-tools');
+const { initAssistWindow, openAssistWindow } = require('./agent/assist-window');
+const { initCliSettingsWindow, openCliSettingsWindow } = require('./agent/cli-settings-window');
+const { initCliModelsWindow, openCliModelsWindow } = require('./agent/cli-models-window');
+const { getCliConfig, runWithSelectedCli } = require('./agent/cli-service');
+const {
+    CLI_IMAGE_PROVIDER_ID,
+    buildCliImageProvider,
+    createCliImageRouter
+} = require('./agent/cli-image-provider');
+const {
+    cleanupOldWebhelperFiles,
+    ensureWebhelperArea,
+    resolveWebhelperFile,
+    webhelperFileUrl,
+    WEBHELPER_GENERATED_DIRNAME
+} = require('./webhelper-storage');
 const { getConfigPaths } = require('./setup/config-paths');
 const { handleFirstRun, openSetupWindow, setPairingRefresher } = require('./setup/first-run');
 const { trackUsage, isEnabled: isDonationEnabled, openLicenseActivationWindow } = require('./donation-manager');
@@ -94,8 +118,11 @@ try {
 }
 
 
-// Load secrets right at startup before accessing any API keys
-// Nebula is the author's personal utility that loads secrets from GSM (Google Secret Manager) and is only used in this code block
+// Load secrets right at startup before accessing any API keys.
+// Note: Nebula is the author's private utility used for a personal workflow to fetch secrets
+// from GSM (Google Secret Manager) via the local `nebulabroker` CLI. It is kept here solely
+// for the author's private convenience and is not a public feature or requirement.
+// If NEBULA_CS is not provided, this step is safely skipped and standard .env keys are used.
 function loadNebulaSecrets() {
     // Read env var and ensure it's not undefined or an empty/whitespace-only string
     const nebulaConstuctionString = process.env.NEBULA_CS;
@@ -158,9 +185,99 @@ let localApiToken = '';
 const PAIRING_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 let pairingRefreshTimer = null;
 
+// WebSocket bridge server for plugin ↔ Helper bidirectional communication.
+// Runs on a separate port (18346) alongside the main HTTP server.
+const WS_BRIDGE_PORT = 18346;
+let wsBridgeServer = null;
+
+// The document agent: MCP tools plus the task state shown by the plugin's line and by the
+// AI Assist window. Created once the config paths are known.
+let agentService = null;
+
+// Whether the agent's journal of MCP calls is written to disk. A development run always
+// writes it; a built Helper only when the user asks, from the tray menu.
+let agentJournalChecked = false;
+
+// Whether an MCP agent has ever started a task here. Read from user settings when the
+// service is built; the line and the AI Assist window use it to decide whether to show
+// setup instructions.
+let agentSeenChecked = false;
+
+/**
+ * How long the plugin's "FromPS / ToPS AI" line may stay connected without any task before
+ * it closes itself. Can be overridden via the PHOTOSHOP_HELPER_AGENT_LINE_IDLE_MINUTES
+ * environment variable. If not set, defaults to one hour.
+ *
+ * @returns {number|undefined} Milliseconds, or undefined to use the default.
+ */
+function resolveAgentLineIdleTimeoutMs() {
+    const minutes = Number(process.env.PHOTOSHOP_HELPER_AGENT_LINE_IDLE_MINUTES);
+    if (Number.isFinite(minutes) && minutes > 0) {
+        return minutes * 60 * 1000;
+    }
+    return undefined; // Let agent/index.js apply its own one-hour default.
+}
+
+/**
+ * Build the document agent service.
+ *
+ * @returns {object} The agent service.
+ */
+function initAgentService() {
+    if (app.isPackaged) {
+        isAgentJournalEnabled()
+            .then(enabled => {
+                agentJournalChecked = enabled;
+                updateTrayMenu();
+            })
+            .catch(() => { agentJournalChecked = false; });
+    } else {
+        agentJournalChecked = true;
+    }
+
+    isAgentSeen()
+        .then(seen => { agentSeenChecked = agentSeenChecked || seen; })
+        .catch(() => { /* Keep the setup visible when the setting cannot be read. */ });
+
+    agentService = createAgentService({
+        getBridge: () => wsBridgeServer,
+        paths: resolveAgentPaths(getConfigPaths()),
+        isJournalEnabled: () => agentJournalChecked,
+        isAgentSeen: () => agentSeenChecked,
+        onAgentSeen: () => {
+            agentSeenChecked = true;
+            markAgentSeen().catch(error => log.warn(`Could not remember the first agent: ${error.message}`));
+        },
+        idleWithoutTaskMs: resolveAgentLineIdleTimeoutMs(),
+        helperVersion: VERSION,
+        logger: log,
+        trackUsage
+    });
+
+    initAssistWindow({ agentService, port: PORT });
+
+    // Init the CLI settings windows. Window A (CLI overview) needs a reference
+    // to Window B's opener so the "Configure" button can open it.
+    initCliModelsWindow();
+    initCliSettingsWindow({ openModelsWindow: openCliModelsWindow });
+
+    // Creating the user's layer up front means the person finds the folder for their own
+    // articles even before the agent has written anything into it.
+    try {
+        agentService.knowledgeBase.ensureUserLayer();
+    } catch (error) {
+        log.warn(`Could not create the knowledge base folder: ${error.message}`);
+    }
+
+    return agentService;
+}
+
 // Keeps the model list current from the repository. It runs on the app update schedule
 // and from the tray, both of which exist only in packaged builds.
 const catalogUpdater = createCatalogUpdater({ logger: log });
+
+// Keeps the author knowledge base current from the repository on the same schedule.
+const kbUpdater = createKbUpdater({ logger: log });
 
 // WebHelper specific globals
 global.tasks = {};
@@ -168,9 +285,46 @@ global.queue = [];
 
 const WEBHELPER_TEMP_DIR = path.join(os.tmpdir(), "ps_webhelper_tasks");
 
+// Per-process credential used only for Helper's self-call from apiGenerator to the private
+// CLI image endpoint. It is embedded in the in-memory provider and never sent to WebHelper.
+const CLI_IMAGE_INTERNAL_KEY = crypto.randomBytes(32).toString('hex');
+
 // Ensure temp dir exists for all temp files
 if (!fs.existsSync(WEBHELPER_TEMP_DIR)) {
     fs.mkdirSync(WEBHELPER_TEMP_DIR, { recursive: true });
+}
+
+// Development mode does not run autoUpdater's scheduled checks. A dedicated timer
+// keeps WebHelper's temp folder clean without adding extra timers to packaged builds.
+const DEV_TEMP_CLEANUP_INTERVAL_MS = 12 * 60 * 60 * 1000;
+let devTempCleanupTimer = null;
+
+/**
+ * Perform cleanup of stale WebHelper tasks, scratch files, and empty subdirectories.
+ */
+function runWebhelperTempCleanup() {
+    try {
+        cleanupOldWebhelperFiles(WEBHELPER_TEMP_DIR, 30 * 24 * 60 * 60 * 1000);
+    } catch (e) {
+        log.error('Error cleaning up temp directory:', e);
+    }
+}
+
+/**
+ * Build the current virtual CLI image provider from live user settings.
+ *
+ * The object includes the private request configuration used by apiGenerator. The public
+ * providers endpoint strips that configuration with the same sanitizer used for all other
+ * providers, so neither the internal URL contract nor its credential reaches the browser.
+ *
+ * @returns {Promise<object|null>} Runtime provider, or null when no eligible CLI exists.
+ */
+async function getRuntimeCliImageProvider() {
+    const cliConfig = await getCliConfig();
+    return buildCliImageProvider(cliConfig, {
+        endpointUrl: `http://127.0.0.1:${PORT}/api/internal/cli-image/generate`,
+        internalKey: CLI_IMAGE_INTERNAL_KEY
+    });
 }
 
 // Global temp file for clipboard operations
@@ -286,6 +440,10 @@ function updateTrayMenu() {
             }
         },
         {
+            label: 'AI CLI Settings...',
+            click: () => { void openCliSettingsWindow(); }
+        },
+        {
             label: autoStartState.label,
             type: 'checkbox',
             checked: autoStartState.checked,
@@ -304,9 +462,11 @@ function updateTrayMenu() {
 
     menuTemplate.push(
         {
-            label: 'Open Temp Folder',
+            label: '📁 𝗢𝗽𝗲𝗻 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗶𝗼𝗻𝘀 𝗙𝗼𝗹𝗱𝗲𝗿',
             click: () => {
-                shell.openPath(WEBHELPER_TEMP_DIR);
+                const generatedDir = path.join(WEBHELPER_TEMP_DIR, WEBHELPER_GENERATED_DIRNAME);
+                const targetDir = fs.existsSync(generatedDir) ? generatedDir : WEBHELPER_TEMP_DIR;
+                shell.openPath(targetDir);
             }
         },
         { type: 'separator' },
@@ -317,18 +477,76 @@ function updateTrayMenu() {
             }
         },
         {
-            label: 'Copy WebHelper URL',
-            click: () => {
-                clipboard.writeText(`http://localhost:${PORT}/webhelper`);
-            }
-        },
+            label: 'More from WebHelper',
+            submenu: [
+                {
+                    label: 'Copy WebHelper URL',
+                    click: () => {
+                        clipboard.writeText(`http://localhost:${PORT}/webhelper`);
+                    }
+                },
+                {
+                    // Development reads the local providers.template.json and downloads nothing.
+                    label: app.isPackaged ? 'Check for New Models' : 'Check for New Models (Dev Mode)',
+                    enabled: app.isPackaged,
+                    click: async () => {
+                        await showCatalogCheckResult(await catalogUpdater.checkNow());
+                    }
+                }
+            ]
+        }
+    );
+
+    menuTemplate.push(
+        { type: 'separator' },
         {
-            // Development reads the local providers.template.json and downloads nothing.
-            label: app.isPackaged ? 'Check for New Models' : 'Check for New Models (Dev Mode)',
-            enabled: app.isPackaged,
-            click: async () => {
-                await showCatalogCheckResult(await catalogUpdater.checkNow());
-            }
+            label: 'AI Agent for Photoshop',
+            submenu: [
+                {
+                    label: 'AI Assist...',
+                    click: () => { void openAssistWindow({ section: 'connect' }); }
+                },
+                {
+                    // Development reads the local knowledge-base/ folder and downloads nothing.
+                    label: app.isPackaged
+                        ? 'Check for Knowledge Base Updates'
+                        : 'Check for Knowledge Base Updates (Dev Mode)',
+                    enabled: app.isPackaged,
+                    click: async () => {
+                        await showKbCheckResult(await kbUpdater.checkNow());
+                    }
+                }//,
+                // {
+                //     label: 'Open the Knowledge Base Folder',
+                //     click: () => {
+                //         if (!agentService) return;
+                //         try {
+                //             agentService.knowledgeBase.ensureUserLayer();
+                //             shell.openPath(agentService.knowledgeBase.paths.userDir);
+                //         } catch (error) {
+                //             log.warn(`Could not open the knowledge base folder: ${error.message}`);
+                //         }
+                //     }
+                // },
+                // {
+                //     label: app.isPackaged
+                //         ? 'Write the Agent Journal'
+                //         : 'Write the Agent Journal (always on in development)',
+                //     type: 'checkbox',
+                //     checked: agentJournalChecked,
+                //     enabled: app.isPackaged,
+                //     click: async (menuItem) => {
+                //         agentJournalChecked = await setAgentJournalEnabled(menuItem.checked);
+                //         updateTrayMenu();
+                //     }
+                // },
+                // {
+                //     label: 'Open the Agent Journal Folder',
+                //     click: () => {
+                //         if (agentService) shell.openPath(agentService.journal.dir);
+                //     }
+                // }
+            ]
         }
     );
 
@@ -521,7 +739,7 @@ function updateTrayMenu() {
     menuTemplate.push(
         { type: 'separator' },
         {
-            label: 'Support the Project, Donate...',
+            label: '❤️ 𝗦𝘂𝗽𝗽𝗼𝗿𝘁 𝘁𝗵𝗲 𝗣𝗿𝗼𝗷𝗲𝗰𝘁, 𝗗𝗼𝗻𝗮𝘁𝗲...',
             click: () => {
                 openLicenseActivationWindow();
             }
@@ -573,6 +791,40 @@ async function showCatalogCheckResult(result) {
         buttons: ['OK'],
         defaultId: 0,
         title: 'Model List',
+        message,
+        detail
+    });
+}
+
+/**
+ * Show the outcome of a knowledge base update check in a dialog.
+ *
+ * @param {object} result - Result of kbUpdater.checkNow().
+ */
+async function showKbCheckResult(result) {
+    const messages = {
+        updated: {
+            type: 'info',
+            message: 'Knowledge base updated.',
+            detail: 'New or corrected articles will be used by the agent on the next task.'
+        },
+        unchanged: {
+            type: 'info',
+            message: 'Knowledge base is up to date.'
+        },
+        error: {
+            type: 'warning',
+            message: 'Could not check for knowledge base updates.',
+            detail: result.error
+        }
+    };
+    const { type, message, detail } = messages[result.status] || messages.error;
+
+    await dialog.showMessageBox({
+        type,
+        buttons: ['OK'],
+        defaultId: 0,
+        title: 'Knowledge Base',
         message,
         detail
     });
@@ -698,26 +950,53 @@ function refreshPluginPairing() {
 }
 
 /**
+ * Send one WebHelper temp file, or its JPEG preview.
+ *
+ * `relative` is the path under `/api/webhelper/file/`: `tasks/<name>`,
+ * `generated/<name>`, or a legacy bare filename in the temp root.
+ *
+ * @param {import('express').Response} res - Response to write.
+ * @param {string} relative - Allowed relative file path.
+ * @param {boolean} preview - When true, send a resized JPEG instead of the original.
+ */
+function sendWebhelperFile(res, relative, preview) {
+    const filePath = resolveWebhelperFile(WEBHELPER_TEMP_DIR, relative);
+    if (!filePath) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+    }
+    if (!fs.existsSync(filePath)) {
+        res.status(404).json({ error: 'File not found' });
+        return;
+    }
+
+    if (!preview) {
+        res.sendFile(filePath);
+        return;
+    }
+
+    const maxSize = 1200;
+    const minSize = 1;
+    const step = 1;
+    const jpgCompression = 80;
+    const controller = parseImageInput(filePath);
+    if (!controller) {
+        throw new Error('File not processable');
+    }
+    const [nw, nh] = controller.getOptimizedSize(maxSize, minSize, step);
+    const resized = controller.image.resize({ width: nw, height: nh, quality: 'better' });
+    const buffer = resized.toJPEG(jpgCompression);
+    res.set('Content-Type', 'image/jpeg');
+    res.send(buffer);
+}
+
+/**
  * Start the HTTP server
  */
 function startHttpServer() {
 
-    // Cleanup old temp files/folders on startup (older than 30 days)
-    try {
-        const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000;
-        const now = Date.now();
-        const items = fs.readdirSync(WEBHELPER_TEMP_DIR);
-        for (const item of items) {
-            const itemPath = path.join(WEBHELPER_TEMP_DIR, item);
-            const stats = fs.statSync(itemPath);
-            if (now - stats.mtimeMs > thirtyDaysInMs) {
-                fs.rmSync(itemPath, { recursive: true, force: true });
-                console.log(`Cleaned up old temp item: ${itemPath}`);
-            }
-        }
-    } catch (e) {
-        console.error('Error cleaning up temp directory on startup:', e);
-    }
+    // Cleanup old temp files on startup (older than 30 days), including every subdirectory.
+    runWebhelperTempCleanup();
 
     const expressApp = express();
 
@@ -728,6 +1007,16 @@ function startHttpServer() {
     // user has open in a browser drive these endpoints, because binding to loopback does
     // not stop a local browser from reaching them.
     expressApp.use(createSameOriginCorsMiddleware());
+
+    // Private implementation endpoint for the in-memory CLI provider. Its routes, a POST that
+    // starts a generation and a GET that reports its state, are protected by a per-process
+    // secret known to apiGenerator.
+    expressApp.use('/api/internal/cli-image', createCliImageRouter({
+        tempDir: WEBHELPER_TEMP_DIR,
+        internalKey: CLI_IMAGE_INTERNAL_KEY,
+        getCliConfig,
+        runWithSelectedCli
+    }));
 
     // The plugin is the only client of the clipboard, drag and file-save endpoints. They
     // are what turns this server into a Photoshop sandbox escape, so they always require
@@ -761,16 +1050,84 @@ function startHttpServer() {
     });
     expressApp.use('/api/file', requirePluginToken);
     expressApp.use('/webhelper', webHelperPasswordGate);
-    expressApp.use('/api/webhelper', webHelperPasswordGate, requireWebHelperAccess);
+    // The provider list is also what the Local Generation API's own clients (and the MCP
+    // gen_ tools' documentation) tell callers to read. Those callers hold the Local API
+    // token, not the WebHelper password or the plugin token, so that token is accepted for
+    // this one read-only route. Every other /api/webhelper route keeps the gates below, and
+    // the Local API token opens nothing else there.
+    expressApp.use('/api/webhelper', (req, res, next) => {
+        const isProviderList = req.method === 'GET' && req.path.replace(/\/+$/, '') === '/providers';
+        if (isProviderList && requestHasToken(req, localApiToken)) {
+            return next();
+        }
+        return webHelperPasswordGate(req, res, error => {
+            if (error) return next(error);
+            return requireWebHelperAccess(req, res, next);
+        });
+    });
+
+    // One generation service behind both entry points to generation: the Local Generation
+    // API over HTTP and the gen_ tools of the MCP server. A generation started through one
+    // can be read through the other, and both are counted the same way.
+    const listProviders = () => listClientProviders({
+        loadProvidersCatalog,
+        findMissingEnvKeys,
+        getRuntimeCliImageProvider
+    });
+    const generationService = createLocalGenerationService({
+        generate,
+        tempDir: WEBHELPER_TEMP_DIR,
+        // Runtime providers are discoverable by external Local API clients just like
+        // catalog providers. Resolve only the matching private provider ID here; regular
+        // IDs remain the responsibility of apiGenerator's existing catalog lookup.
+        resolveRuntimeProvider: async providerId => (
+            providerId === CLI_IMAGE_PROVIDER_ID
+                ? getRuntimeCliImageProvider()
+                : null
+        ),
+        onGenerationAccepted: () => trackUsage(2)
+    });
+
+    // MCP server — the entry point for CLI agents (Claude Code, Codex, Grok, Antigravity),
+    // both the one Helper launches and the one the user opens themselves.
+    // Protected by localApiToken, the same secret as the Local Generation API, because it
+    // publishes the gen_ generation tools, which do spend money.
+    const requireMcpAccess = createAuthMiddleware({ getToken: () => localApiToken });
+    const mcpTools = combineTools([
+        agentService.tools,
+        createGenerationTools({
+            service: generationService,
+            listProviders,
+            // Both guides sit in the resources folder: next to the project in development
+            // and in the app's resources folder once packaged (see extraResources).
+            docsDir: getConfigPaths().resourcesPath
+        })
+    ]);
+    expressApp.use('/mcp', (req, _res, next) => {
+        // Diagnostic log: prints incoming HTTP method, URL, and raw Authorization header to console
+        console.log(`\n>>> [MCP INCOMING] ${req.method} ${req.originalUrl || req.url}`);
+        console.log(`>>> [MCP INCOMING] Authorization: "${maskAuthorizationHeader(req.get('authorization'))}"`);
+        console.log(`>>> [MCP INCOMING] Accept:        "${req.get('accept') || '(none)'}"`);
+        next();
+    }, requireMcpAccess, createMcpRouter({
+        tools: mcpTools
+    }));
+
+    // What the plugin's FromPS / ToPS AI line talks to. These routes expose task state,
+    // explicit task close, MCP setup text, and opening the AI Assist window; the plugin
+    // token is the correct secret for all of them.
+    expressApp.use('/api/agent', requirePluginToken, createAgentRouter({
+        service: agentService,
+        port: PORT,
+        openAssistWindow
+    }));
 
     // Mount the local service-to-service generation API over the existing provider
     // pipeline. Its token is deliberately distinct from the plugin token: the plugin's
     // secret is delivered as a file on disk, and must not unlock paid generation.
     expressApp.use(LOCAL_API_PREFIX, createLocalGenerationRouter({
-        generate,
-        tempDir: WEBHELPER_TEMP_DIR,
-        getToken: () => localApiToken,
-        onGenerationAccepted: () => trackUsage(2)
+        service: generationService,
+        getToken: () => localApiToken
     }));
 
     // GET /api/status - Health check endpoint
@@ -1049,34 +1406,9 @@ function startHttpServer() {
     });
 
     // GET /api/webhelper/providers - Get list of models/providers
-    expressApp.get('/api/webhelper/providers', (req, res) => {
+    expressApp.get('/api/webhelper/providers', async (req, res) => {
         try {
-            const catalog = loadProvidersCatalog();
-
-            // 1. Filter out providers for which API keys are not defined in the system
-            const availableProviders = catalog.providers.filter(p => (
-                findMissingEnvKeys(p, catalog.response_handlers).length === 0
-            ));
-
-            // 2. Sanitize and elevate properties for the client
-            const sanitizedProviders = availableProviders.map(p => {
-                const sanitized = { ...p };
-
-                // Elevate single_image_per_request to client level if it exists in request_config
-                if (p.request_config && p.request_config.single_image_per_request) {
-                    sanitized.single_image_per_request = true;
-                } else {
-                    sanitized.single_image_per_request = false;
-                }
-
-                delete sanitized.request_config;
-                delete sanitized.response_config;
-                delete sanitized.image_format;
-                delete sanitized.filename_suffix;
-                delete sanitized.preprocessor;
-                return sanitized;
-            });
-            res.json({ providers: sanitizedProviders });
+            res.json({ providers: await listProviders() });
         } catch (error) {
             console.error('Error reading providers:', error);
             res.status(500).json({ error: error.message });
@@ -1111,28 +1443,31 @@ function startHttpServer() {
                 return mimeTypeToExt(detectMimeTypeFromBase64(dataUrl));
             };
 
+            const tasksDirectory = ensureWebhelperArea(WEBHELPER_TEMP_DIR, 'tasks');
             let imagePath = null;
-            let imageExt = 'png';
+            let imageName = null;
             if (image) {
                 const imageBuffer = getBase64Buffer(image);
-                imageExt = getExt(image);
-                imagePath = path.join(WEBHELPER_TEMP_DIR, `${taskId}_image.${imageExt}`);
+                const imageExt = getExt(image);
+                imageName = `${taskId}_image.${imageExt}`;
+                imagePath = path.join(tasksDirectory, imageName);
                 fs.writeFileSync(imagePath, imageBuffer);
             }
 
             let maskPath = null;
-            let maskExt = 'png';
+            let maskName = null;
             if (mask && image) {
                 const maskBuffer = getBase64Buffer(mask);
-                maskExt = getExt(mask);
-                maskPath = path.join(WEBHELPER_TEMP_DIR, `${taskId}_mask.${maskExt}`);
+                const maskExt = getExt(mask);
+                maskName = `${taskId}_mask.${maskExt}`;
+                maskPath = path.join(tasksDirectory, maskName);
                 fs.writeFileSync(maskPath, maskBuffer);
             }
 
             // Add to global state
             global.tasks[taskId] = {
-                sourceImage: imagePath ? `/api/webhelper/file/${taskId}_image.${imageExt}` : null,
-                maskImage: maskPath ? `/api/webhelper/file/${taskId}_mask.${maskExt}` : null,
+                sourceImage: imageName ? webhelperFileUrl('tasks', imageName) : null,
+                maskImage: maskName ? webhelperFileUrl('tasks', maskName) : null,
                 status: 'new',
                 results: [],
                 threadId: threadId
@@ -1161,11 +1496,9 @@ function startHttpServer() {
                 return res.status(400).json({ error: 'Missing filename' });
             }
 
-            const normalizedTempDir = path.resolve(WEBHELPER_TEMP_DIR);
-
-            // Security: prevent path traversal
-            const filePath = path.join(WEBHELPER_TEMP_DIR, filename);
-            if (!path.resolve(filePath).startsWith(normalizedTempDir)) {
+            // filename is the path under /api/webhelper/file/, such as generated/<name>.
+            const filePath = resolveWebhelperFile(WEBHELPER_TEMP_DIR, filename);
+            if (!filePath) {
                 return res.status(403).json({ error: 'Forbidden' });
             }
             if (!fs.existsSync(filePath)) {
@@ -1174,24 +1507,23 @@ function startHttpServer() {
 
             // Generate new taskId
             const taskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const tasksDirectory = ensureWebhelperArea(WEBHELPER_TEMP_DIR, 'tasks');
 
             const sourceExt = path.extname(filePath) || '.png';
+            const newImageName = `${taskId}_image${sourceExt}`;
 
             // Copy result file as the new task's source image
-            const newImagePath = path.join(WEBHELPER_TEMP_DIR, `${taskId}_image${sourceExt}`);
+            const newImagePath = path.join(tasksDirectory, newImageName);
             fs.copyFileSync(filePath, newImagePath);
 
             // Try to carry over the mask from the original task
-            let newMaskPath = null;
-            let newMaskExt = '.png';
+            let newMaskName = null;
             const sourceTask = sourceTaskId ? global.tasks[sourceTaskId] : null;
             if (sourceTask && sourceTask.maskImage) {
-                // maskImage is a URL like /api/webhelper/file/{filename}, extract filename
-                const maskFilename = sourceTask.maskImage.split('/').pop();
-                const maskFilePath = path.join(WEBHELPER_TEMP_DIR, maskFilename);
-                const originalMaskExt = path.extname(maskFilePath) || '.png';
+                const maskFilePath = resolveWebhelperFile(WEBHELPER_TEMP_DIR, sourceTask.maskImage);
+                const originalMaskExt = maskFilePath ? (path.extname(maskFilePath) || '.png') : '.png';
 
-                if (path.resolve(maskFilePath).startsWith(normalizedTempDir) && fs.existsSync(maskFilePath)) {
+                if (maskFilePath && fs.existsSync(maskFilePath)) {
                     // Load both images to compare dimensions
                     const resultImg = nativeImage.createFromPath(filePath);
                     const maskImg = nativeImage.createFromPath(maskFilePath);
@@ -1200,18 +1532,15 @@ function startHttpServer() {
                         const resultSize = resultImg.getSize();
                         const maskSize = maskImg.getSize();
 
-                        newMaskPath = path.join(WEBHELPER_TEMP_DIR, `${taskId}_mask${originalMaskExt}`);
-                        newMaskExt = originalMaskExt;
-
                         if (resultSize.width !== maskSize.width || resultSize.height !== maskSize.height) {
                             // Resize mask to match result image dimensions (aspect ratio is assumed equal)
                             const scaledMask = maskImg.resize({ width: resultSize.width, height: resultSize.height });
-                            newMaskPath = path.join(WEBHELPER_TEMP_DIR, `${taskId}_mask.png`);
-                            newMaskExt = '.png';
-                            fs.writeFileSync(newMaskPath, scaledMask.toPNG());
+                            newMaskName = `${taskId}_mask.png`;
+                            fs.writeFileSync(path.join(tasksDirectory, newMaskName), scaledMask.toPNG());
                         } else {
                             // Same size — just copy
-                            fs.copyFileSync(maskFilePath, newMaskPath);
+                            newMaskName = `${taskId}_mask${originalMaskExt}`;
+                            fs.copyFileSync(maskFilePath, path.join(tasksDirectory, newMaskName));
                         }
                     }
                 }
@@ -1219,8 +1548,8 @@ function startHttpServer() {
 
             // Register new task
             global.tasks[taskId] = {
-                sourceImage: `/api/webhelper/file/${taskId}_image${sourceExt}`,
-                maskImage: newMaskPath ? `/api/webhelper/file/${taskId}_mask${newMaskExt}` : null,
+                sourceImage: webhelperFileUrl('tasks', newImageName),
+                maskImage: newMaskName ? webhelperFileUrl('tasks', newMaskName) : null,
                 status: 'new',
                 results: [],
                 threadId: threadId
@@ -1297,68 +1626,37 @@ function startHttpServer() {
         res.json(task);
     });
 
-    // GET /api/webhelper/filePreview/:filename - Serve optimized files specific to WebHelper
-    expressApp.get('/api/webhelper/filePreview/:filename', (req, res) => {
+    // GET /api/webhelper/filePreview/... - Serve optimized task or generated images.
+    // Area routes are registered before the single-segment legacy route.
+    const servePreview = (relative, res) => {
         try {
-            const filename = req.params.filename;
-            const filePath = path.join(WEBHELPER_TEMP_DIR, filename);
-
-            // Prevent path traversal attacks
-            const normalizedPath = path.resolve(filePath);
-            const normalizedTempDir = path.resolve(WEBHELPER_TEMP_DIR);
-
-            if (!normalizedPath.startsWith(normalizedTempDir)) {
-                return res.status(403).json({ error: 'Forbidden' });
-            }
-
-            if (fs.existsSync(filePath)) {
-                const maxSize = 1200;
-                const minSize = 1;
-                const step = 1;
-                const jpgCompression = 80;
-                const controller = parseImageInput(filePath);
-                if (controller) {
-                    const [nw, nh] = controller.getOptimizedSize(maxSize, minSize, step);
-                    const resized = controller.image.resize({ width: nw, height: nh, quality: 'better' });
-                    const buffer = resized.toJPEG(jpgCompression);
-                    res.set('Content-Type', 'image/jpeg');
-                    res.send(buffer);
-                } else {
-                    //res.sendFile(filePath);
-                    throw new Error('File not processable');
-                }
-            } else {
-                res.status(404).json({ error: 'File not found' });
-            }
+            sendWebhelperFile(res, relative, true);
         } catch (error) {
             console.error('File serve error:', error);
-            res.status(500).json({ error: error.message });
+            if (!res.headersSent) res.status(500).json({ error: error.message });
         }
+    };
+    expressApp.get('/api/webhelper/filePreview/:area(tasks|generated)/:filename', (req, res) => {
+        servePreview(`${req.params.area}/${req.params.filename}`, res);
+    });
+    expressApp.get('/api/webhelper/filePreview/:filename', (req, res) => {
+        servePreview(req.params.filename, res);
     });
 
-    // GET /api/webhelper/file/:filename - Serve files specific to WebHelper
-    expressApp.get('/api/webhelper/file/:filename', (req, res) => {
+    // GET /api/webhelper/file/tasks/... and /generated/... - original task and result files.
+    const serveOriginal = (relative, res) => {
         try {
-            const filename = req.params.filename;
-            const filePath = path.join(WEBHELPER_TEMP_DIR, filename);
-
-            // Prevent path traversal attacks
-            const normalizedPath = path.resolve(filePath);
-            const normalizedTempDir = path.resolve(WEBHELPER_TEMP_DIR);
-
-            if (!normalizedPath.startsWith(normalizedTempDir)) {
-                return res.status(403).json({ error: 'Forbidden' });
-            }
-
-            if (fs.existsSync(filePath)) {
-                res.sendFile(filePath);
-            } else {
-                res.status(404).json({ error: 'File not found' });
-            }
+            sendWebhelperFile(res, relative, false);
         } catch (error) {
             console.error('File serve error:', error);
-            res.status(500).json({ error: error.message });
+            if (!res.headersSent) res.status(500).json({ error: error.message });
         }
+    };
+    expressApp.get('/api/webhelper/file/:area(tasks|generated)/:filename', (req, res) => {
+        serveOriginal(`${req.params.area}/${req.params.filename}`, res);
+    });
+    expressApp.get('/api/webhelper/file/:filename', (req, res) => {
+        serveOriginal(req.params.filename, res);
     });
 
     // POST /api/webhelper/file/copy2clipboard - Copy original file from disk to clipboard
@@ -1369,13 +1667,8 @@ function startHttpServer() {
                 return res.status(400).json({ error: 'Missing filename' });
             }
 
-            const filePath = path.join(WEBHELPER_TEMP_DIR, filename);
-
-            // Prevent path traversal attacks
-            const normalizedPath = path.resolve(filePath);
-            const normalizedTempDir = path.resolve(WEBHELPER_TEMP_DIR);
-
-            if (!normalizedPath.startsWith(normalizedTempDir)) {
+            const filePath = resolveWebhelperFile(WEBHELPER_TEMP_DIR, filename);
+            if (!filePath) {
                 return res.status(403).json({ error: 'Forbidden' });
             }
 
@@ -1418,8 +1711,38 @@ function startHttpServer() {
                 global.tasks[taskId].status = 'generating';
             }
 
-            // Call the generation handler
-            const newResults = await generate(taskId, providerId, num_images, aspect_ratio, params, referenceImages, use_mask, force_separate_requests, WEBHELPER_TEMP_DIR, global.tasks);
+            // The CLI provider never lives on disk. Rebuild it from current settings and
+            // pass the inline object to the unchanged provider generator. This also catches
+            // a CLI that was disabled after the browser loaded its provider list.
+            let resolvedProvider = providerId;
+            if (providerId === CLI_IMAGE_PROVIDER_ID) {
+                resolvedProvider = await getRuntimeCliImageProvider();
+                if (!resolvedProvider) {
+                    throw new Error(
+                        'No installed and enabled CLI with native image generation and a Medium model is available.'
+                    );
+                }
+
+                const cliParameter = resolvedProvider.parameters.find(parameter => parameter.name === 'cli');
+                const allowedClis = new Set((cliParameter?.options || []).map(option => option.value));
+                if (!allowedClis.has(params?.cli)) {
+                    throw new Error(`CLI "${params?.cli || ''}" is not available for image generation.`);
+                }
+            }
+
+            // Call the existing generation handler for both disk-backed and virtual providers.
+            const newResults = await generate(
+                taskId,
+                resolvedProvider,
+                num_images,
+                aspect_ratio,
+                params,
+                referenceImages,
+                use_mask,
+                force_separate_requests,
+                WEBHELPER_TEMP_DIR,
+                global.tasks
+            );
 
             // Append results to task
             if (global.tasks[taskId]) {
@@ -1456,6 +1779,28 @@ function startHttpServer() {
         // later in this session picks up the token without a Helper restart.
         refreshPluginPairing();
         pairingRefreshTimer = setInterval(refreshPluginPairing, PAIRING_REFRESH_INTERVAL_MS);
+
+        // Start the channel to the plugin. The plugin connects to it while its "FromPS /
+        // ToPS AI" line is on, so an idle Helper normally has nobody on the other end.
+        try {
+            wsBridgeServer = createWsBridgeServer({
+                port: WS_BRIDGE_PORT,
+                token: pluginToken,
+                logger: log,
+                onClientChange: (event) => {
+                    // Turning the line off intentionally tears down the WebSocket but must
+                    // not tear down its task. The agent service keeps the task paused and
+                    // uses the runtime identity to distinguish a harmless reopen (resume
+                    // automatically) from a full UXP reload (explicit document rebind).
+                    if (agentService) {
+                        agentService.handlePluginConnectionChange(event);
+                    }
+                }
+            });
+            log.info(`Plugin channel listening on ws://127.0.0.1:${WS_BRIDGE_PORT}`);
+        } catch (err) {
+            log.warn(`Plugin channel could not start: ${err.message}`);
+        }
     });
 
     httpServer.on('error', (error) => {
@@ -1534,7 +1879,17 @@ app.whenReady().then(async () => {
 
     try {
         log.info('Initializing auto updater...');
-        initializeAutoUpdater(() => updateTrayMenu(), () => void catalogUpdater.checkNow());
+        initializeAutoUpdater(() => updateTrayMenu(), () => {
+            void catalogUpdater.checkNow();
+            void kbUpdater.checkNow();
+            runWebhelperTempCleanup();
+        });
+
+        // In development mode, autoUpdater does not schedule periodic checks.
+        // Run a dedicated timer so temp cleanup stays active during development.
+        if (!app.isPackaged) {
+            devTempCleanupTimer = setInterval(runWebhelperTempCleanup, DEV_TEMP_CLEANUP_INTERVAL_MS);
+        }
 
         // Resolve both secrets before any route or setup window exists, so pairing can
         // occur immediately and the server has credentials ready.
@@ -1549,6 +1904,9 @@ app.whenReady().then(async () => {
 
         log.info('Creating tray icon...');
         await createTray();
+
+        log.info('Building the document agent...');
+        initAgentService();
 
         log.info('Starting HTTP server...');
         startHttpServer();
@@ -1574,6 +1932,12 @@ app.on('before-quit', () => {
         pairingRefreshTimer = null;
     }
 
+    // Stop development temp cleanup timer
+    if (devTempCleanupTimer) {
+        clearInterval(devTempCleanupTimer);
+        devTempCleanupTimer = null;
+    }
+
     // Clean up temp file
     if (fs.existsSync(TEMP_FILE_PATH)) {
         try {
@@ -1586,5 +1950,10 @@ app.on('before-quit', () => {
     // Close HTTP server
     if (httpServer) {
         httpServer.close();
+    }
+
+    // Close WebSocket bridge server
+    if (wsBridgeServer) {
+        wsBridgeServer.close().catch(() => { });
     }
 });

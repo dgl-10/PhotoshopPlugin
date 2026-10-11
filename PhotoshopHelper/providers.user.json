@@ -173,14 +173,166 @@
             ]
         },
         {
-            "id": "grok_imagine_2_0",
+            "id": "spacexai_grok_imagine",
             "generation_modes": [
                 "t2i",
                 "i2i"
             ],
-            "name": "Grok Imagine 2.0 - via XAI API Key (from $0.04/per image)",
+            "name": "Grok Imagine - via SpaceXAI API Key (from $0.02/per image)", // Grok Imagine on FAL applies strong moderation filters
             "tags": {
-                "provider": "xai",
+                "provider": "spacexai",
+                "family": "grok"
+            },
+            "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
+            "image_format": "data_uri",
+            "max_reference_images": 5,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                //"supported": true,
+                //"type": "separate_field",
+                //"field_name": "mask"
+                "supported": false,
+                "required": false
+            },
+            "allowed_aspect_ratios": [ // works only when at least one referential image provided
+                "2:1",
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "3:4",
+                "2:3",
+                "9:16",
+                "1:2"
+            ],
+            "nice_name": {
+                "default": "Grok Imagine Standard (SpaceXAI Key)",
+                "depends_on": "model_spacexai",
+                "values": {
+                    "grok-imagine-image": "Grok Imagine Standard (SpaceXAI Key)",
+                    "grok-imagine-image-quality": "Grok Imagine Quality (SpaceXAI Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "grok_imagine",
+                "depends_on": "model_spacexai",
+                "values": {
+                    "grok-imagine-image": "grok_imagine",
+                    "grok-imagine-image-quality": "grok_imagine_quality"
+                }
+            },
+            "request_config": {
+                "{{?!source_image}}endpoint_url": "https://api.x.ai/v1/images/generations",
+                "{{?source_image}}endpoint_url": "https://api.x.ai/v1/images/edits",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer {{env:SPACEXAI_API_KEY}}"
+                },
+                "reference_item_template": {
+                    "url": "{{item}}",
+                    "type": "image_url"
+                },
+                "body_template": {
+                    "model": "{{model_spacexai}}",
+                    "prompt": "{{prompt}}",
+                    "n": "{{num_images}}",
+                    "resolution": "{{resolution}}",
+                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                    "{{?source_image}}images": [
+                        {
+                            "url": "{{source_image}}",
+                            "type": "image_url"
+                        },
+                        "{{resolved_references}}"
+                    ] //,
+                    //"{{?mask_image}}mask": {
+                    //    "url": "{{mask_image}}",
+                    //    "type": "image_url"
+                    //}
+                }
+            },
+            "response_config": {
+                "$ref": "sync",
+                "params": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "data",
+                            "mode": "array",
+                            "item_path": "url"
+                        }
+                    ]
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "model_spacexai",
+                    "type": "dropdown",
+                    "label": "Model",
+                    "options": [
+                        {
+                            "value": "grok-imagine-image",
+                            "label": "Standard ($0.02/per output image + $0.002/per input image)"
+                        },
+                        {
+                            "value": "grok-imagine-image-quality",
+                            "label": "Quality ($0.05(1K)/$0.07(2K)/per output image + $0.01/per input image)"
+                        }
+                    ],
+                    "default": "grok-imagine-image"
+                },
+                //{
+                //    "name": "n",
+                //    "type": "slider",
+                //    "alias": "num_images",
+                //    "label": "Number of images",
+                //    "min": 1,
+                //    "max": 4,
+                //    "step": 1,
+                //    "default": 2
+                //},
+                {
+                    "name": "resolution",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Resolution",
+                    "options": [
+                        {
+                            "value": "1k",
+                            "alias": "std"
+                        },
+                        {
+                            "value": "2k",
+                            "alias": "high"
+                        },
+                        {
+                            "value": "2k",
+                            "alias": "ultra",
+                            "hidden": true
+                        }
+                    ],
+                    "default": "1k"
+                }
+            ]
+        },
+        {
+            "id": "spacexai_grok_imagine_2_0",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Grok Imagine 2.0 - via SpaceXAI API Key (from $0.04/per image)",
+            "tags": {
+                "provider": "spacexai",
                 "family": "grok"
             },
             "remarks": "<b>Image 2.0</b> is a single model with a Quality field (low / medium). Mask / Magic Wand / segmentation are UI-only and not wired in the API.<br>Official multi-ref limit is <b>3 source images total</b> (1 source + 2 extra refs).<br><br><b>Pricing</b> (output + $0.01 per input image):<br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Resolution</b></td><td><b>Low</b></td><td><b>Medium</b></td></tr><tr><td>1K</td><td>$0.04</td><td>$0.06</td></tr><tr><td>2K</td><td>$0.06</td><td>$0.08</td></tr></table><br>Note that all generations that do not pass moderation are charged at full cost.",
@@ -207,11 +359,11 @@
                 "1:2"
             ],
             "nice_name": {
-                "default": "Grok Imagine 2.0 (XAI Key)",
+                "default": "Grok Imagine 2.0 (SpaceXAI Key)",
                 "depends_on": "quality",
                 "values": {
-                    "low": "Grok Imagine 2.0 Low (XAI Key)",
-                    "medium": "Grok Imagine 2.0 Medium (XAI Key)"
+                    "low": "Grok Imagine 2.0 Low (SpaceXAI Key)",
+                    "medium": "Grok Imagine 2.0 Medium (SpaceXAI Key)"
                 }
             },
             "filename_suffix": {
@@ -228,7 +380,7 @@
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer {{env:XAI_API_KEY}}"
+                    "Authorization": "Bearer {{env:SPACEXAI_API_KEY}}"
                 },
                 "reference_item_template": {
                     "url": "{{item}}",
@@ -323,7 +475,10 @@
             "name": "Qwen Image Edit 2511 via Replicate API Key ($0.03/image)",
             "tags": {
                 "provider": "replicate",
-                "family": "alibaba"
+                "family": [
+                    "alibaba",
+                    "qwen"
+                ]
             },
             "nice_name": "Qwen Image Edit (Replicate Key)",
             "filename_suffix": "qwen_image_edit",

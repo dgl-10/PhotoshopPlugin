@@ -3,6 +3,7 @@ const path = require('node:path');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { detectMimeTypeFromBase64, mimeTypeToExt } = require('./imageUtils');
+const { ensureWebhelperArea, webhelperFileUrl } = require('./webhelper-storage');
 
 /**
  * Resolve nested property by dot-notation path (e.g. "result.sample", "images.0.url")
@@ -47,10 +48,19 @@ function resolveTemplate(template, vars) {
  * Merge a provider's response_config ($ref + params) with the base handler definition.
  * For "sync" type, params are substituted into {{format}} / {{extract}} placeholders.
  * For async types, params are merged into the template variable context.
+ *
+ * PRIVATE RUNTIME CONTRACT: a provider built in memory may carry its handler definition in
+ * `response_config.handler` instead of naming a catalog entry through `$ref`. Such a
+ * provider has no place in the on-disk catalog to put a handler, so this is intentionally
+ * omitted from the public provider configuration guide.
  */
 function resolveHandler(responseConfig, responseHandlers) {
+    const inlineHandler = responseConfig.handler;
+    const hasInlineHandler = typeof inlineHandler === 'object'
+        && inlineHandler !== null
+        && !Array.isArray(inlineHandler);
     const refName = responseConfig.$ref;
-    const baseHandler = responseHandlers[refName];
+    const baseHandler = hasInlineHandler ? inlineHandler : responseHandlers[refName];
     if (!baseHandler) {
         throw new Error(`Response handler "${refName}" not found in response_handlers.`);
     }
@@ -178,6 +188,10 @@ async function makeRequest(url, options = {}, body = null, retryConfig = {}) {
  * Universal polling function driven by config.
  * Tolerates temporary network glitches without aborting in-progress generations.
  * Returns the final poll response body when status reaches "completed".
+ *
+ * A failed or timed-out poll normally carries its polling URL as `fallback_url`, which the
+ * client shows as a manual download link. PRIVATE RUNTIME CONTRACT: a handler whose polling
+ * URL a browser cannot open sets `expose_fallback_url: false` to leave that link out.
  */
 async function pollUntilDone(pollingConfig, templateVars) {
     const intervalMs = pollingConfig.interval_ms || 2000;
@@ -188,6 +202,10 @@ async function pollUntilDone(pollingConfig, templateVars) {
 
     // Build polling URL
     const pollingUrl = resolveTemplateString(pollingConfig.url_template, templateVars);
+    const attachFallbackUrl = (err) => {
+        if (pollingConfig.expose_fallback_url !== false) err.fallback_url = pollingUrl;
+        return err;
+    };
 
     // Build polling headers — strip Content-Type for GET requests (some servers reject it)
     let headers;
@@ -228,8 +246,7 @@ async function pollUntilDone(pollingConfig, templateVars) {
             }
 
             // If too many consecutive network errors or it's a non-retryable API error (e.g. 401/404)
-            pollErr.fallback_url = pollingUrl;
-            throw pollErr;
+            throw attachFallbackUrl(pollErr);
         }
 
         const currentStatus = getNested(res, statusPath);
@@ -241,9 +258,9 @@ async function pollUntilDone(pollingConfig, templateVars) {
         if (pollingConfig.status.failed.includes(currentStatus)) {
             const errorPath = pollingConfig.error_path;
             const errorMsg = errorPath ? getNested(res, errorPath) : currentStatus;
-            const err = new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg || 'Polling task failed'));
-            err.fallback_url = pollingUrl;
-            throw err;
+            throw attachFallbackUrl(
+                new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg || 'Polling task failed'))
+            );
         }
 
         // If the status is not in_progress either, log a warning but keep polling
@@ -252,9 +269,7 @@ async function pollUntilDone(pollingConfig, templateVars) {
         }
     }
 
-    const err = new Error('Polling timeout: The generation took too long.');
-    err.fallback_url = pollingUrl;
-    throw err;
+    throw attachFallbackUrl(new Error('Polling timeout: The generation took too long.'));
 }
 
 /**
@@ -330,12 +345,81 @@ function getUniqueFilename(folder, baseName = "generated_image", ext = "png", fi
 }
 
 /**
+ * Reserve the next generated-image path inside `_WH_Generated`.
+ *
+ * @param {string} tempDir - WebHelper temp root.
+ * @param {string} ext - File extension without a leading dot.
+ * @param {string} fileSuffix - Provider suffix inserted before the extension.
+ * @returns {{ filePath: string, imageUrl: string }} Path on disk and its public URL.
+ */
+function allocateGeneratedImage(tempDir, ext, fileSuffix) {
+    const generatedDir = ensureWebhelperArea(tempDir, 'generated');
+    const filePath = getUniqueFilename(generatedDir, 'generated_image', ext, fileSuffix);
+    return {
+        filePath,
+        imageUrl: webhelperFileUrl('generated', path.basename(filePath))
+    };
+}
+
+/**
  * Download a URL or decode base64 and save to disk.
- * Returns { image: "/api/webhelper/file/...", status: "done" }
+ * Returns { image: "/api/webhelper/file/generated/...", status: "done" }
  */
 async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, taskId, idx, fileSuffix) {
     let ext = 'png';
     let buffer = null;
+
+    // PRIVATE RUNTIME CONTRACT: This format is accepted only for output from the
+    // loopback CLI endpoint. It is intentionally omitted from the public provider
+    // configuration guide.
+    if (format === 'file_path') {
+        if (typeof imageStr !== 'string' || !path.isAbsolute(imageStr)) {
+            throw new Error('The local image result must be an absolute file path.');
+        }
+
+        const realImagePath = fs.realpathSync(imageStr);
+        const stats = fs.statSync(realImagePath);
+        if (!stats.isFile() || stats.size === 0 || stats.size > 100 * 1024 * 1024) {
+            throw new Error('The local image result is empty, too large, or not a regular file.');
+        }
+
+        const descriptor = fs.openSync(realImagePath, 'r');
+        let header;
+        try {
+            header = Buffer.alloc(16);
+            const bytesRead = fs.readSync(descriptor, header, 0, header.length, 0);
+            header = header.subarray(0, bytesRead);
+        } finally {
+            fs.closeSync(descriptor);
+        }
+
+        if (header.length >= 8
+            && header[0] === 0x89 && header[1] === 0x50
+            && header[2] === 0x4e && header[3] === 0x47) {
+            ext = 'png';
+        } else if (header.length >= 3
+            && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) {
+            ext = 'jpg';
+        } else if (header.length >= 12
+            && header.subarray(0, 4).toString('ascii') === 'RIFF'
+            && header.subarray(8, 12).toString('ascii') === 'WEBP') {
+            ext = 'webp';
+        } else if (['GIF87a', 'GIF89a'].includes(header.subarray(0, 6).toString('ascii'))) {
+            ext = 'gif';
+        } else {
+            throw new Error('The local result is not a supported PNG, JPEG, WebP, or GIF image.');
+        }
+
+        // Promote every accepted CLI output into `_WH_Generated`, the same folder and
+        // filename sequence used by ordinary API generations. A CLI scratch copy, when
+        // one exists, stays a working artifact and is removed by the temp-root cleanup.
+        const allocated = allocateGeneratedImage(tempDir, ext, fileSuffix);
+        fs.copyFileSync(realImagePath, allocated.filePath);
+        return {
+            image: allocated.imageUrl,
+            status: 'done'
+        };
+    }
 
     if (format === 'url') {
         const maxDownloadRetries = 2;
@@ -364,8 +448,8 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
                     }
                 }
 
-                const filePath = getUniqueFilename(tempDir, "generated_image", ext, fileSuffix);
-                const fileName = path.basename(filePath);
+                const allocated = allocateGeneratedImage(tempDir, ext, fileSuffix);
+                const filePath = allocated.filePath;
                 try {
                     // pipeline() (unlike source.pipe(dest)) forwards errors from BOTH ends into
                     // this rejection and destroys both streams. A plain .pipe() only listens for
@@ -379,7 +463,7 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
                 }
 
                 return {
-                    image: `/api/webhelper/file/${fileName}`,
+                    image: allocated.imageUrl,
                     status: 'done'
                 };
             } catch (downloadErr) {
@@ -416,12 +500,11 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
         buffer = Buffer.from(imageStr, 'base64');
     }
 
-    const filePath = getUniqueFilename(tempDir, "generated_image", ext, fileSuffix);
-    const fileName = path.basename(filePath);
-    fs.writeFileSync(filePath, buffer);
+    const allocated = allocateGeneratedImage(tempDir, ext, fileSuffix);
+    fs.writeFileSync(allocated.filePath, buffer);
 
     return {
-        image: `/api/webhelper/file/${fileName}`,
+        image: allocated.imageUrl,
         status: 'done'
     };
 }
@@ -430,7 +513,8 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
  * Wait for API generation to complete and extract image URLs/Base64.
  *
  * @param {object} submitResponse - The JSON response from the initial POST request
- * @param {object} providerResponseConfig - Provider's response_config (with $ref and params)
+ * @param {object} providerResponseConfig - Provider's response_config (with $ref and params,
+ *     or the private inline `handler` of an in-memory provider)
  * @param {object} responseHandlers - The top-level response_handlers from providers.json
  * @param {object} requestHeaders - Headers used for the original request (for use_request_headers)
  * @returns {Promise<Object>} { imageStrings, finalData, imagesConfig, downloadHeaders }

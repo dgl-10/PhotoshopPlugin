@@ -352,6 +352,8 @@ module.exports = {
     HELPER_VERSION,
     isHelperRunning,
     isPaired,
+    buildHeaders, // Used by the assistant panel, which calls Helper's agent routes directly
+    getHelperToken, // Exported for the plugin channel and for testing; otherwise private
     getManualToken,
     setManualToken,
     copyToClipboard,
