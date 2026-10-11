@@ -2,6 +2,21 @@
 
 All notable changes to **FromPS / ToPS** and **PhotoshopHelper** are documented in this file.
 
+## [1.3.0]
+
+### 🤖 Model Context Protocol (MCP) & AI Agent Integration
+- **Photoshop MCP Server**: Published a local Model Context Protocol server endpoint (`http://127.0.0.1:18345/mcp`, Streamable HTTP / JSON-RPC 2.0) secured by the Local API token, allowing external AI coding assistants and agents (Claude Code, OpenAI Codex, SpaceXAI Grok, Google Antigravity, and others) to interact directly with Photoshop.
+- **Photoshop Document Tools (`ps_*`, `from_ps_*`, `to_ps_*`)**: Comprehensive tool suite for inspecting layers and canvas state, executing ExtendScript/batchPlay scripts, capturing document selections, placing images back, and managing dialogs within dedicated task sessions (`ps_start_task` / `ps_finish_task`).
+- **MCP Generation Tools (`gen_*`)**: Exposed headless image generation directly to MCP agents through the Local Generation API service.
+- **AI Assist Window**: Added a dedicated floating monitoring window (Helper tray → **AI Agent for Photoshop** → **AI Assist...**) providing real-time connection status, active task step logs, diagnostic journal history, and one-click copy setup prompts / terminal registration commands for supported agents.
+- **Verified Knowledge Base (`ps_kb_*`)**: Integrated an extensible Photoshop recipe and rule system for AI agents with automatic background updates of author articles from GitHub.
+
+### 💻 CLI Native Image Generator
+- **CLI Native Image Generator (`native-cli-image-generator`)**: Added an in-memory virtual provider enabling WebHelper and the Local API to generate images via locally installed AI CLI agents (OpenAI, SpaceXAI, Google) on your existing subscriptions without separate third-party API keys.
+
+### 🛠️ Improvements & Maintenance
+- **Plugin & Helper**: Minor improvements for plugin and helper.
+
 ## [1.2.3]
 
 ### 🔄 Providers Auto-Update
