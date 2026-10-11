@@ -1008,8 +1008,9 @@ function startHttpServer() {
     // not stop a local browser from reaching them.
     expressApp.use(createSameOriginCorsMiddleware());
 
-    // Private implementation endpoint for the in-memory CLI provider. Its only route is a
-    // generation POST protected by a per-process secret known to apiGenerator.
+    // Private implementation endpoint for the in-memory CLI provider. Its routes, a POST that
+    // starts a generation and a GET that reports its state, are protected by a per-process
+    // secret known to apiGenerator.
     expressApp.use('/api/internal/cli-image', createCliImageRouter({
         tempDir: WEBHELPER_TEMP_DIR,
         internalKey: CLI_IMAGE_INTERNAL_KEY,

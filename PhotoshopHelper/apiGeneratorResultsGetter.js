@@ -48,10 +48,19 @@ function resolveTemplate(template, vars) {
  * Merge a provider's response_config ($ref + params) with the base handler definition.
  * For "sync" type, params are substituted into {{format}} / {{extract}} placeholders.
  * For async types, params are merged into the template variable context.
+ *
+ * PRIVATE RUNTIME CONTRACT: a provider built in memory may carry its handler definition in
+ * `response_config.handler` instead of naming a catalog entry through `$ref`. Such a
+ * provider has no place in the on-disk catalog to put a handler, so this is intentionally
+ * omitted from the public provider configuration guide.
  */
 function resolveHandler(responseConfig, responseHandlers) {
+    const inlineHandler = responseConfig.handler;
+    const hasInlineHandler = typeof inlineHandler === 'object'
+        && inlineHandler !== null
+        && !Array.isArray(inlineHandler);
     const refName = responseConfig.$ref;
-    const baseHandler = responseHandlers[refName];
+    const baseHandler = hasInlineHandler ? inlineHandler : responseHandlers[refName];
     if (!baseHandler) {
         throw new Error(`Response handler "${refName}" not found in response_handlers.`);
     }
@@ -179,6 +188,10 @@ async function makeRequest(url, options = {}, body = null, retryConfig = {}) {
  * Universal polling function driven by config.
  * Tolerates temporary network glitches without aborting in-progress generations.
  * Returns the final poll response body when status reaches "completed".
+ *
+ * A failed or timed-out poll normally carries its polling URL as `fallback_url`, which the
+ * client shows as a manual download link. PRIVATE RUNTIME CONTRACT: a handler whose polling
+ * URL a browser cannot open sets `expose_fallback_url: false` to leave that link out.
  */
 async function pollUntilDone(pollingConfig, templateVars) {
     const intervalMs = pollingConfig.interval_ms || 2000;
@@ -189,6 +202,10 @@ async function pollUntilDone(pollingConfig, templateVars) {
 
     // Build polling URL
     const pollingUrl = resolveTemplateString(pollingConfig.url_template, templateVars);
+    const attachFallbackUrl = (err) => {
+        if (pollingConfig.expose_fallback_url !== false) err.fallback_url = pollingUrl;
+        return err;
+    };
 
     // Build polling headers — strip Content-Type for GET requests (some servers reject it)
     let headers;
@@ -229,8 +246,7 @@ async function pollUntilDone(pollingConfig, templateVars) {
             }
 
             // If too many consecutive network errors or it's a non-retryable API error (e.g. 401/404)
-            pollErr.fallback_url = pollingUrl;
-            throw pollErr;
+            throw attachFallbackUrl(pollErr);
         }
 
         const currentStatus = getNested(res, statusPath);
@@ -242,9 +258,9 @@ async function pollUntilDone(pollingConfig, templateVars) {
         if (pollingConfig.status.failed.includes(currentStatus)) {
             const errorPath = pollingConfig.error_path;
             const errorMsg = errorPath ? getNested(res, errorPath) : currentStatus;
-            const err = new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg || 'Polling task failed'));
-            err.fallback_url = pollingUrl;
-            throw err;
+            throw attachFallbackUrl(
+                new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg || 'Polling task failed'))
+            );
         }
 
         // If the status is not in_progress either, log a warning but keep polling
@@ -253,9 +269,7 @@ async function pollUntilDone(pollingConfig, templateVars) {
         }
     }
 
-    const err = new Error('Polling timeout: The generation took too long.');
-    err.fallback_url = pollingUrl;
-    throw err;
+    throw attachFallbackUrl(new Error('Polling timeout: The generation took too long.'));
 }
 
 /**
@@ -499,7 +513,8 @@ async function downloadOrSaveImage(imageStr, format, downloadHeaders, tempDir, t
  * Wait for API generation to complete and extract image URLs/Base64.
  *
  * @param {object} submitResponse - The JSON response from the initial POST request
- * @param {object} providerResponseConfig - Provider's response_config (with $ref and params)
+ * @param {object} providerResponseConfig - Provider's response_config (with $ref and params,
+ *     or the private inline `handler` of an in-memory provider)
  * @param {object} responseHandlers - The top-level response_handlers from providers.json
  * @param {object} requestHeaders - Headers used for the original request (for use_request_headers)
  * @returns {Promise<Object>} { imageStrings, finalData, imagesConfig, downloadHeaders }

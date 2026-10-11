@@ -4,12 +4,18 @@
  * Virtual WebHelper provider backed by an installed command-line agent.
  *
  * The public provider definition is created in memory from the user's CLI settings. The
- * existing API generator then calls the private route from this module exactly as it would
+ * existing API generator then calls the private routes from this module exactly as it would
  * call a remote image API. Keeping that boundary means the mature provider pipeline does
  * not need a CLI-specific branch.
  *
- * IMPORTANT: `file_path` and parameter `ui_position` below are private runtime contracts
- * and should not be copied into providers.user.json.
+ * A CLI can work for many minutes, far longer than an HTTP client waits for the start of a
+ * response. The submit route therefore only starts the run and answers at once; the
+ * generator then polls a status route, the same way it follows a queued job on a remote
+ * provider.
+ *
+ * IMPORTANT: `file_path`, the inline `response_config.handler`, its `expose_fallback_url`
+ * flag, and parameter `ui_position` below are private runtime contracts and should not be
+ * copied into providers.user.json.
  */
 
 const crypto = require('node:crypto');
@@ -22,7 +28,14 @@ const CLI_IMAGE_PROVIDER_ID = 'native-cli-image-generator';
 const INTERNAL_AUTH_HEADER = 'x-photoshop-helper-internal-key';
 const CLI_IMAGE_RUN_PREFIX = 'cli-image-';
 const CLI_SCRATCH_DIRNAME = '_WH_CliScratch';
-const CLI_IMAGE_TIMEOUT_MS = 30 * 60 * 1000;
+const CLI_IMAGE_TIMEOUT_MS = 20 * 60 * 1000;
+const CLI_IMAGE_POLL_INTERVAL_MS = 2000;
+// The poll outlasts the CLI by this much, so a run that hits CLI_IMAGE_TIMEOUT_MS is
+// reported with the CLI's own timeout message instead of a generic polling timeout.
+const CLI_IMAGE_POLL_MARGIN_MS = 60 * 1000;
+// A finished run stays readable this long, so a repeated status request still finds it.
+const CLI_RUN_RETENTION_MS = 10 * 60 * 1000;
+const RUN_STATUS = Object.freeze({ running: 'running', done: 'done', failed: 'failed' });
 const MAX_REFERENCE_IMAGES = 5;  //All CLIs on the list state that input image size doesn't impact cost or rate limits. However, sending very large images might result in a loss of detail since they are automatically downscaled.
 const MAX_RETURNED_IMAGES = 20;
 const MAX_OUTPUT_FILE_BYTES = 100 * 1024 * 1024;
@@ -115,9 +128,20 @@ function getEligibleCliOptions(cliConfig) {
  * @param {object} options - Runtime-only endpoint settings.
  * @param {string} options.endpointUrl - Loopback URL of the private generation endpoint.
  * @param {string} options.internalKey - Per-process secret accepted by that endpoint.
+ * @param {number} [options.cliTimeoutMs] - Longest time one CLI run may take; must match
+ *     the router's value. It is stated in the provider remarks.
+ * @param {number} [options.pollIntervalMs] - Pause between two status requests.
+ * @param {number} [options.pollTimeoutMs] - Longest time to wait for a run to finish. It
+ *     should stay above the CLI timeout, so that timeout is reported first.
  * @returns {object|null} Virtual provider definition.
  */
-function buildCliImageProvider(cliConfig, { endpointUrl, internalKey }) {
+function buildCliImageProvider(cliConfig, {
+    endpointUrl,
+    internalKey,
+    cliTimeoutMs = CLI_IMAGE_TIMEOUT_MS,
+    pollIntervalMs = CLI_IMAGE_POLL_INTERVAL_MS,
+    pollTimeoutMs = cliTimeoutMs + CLI_IMAGE_POLL_MARGIN_MS
+}) {
     const cliOptions = getEligibleCliOptions(cliConfig);
     if (cliOptions.length === 0) return null;
 
@@ -197,7 +221,10 @@ function buildCliImageProvider(cliConfig, { endpointUrl, internalKey }) {
                 default: false
             }
         ],
-        remarks: 'Uses the selected CLI\'s Medium tier and its native image-generation allowance.',
+        remarks: 'Uses the selected CLI\'s Medium tier and its native image-generation allowance. '
+            + 'Suited to complex generations: the agent can do preparatory work first instead of '
+            + 'sending the prompt straight to the image generator.<br>'
+            + `Waiting for the result is limited to ${Math.round(cliTimeoutMs / 60000)} minutes.`,
         filename_suffix: 'cli_{{cli}}',
         request_config: {
             endpoint_url: endpointUrl,
@@ -219,15 +246,42 @@ function buildCliImageProvider(cliConfig, { endpointUrl, internalKey }) {
             }
         },
         response_config: {
-            $ref: 'sync',
-            params: {
-                format: 'file_path',
-                extract: [
-                    {
-                        path: 'images',
-                        mode: 'array'
+            // The handler travels with the provider because neither exists in the catalog.
+            handler: {
+                type: 'async_poll',
+                polling: {
+                    // The submit response names the status route of the run it started.
+                    url_template: '{{status_url}}',
+                    variables_from_submit: {
+                        status_url: 'status_url'
+                    },
+                    method: 'GET',
+                    // The status route accepts the same per-process secret as the submit route.
+                    use_request_headers: true,
+                    interval_ms: pollIntervalMs,
+                    timeout_ms: pollTimeoutMs,
+                    status: {
+                        path: 'status',
+                        in_progress: [RUN_STATUS.running],
+                        completed: [RUN_STATUS.done],
+                        failed: [RUN_STATUS.failed]
+                    },
+                    error_path: 'error.message',
+                    // A browser cannot open the status route, so it is no manual download link.
+                    expose_fallback_url: false
+                },
+                result: {
+                    source: 'poll_response',
+                    images: {
+                        format: 'file_path',
+                        extract: [
+                            {
+                                path: 'images',
+                                mode: 'array'
+                            }
+                        ]
                     }
-                ]
+                }
             }
         }
     };
@@ -641,39 +695,137 @@ function createFilePathReferenceSaver(tempRoot) {
 }
 
 /**
+ * Shape a failure of the private endpoint into the error body its clients read.
+ *
+ * @param {unknown} error - Thrown value.
+ * @param {object|null} [runResult=null] - What the CLI returned before the failure, if it ran.
+ * @returns {{httpStatus: number, error: {code: string, message: string}}} Status and body.
+ */
+function describeCliImageFailure(error, runResult = null) {
+    const normalized = error instanceof CliImageError
+        ? error
+        : new CliImageError(
+            classifyCliError(error?.message),
+            error?.message || 'CLI image generation failed.',
+            500
+        );
+    let message = String(normalized.message || 'CLI image generation failed.').slice(0, 1200);
+    if (typeof runResult?.text === 'string' && runResult.text.trim()) {
+        message = runResult.text;
+    }
+    // Clients read only the message, so what the agent showed while it worked
+    // travels inside it.
+    if (typeof runResult?.transcript === 'string' && runResult.transcript.trim()) {
+        message += `\n\n--- CLI transcript ---\n${runResult.transcript.trim()}`;
+    }
+    return {
+        httpStatus: normalized.httpStatus || 500,
+        error: {
+            code: normalized.code,
+            message: `[${normalized.code}] ${message}`
+        }
+    };
+}
+
+/**
+ * In-memory record of the CLI runs started by the private endpoint.
+ *
+ * A run is `running` until its work settles and then holds its final state. Nothing is
+ * written to disk: a run cannot outlive the Helper process that owns its CLI child.
+ */
+class CliRunRegistry {
+    /**
+     * @param {object} [options]
+     * @param {number} [options.retentionMs] - How long a finished run stays readable.
+     */
+    constructor({ retentionMs = CLI_RUN_RETENTION_MS } = {}) {
+        this.retentionMs = retentionMs;
+        this.runs = new Map();
+    }
+
+    /**
+     * Start the work without waiting for it.
+     *
+     * @param {() => Promise<object>} work - Resolves with the final state of the run.
+     * @returns {string} Id under which the state of the run can be read.
+     */
+    start(work) {
+        const runId = crypto.randomUUID();
+        this.runs.set(runId, { status: RUN_STATUS.running });
+
+        Promise.resolve()
+            .then(work)
+            .catch(error => ({
+                status: RUN_STATUS.failed,
+                error: describeCliImageFailure(error).error
+            }))
+            .then(finalState => this.finish(runId, finalState));
+
+        return runId;
+    }
+
+    /**
+     * @param {string} runId - Id returned by start().
+     * @returns {object|null} Current state, or null for an unknown or forgotten run.
+     */
+    read(runId) {
+        return this.runs.get(runId) || null;
+    }
+
+    /**
+     * Store the final state and forget it once the retention time has passed.
+     *
+     * @param {string} runId - Id returned by start().
+     * @param {object} finalState - State reported from now on.
+     */
+    finish(runId, finalState) {
+        this.runs.set(runId, finalState);
+        const timer = setTimeout(() => this.runs.delete(runId), this.retentionMs);
+        // A pending cleanup must not keep the process alive.
+        timer.unref();
+    }
+}
+
+/**
  * Create the private endpoint called by the virtual provider.
  *
- * The POST route requires a per-process secret that is never returned to WebHelper.
- * Reported image paths are copied later into `_WH_Generated`. This route itself writes
- * under the temp root only through `CliScratchSpace`.
+ * `POST /generate` validates the request, starts the CLI and answers at once with the
+ * status route of that run. `GET /runs/:runId` reports the run as running, done with its
+ * images, or failed with its error. Both require a per-process secret that is never
+ * returned to WebHelper.
+ *
+ * Reported image paths are copied later into `_WH_Generated`. These routes write under
+ * the temp root only through `CliScratchSpace`.
  *
  * @param {object} options - Runtime dependencies.
  * @param {string} options.tempDir - Existing WebHelper temp directory.
  * @param {string} options.internalKey - Per-process shared secret.
  * @param {Function} options.getCliConfig - CLI configuration loader.
  * @param {Function} options.runWithSelectedCli - Explicit CLI runner.
+ * @param {number} [options.cliTimeoutMs] - Longest time one CLI run may take.
+ * @param {number} [options.runRetentionMs] - How long a finished run stays readable.
  * @returns {import('express').Router} Express router.
  */
 function createCliImageRouter({
     tempDir,
     internalKey,
     getCliConfig,
-    runWithSelectedCli
+    runWithSelectedCli,
+    cliTimeoutMs = CLI_IMAGE_TIMEOUT_MS,
+    runRetentionMs = CLI_RUN_RETENTION_MS
 }) {
     const router = express.Router();
     const scratch = new CliScratchSpace(tempDir);
+    const runs = new CliRunRegistry({ retentionMs: runRetentionMs });
+
+    const isAuthorized = req => Boolean(internalKey) && req.get(INTERNAL_AUTH_HEADER) === internalKey;
+    const rejectUnauthorized = res => res.status(401).json({
+        error: { code: 'unauthorized', message: '[unauthorized] Invalid internal key.' }
+    });
 
     router.post('/generate', async (req, res) => {
-        // Declared outside the try block so the error response can still report what the
-        // agent did before the failure.
-        let runResult = null;
-        let cliResponse = null;
         try {
-            if (!internalKey || req.get(INTERNAL_AUTH_HEADER) !== internalKey) {
-                return res.status(401).json({
-                    error: { code: 'unauthorized', message: '[unauthorized] Invalid internal key.' }
-                });
-            }
+            if (!isAuthorized(req)) return rejectUnauthorized(res);
 
             const body = req.body || {};
             const cli = typeof body.cli === 'string' ? body.cli.trim() : '';
@@ -751,63 +903,82 @@ function createCliImageRouter({
 
             // The tier is intentionally fixed at Medium for this first implementation.
             const tier = 'medium';
-            runResult = await runWithSelectedCli(cli, cliPrompt, tier, {
-                cwd: placement.cwd,
-                timeoutMs: CLI_IMAGE_TIMEOUT_MS,
-                showWindow: body.show_cli_window === true,
-                // Codex only reports its thinking when asked; the other CLIs do not need it.
-                reasoningSummary: 'detailed'
-            });
-            cliResponse = extractFirstJsonObject(runResult?.text || '');
-            const images = collectCliImageOutputs(runResult, placement.outputDir, cliResponse);
-            // const reportedFinalPrompt = typeof cliResponse?.final_prompt === 'string' && cliResponse.final_prompt.trim()
-            //     ? cliResponse.final_prompt.trim()
-            //     : (typeof cliResponse?.prompt === 'string' && cliResponse.prompt.trim()
-            //         ? cliResponse.prompt.trim()
-            //         : null);
-
             const tierConfig = cliConfig[cli]?.tiers?.[tier] || {};
             const model = typeof tierConfig.model === 'string' ? tierConfig.model.trim() : '';
             const effort = tierConfig.effort || null;
+            const showWindow = body.show_cli_window === true;
 
-            return res.json({
-                status: 'done',
-                images,
-                cli,
-                tier,
-                model,
-                effort,
-                cli_prompt: cliPrompt,
-                //final_prompt: reportedFinalPrompt,
-                cli_response: cliResponse || runResult?.text || null,
-                // Everything the agent showed while it worked: thoughts, remarks between
-                // steps, tool calls and their output. Empty when the CLI showed nothing.
-                cli_transcript: runResult?.transcript || ''
+            // The request is valid from here on. The CLI itself runs in the background,
+            // because it can take far longer than the caller waits for a response.
+            const runId = runs.start(async () => {
+                // Declared outside the try block so a failure can still report what the
+                // agent did before it.
+                let runResult = null;
+                try {
+                    runResult = await runWithSelectedCli(cli, cliPrompt, tier, {
+                        cwd: placement.cwd,
+                        timeoutMs: cliTimeoutMs,
+                        showWindow,
+                        // Codex only reports its thinking when asked; the other CLIs do not need it.
+                        reasoningSummary: 'detailed'
+                    });
+                    const cliResponse = extractFirstJsonObject(runResult?.text || '');
+                    const images = collectCliImageOutputs(runResult, placement.outputDir, cliResponse);
+                    // const reportedFinalPrompt = typeof cliResponse?.final_prompt === 'string' && cliResponse.final_prompt.trim()
+                    //     ? cliResponse.final_prompt.trim()
+                    //     : (typeof cliResponse?.prompt === 'string' && cliResponse.prompt.trim()
+                    //         ? cliResponse.prompt.trim()
+                    //         : null);
+
+                    return {
+                        status: RUN_STATUS.done,
+                        images,
+                        cli,
+                        tier,
+                        model,
+                        effort,
+                        cli_prompt: cliPrompt,
+                        //final_prompt: reportedFinalPrompt,
+                        cli_response: cliResponse || runResult?.text || null,
+                        // Everything the agent showed while it worked: thoughts, remarks between
+                        // steps, tool calls and their output. Empty when the CLI showed nothing.
+                        cli_transcript: runResult?.transcript || ''
+                    };
+                } catch (error) {
+                    return {
+                        status: RUN_STATUS.failed,
+                        error: describeCliImageFailure(error, runResult).error
+                    };
+                }
+            });
+
+            return res.status(202).json({
+                status: RUN_STATUS.running,
+                run_id: runId,
+                status_url: `${req.protocol}://${req.get('host')}${req.baseUrl}/runs/${runId}`
             });
         } catch (error) {
-            const normalized = error instanceof CliImageError
-                ? error
-                : new CliImageError(
-                    classifyCliError(error?.message),
-                    error?.message || 'CLI image generation failed.',
-                    500
-                );
-            let finalErrorMessage = String(normalized.message || 'CLI image generation failed.').slice(0, 1200);
-            if (typeof runResult?.text === 'string' && runResult.text.trim()) {
-                finalErrorMessage = runResult.text;
-            }
-            // Clients read only the message, so what the agent showed while it worked
-            // travels inside it.
-            if (typeof runResult?.transcript === 'string' && runResult.transcript.trim()) {
-                finalErrorMessage += `\n\n--- CLI transcript ---\n${runResult.transcript.trim()}`;
-            }
-            return res.status(normalized.httpStatus || 500).json({
+            const failure = describeCliImageFailure(error);
+            return res.status(failure.httpStatus).json({ error: failure.error });
+        }
+    });
+
+    router.get('/runs/:runId', (req, res) => {
+        if (!isAuthorized(req)) return rejectUnauthorized(res);
+
+        const run = runs.read(req.params.runId);
+        if (!run) {
+            return res.status(404).json({
                 error: {
-                    code: normalized.code,
-                    message: `[${normalized.code}] ${finalErrorMessage}`
+                    code: 'unknown_run',
+                    message: '[unknown_run] This CLI run is unknown or its result is no longer kept.'
                 }
             });
         }
+
+        // A failed run is still a successful status answer. Reporting it as an HTTP error
+        // would make the poller mistake a CLI timeout (504) for a network glitch and retry.
+        return res.json(run);
     });
 
     return router;

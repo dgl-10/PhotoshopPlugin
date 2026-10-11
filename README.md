@@ -111,7 +111,7 @@ While the browser-based workflow is great, **WebHelper** is designed for those w
 
 If you prefer using your own credentials for privacy, higher limits, or specific models — WebHelper handles the technical bridge. Your images and masks arrive there **automatically** from Photoshop, letting you generate, compare, and send results back in one click.
 
-**Already paying for AI?** If you have an AI CLI installed and signed in on this computer — on your ChatGPT, Gemini, or Grok plan — WebHelper can generate through it, with no image API key needed. Your capture arrives from Photoshop automatically, results sit side by side, and the one you pick goes back without downloading or dragging files. One-time CLI setup is required (the supported CLIs are listed in **AI CLI Settings...** in the tray menu); these generators receive the image and the prompt, not the mask.
+**Already paying for AI?** If you have an AI CLI installed and signed in on this computer — on your ChatGPT, Gemini, or Grok plan — WebHelper can generate through it, with no image API key needed. Your capture arrives from Photoshop automatically, results sit side by side, and the one you pick goes back without downloading or dragging files. One-time CLI setup is required (the supported CLIs are listed in **AI CLI Settings...** in the tray menu); these generators receive the image and the prompt.
 
 <table>
   <tr>

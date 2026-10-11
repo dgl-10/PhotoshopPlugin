@@ -81,6 +81,54 @@ function eligibleCli(overrides = {}) {
     };
 }
 
+/**
+ * Start one run through the private endpoint and follow its status route to the end.
+ *
+ * @param {string} generateUrl - URL of the submit route.
+ * @param {object} body - Submit request body.
+ * @param {string} [key='test-secret'] - Internal key sent with every request.
+ * @returns {Promise<{submitted: Response, accepted: object, state: object|null}>} The submit
+ *     response, its body, and the final run state (null when the run was not accepted).
+ */
+async function runThroughEndpoint(generateUrl, body, key = 'test-secret') {
+    const headers = { 'content-type': 'application/json', [INTERNAL_AUTH_HEADER]: key };
+    const submitted = await fetch(generateUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+    });
+    const accepted = await submitted.json();
+    if (submitted.status !== 202) return { submitted, accepted, state: null };
+
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+        const state = await (await fetch(accepted.status_url, { headers })).json();
+        if (state.status !== 'running') return { submitted, accepted, state };
+        await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    throw new Error('The CLI run did not finish in time.');
+}
+
+/**
+ * Serve the private endpoint on a free loopback port for the duration of one test.
+ *
+ * @param {import('node:test').TestContext} context - Active test context.
+ * @param {object} routerOptions - Options for createCliImageRouter().
+ * @returns {Promise<string>} URL of the submit route.
+ */
+async function serveCliImageEndpoint(context, routerOptions) {
+    const application = express();
+    application.use(express.json({ limit: '2mb' }));
+    application.use('/api/internal/cli-image', createCliImageRouter(routerOptions));
+
+    const server = await new Promise(resolve => {
+        const listeningServer = application.listen(0, '127.0.0.1', () => resolve(listeningServer));
+    });
+    context.after(async () => {
+        await new Promise((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
+    });
+    return `http://127.0.0.1:${server.address().port}/api/internal/cli-image/generate`;
+}
+
 test('only installed, enabled native-image CLIs with a Medium model are offered', () => {
     const options = getEligibleCliOptions({
         codex: eligibleCli(),
@@ -259,23 +307,19 @@ test('an existing reference file makes the scratch directory the cwd and is not 
         await new Promise((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
     });
 
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/internal/cli-image/generate`, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            [INTERNAL_AUTH_HEADER]: 'test-secret'
-        },
-        body: JSON.stringify({
+    const { submitted, state } = await runThroughEndpoint(
+        `http://127.0.0.1:${server.address().port}/api/internal/cli-image/generate`,
+        {
             cli: 'codex',
             prompt: 'Use the reference.',
             num_images: 1,
             reference_image_paths: [referencePath]
-        })
-    });
-    const body = await response.json();
+        }
+    );
 
-    assert.equal(response.status, 200);
-    assert.equal(body.images.length, 1);
+    assert.equal(submitted.status, 202);
+    assert.equal(state.status, 'done');
+    assert.equal(state.images.length, 1);
     assert.equal(path.resolve(observedCwd), path.resolve(tempDir, CLI_SCRATCH_DIRNAME));
     assert.equal(fs.existsSync(path.join(tempDir, CLI_SCRATCH_DIRNAME, 'references')), false);
     assert.equal(fs.existsSync(path.join(tempDir, CLI_SCRATCH_DIRNAME, 'runs')), false);
@@ -421,7 +465,8 @@ test('the existing generator runs the virtual provider end to end with a binary 
         { codex: eligibleCli() },
         {
             endpointUrl: `http://127.0.0.1:${server.address().port}/api/internal/cli-image/generate`,
-            internalKey: 'integration-secret'
+            internalKey: 'integration-secret',
+            pollIntervalMs: 10
         }
     );
     const results = await generate(
@@ -488,30 +533,197 @@ test('the private endpoint returns the agent transcript and passes the window se
         await new Promise((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
     });
     const url = `http://127.0.0.1:${server.address().port}/api/internal/cli-image/generate`;
-    const post = (extra) => fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', [INTERNAL_AUTH_HEADER]: 'test-secret' },
-        body: JSON.stringify({ cli: 'codex', prompt: 'A fox.', num_images: 1, ...extra })
-    });
+    const run = (extra) => runThroughEndpoint(
+        url,
+        { cli: 'codex', prompt: 'A fox.', num_images: 1, ...extra }
+    );
 
-    const hidden = await post({});
-    const hiddenBody = await hidden.json();
-    assert.equal(hidden.status, 200);
-    assert.equal(hiddenBody.cli_transcript, '[thinking] Plan the picture.\n[agent] Done.\n');
+    const hidden = await run({});
+    assert.equal(hidden.submitted.status, 202);
+    assert.equal(hidden.state.status, 'done');
+    assert.equal(hidden.state.cli_transcript, '[thinking] Plan the picture.\n[agent] Done.\n');
     assert.equal(seen[0].showWindow, false, 'the window is off unless the request asks for it');
     assert.equal(seen[0].reasoningSummary, 'detailed');
 
-    const shown = await post({ show_cli_window: true });
-    assert.equal(shown.status, 200);
+    const shown = await run({ show_cli_window: true });
+    assert.equal(shown.state.status, 'done');
     assert.equal(seen[1].showWindow, true);
 
     failNext = true;
-    const failed = await post({});
-    const failedBody = await failed.json();
-    assert.equal(failed.status, 422);
-    assert.match(failedBody.error.message, /I could not make the picture/);
-    assert.match(failedBody.error.message, /--- CLI transcript ---\n\[thinking\] The request was refused\.$/);
-    assert.equal(failedBody.error.cli_transcript, undefined, 'the transcript travels inside the message');
+    const failed = await run({});
+    assert.equal(failed.submitted.status, 202, 'a run that fails later is still accepted');
+    assert.equal(failed.state.status, 'failed');
+    assert.match(failed.state.error.message, /I could not make the picture/);
+    assert.match(failed.state.error.message, /--- CLI transcript ---\n\[thinking\] The request was refused\.$/);
+    assert.equal(failed.state.error.cli_transcript, undefined, 'the transcript travels inside the message');
+});
+
+test('the submit route answers while the CLI is still working', async (t) => {
+    const tempDir = createFixtureDirectory(t);
+    let finishCli = null;
+    const url = await serveCliImageEndpoint(t, {
+        tempDir,
+        internalKey: 'test-secret',
+        getCliConfig: async () => ({ codex: eligibleCli() }),
+        runWithSelectedCli: (_cli, _prompt, _tier, options) => new Promise(resolve => {
+            finishCli = () => {
+                const imagePath = path.join(options.cwd, 'late.png');
+                fs.writeFileSync(imagePath, ONE_PIXEL_PNG);
+                resolve({ ok: true, text: JSON.stringify({ status: 'done', images: [{ path: imagePath }] }) });
+            };
+        })
+    });
+    const headers = { 'content-type': 'application/json', [INTERNAL_AUTH_HEADER]: 'test-secret' };
+
+    const submitted = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cli: 'codex', prompt: 'A slow fox.', num_images: 1 })
+    });
+    const accepted = await submitted.json();
+    assert.equal(submitted.status, 202);
+    assert.equal(accepted.status, 'running');
+    assert.equal(accepted.status_url, url.replace(/\/generate$/, `/runs/${accepted.run_id}`));
+
+    const stillRunning = await (await fetch(accepted.status_url, { headers })).json();
+    assert.deepEqual(stillRunning, { status: 'running' });
+
+    finishCli();
+    let finished = stillRunning;
+    for (let attempt = 0; attempt < 400 && finished.status === 'running'; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+        finished = await (await fetch(accepted.status_url, { headers })).json();
+    }
+    assert.equal(finished.status, 'done');
+    assert.equal(finished.images.length, 1);
+});
+
+test('the status route needs the internal key and keeps a finished run readable', async (t) => {
+    const tempDir = createFixtureDirectory(t);
+    const url = await serveCliImageEndpoint(t, {
+        tempDir,
+        internalKey: 'test-secret',
+        getCliConfig: async () => ({ codex: eligibleCli() }),
+        runWithSelectedCli: async (_cli, _prompt, _tier, options) => {
+            const imagePath = path.join(options.cwd, 'made.png');
+            fs.writeFileSync(imagePath, ONE_PIXEL_PNG);
+            return { ok: true, text: JSON.stringify({ status: 'done', images: [{ path: imagePath }] }) };
+        }
+    });
+
+    const { accepted, state } = await runThroughEndpoint(
+        url,
+        { cli: 'codex', prompt: 'A fox.', num_images: 1 }
+    );
+    assert.equal(state.status, 'done');
+
+    const withoutKey = await fetch(accepted.status_url);
+    assert.equal(withoutKey.status, 401);
+    const wrongKey = await fetch(accepted.status_url, { headers: { [INTERNAL_AUTH_HEADER]: 'wrong' } });
+    assert.equal(wrongKey.status, 401);
+
+    const headers = { [INTERNAL_AUTH_HEADER]: 'test-secret' };
+    const repeated = await fetch(accepted.status_url, { headers });
+    assert.equal(repeated.status, 200, 'a repeated status request still finds the finished run');
+    assert.deepEqual(await repeated.json(), state);
+
+    const unknown = await fetch(accepted.status_url.replace(accepted.run_id, 'no-such-run'), { headers });
+    assert.equal(unknown.status, 404);
+    assert.equal((await unknown.json()).error.code, 'unknown_run');
+});
+
+test('a finished run is forgotten once its retention time has passed', async (t) => {
+    const tempDir = createFixtureDirectory(t);
+    let finishCli = null;
+    const url = await serveCliImageEndpoint(t, {
+        tempDir,
+        internalKey: 'test-secret',
+        getCliConfig: async () => ({ codex: eligibleCli() }),
+        runWithSelectedCli: () => new Promise(resolve => {
+            finishCli = () => resolve({ ok: false, text: '', error: 'The CLI stopped.' });
+        }),
+        runRetentionMs: 20
+    });
+    const headers = { 'content-type': 'application/json', [INTERNAL_AUTH_HEADER]: 'test-secret' };
+
+    const submitted = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ cli: 'codex', prompt: 'A fox.', num_images: 1 })
+    });
+    const accepted = await submitted.json();
+
+    // The retention clock starts only when the run ends, so a long run is never forgotten.
+    await new Promise(resolve => setTimeout(resolve, 80));
+    const whileRunning = await fetch(accepted.status_url, { headers });
+    assert.equal(whileRunning.status, 200);
+    assert.deepEqual(await whileRunning.json(), { status: 'running' });
+
+    finishCli();
+    let lastStatus = whileRunning.status;
+    for (let attempt = 0; attempt < 1000 && lastStatus !== 404; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        lastStatus = (await fetch(accepted.status_url, { headers })).status;
+    }
+    assert.equal(lastStatus, 404);
+});
+
+test('a CLI timeout reaches the generator as its own message, without a manual download link', async (t) => {
+    const tempDir = createFixtureDirectory(t);
+    const timeoutMessage = 'Query timed out after 20 minutes. The CLI did not finish in time.';
+    const url = await serveCliImageEndpoint(t, {
+        tempDir,
+        internalKey: 'integration-secret',
+        getCliConfig: async () => ({ codex: eligibleCli() }),
+        runWithSelectedCli: async () => ({ ok: false, text: '', error: timeoutMessage })
+    });
+    const provider = buildCliImageProvider(
+        { codex: eligibleCli() },
+        { endpointUrl: url, internalKey: 'integration-secret', pollIntervalMs: 10 }
+    );
+
+    const results = await generate(
+        {},
+        provider,
+        1,
+        '1:1',
+        { cli: 'codex', prompt: 'A fox.', do_not_change_prompt: false },
+        [],
+        false,
+        false,
+        tempDir,
+        {}
+    );
+
+    assert.equal(results.length, 1);
+    assert.equal(results[0].status, 'error');
+    assert.equal(results[0].error, `[timeout] ${timeoutMessage}`);
+    assert.equal(results[0].fallback_url, undefined);
+});
+
+test('the CLI provider carries its own polling handler, which outlasts the CLI timeout', () => {
+    const provider = buildCliImageProvider({ codex: eligibleCli() }, {
+        endpointUrl: 'http://127.0.0.1:1/generate',
+        internalKey: 'k'
+    });
+    const { handler } = provider.response_config;
+
+    assert.equal(provider.response_config.$ref, undefined, 'no catalog handler is referenced');
+    assert.equal(handler.type, 'async_poll');
+    assert.ok(handler.polling.timeout_ms > 20 * 60 * 1000);
+    assert.match(provider.remarks, /limited to 20 minutes/);
+    assert.equal(handler.polling.use_request_headers, true);
+    assert.equal(handler.polling.expose_fallback_url, false);
+    assert.equal(handler.result.images.format, 'file_path');
+
+    const tuned = buildCliImageProvider({ codex: eligibleCli() }, {
+        endpointUrl: 'http://127.0.0.1:1/generate',
+        internalKey: 'k',
+        pollIntervalMs: 500,
+        pollTimeoutMs: 9000
+    });
+    assert.equal(tuned.response_config.handler.polling.interval_ms, 500);
+    assert.equal(tuned.response_config.handler.polling.timeout_ms, 9000);
 });
 
 test('the CLI provider offers the window as a boolean parameter that reaches the request', () => {
