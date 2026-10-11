@@ -173,14 +173,14 @@
             ]
         },
         {
-            "id": "grok_imagine",
+            "id": "spacexai_grok_imagine",
             "generation_modes": [
                 "t2i",
                 "i2i"
             ],
-            "name": "Grok Imagine - via XAI API Key (from $0.02/per image)", // Grok Imagine on FAL applies strong moderation filters
+            "name": "Grok Imagine - via SpaceXAI API Key (from $0.02/per image)", // Grok Imagine on FAL applies strong moderation filters
             "tags": {
-                "provider": "xai",
+                "provider": "spacexai",
                 "family": "grok"
             },
             "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
@@ -207,16 +207,16 @@
                 "1:2"
             ],
             "nice_name": {
-                "default": "Grok Imagine Standard (XAI Key)",
-                "depends_on": "model_xai",
+                "default": "Grok Imagine Standard (SpaceXAI Key)",
+                "depends_on": "model_spacexai",
                 "values": {
-                    "grok-imagine-image": "Grok Imagine Standard (XAI Key)",
-                    "grok-imagine-image-quality": "Grok Imagine Quality (XAI Key)"
+                    "grok-imagine-image": "Grok Imagine Standard (SpaceXAI Key)",
+                    "grok-imagine-image-quality": "Grok Imagine Quality (SpaceXAI Key)"
                 }
             },
             "filename_suffix": {
                 "default": "grok_imagine",
-                "depends_on": "model_xai",
+                "depends_on": "model_spacexai",
                 "values": {
                     "grok-imagine-image": "grok_imagine",
                     "grok-imagine-image-quality": "grok_imagine_quality"
@@ -228,14 +228,14 @@
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer {{env:XAI_API_KEY}}"
+                    "Authorization": "Bearer {{env:SPACEXAI_API_KEY}}"
                 },
                 "reference_item_template": {
                     "url": "{{item}}",
                     "type": "image_url"
                 },
                 "body_template": {
-                    "model": "{{model_xai}}",
+                    "model": "{{model_spacexai}}",
                     "prompt": "{{prompt}}",
                     "n": "{{num_images}}",
                     "resolution": "{{resolution}}",
@@ -275,7 +275,7 @@
                     "default": ""
                 },
                 {
-                    "name": "model_xai",
+                    "name": "model_spacexai",
                     "type": "dropdown",
                     "label": "Model",
                     "options": [
@@ -325,14 +325,14 @@
             ]
         },
         {
-            "id": "grok_imagine_2_0",
+            "id": "spacexai_grok_imagine_2_0",
             "generation_modes": [
                 "t2i",
                 "i2i"
             ],
-            "name": "Grok Imagine 2.0 - via XAI API Key (from $0.04/per image)",
+            "name": "Grok Imagine 2.0 - via SpaceXAI API Key (from $0.04/per image)",
             "tags": {
-                "provider": "xai",
+                "provider": "spacexai",
                 "family": "grok"
             },
             "remarks": "<b>Image 2.0</b> is a single model with a Quality field (low / medium). Mask / Magic Wand / segmentation are UI-only and not wired in the API.<br>Official multi-ref limit is <b>3 source images total</b> (1 source + 2 extra refs).<br><br><b>Pricing</b> (output + $0.01 per input image):<br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Resolution</b></td><td><b>Low</b></td><td><b>Medium</b></td></tr><tr><td>1K</td><td>$0.04</td><td>$0.06</td></tr><tr><td>2K</td><td>$0.06</td><td>$0.08</td></tr></table><br>Note that all generations that do not pass moderation are charged at full cost.",
@@ -359,11 +359,11 @@
                 "1:2"
             ],
             "nice_name": {
-                "default": "Grok Imagine 2.0 (XAI Key)",
+                "default": "Grok Imagine 2.0 (SpaceXAI Key)",
                 "depends_on": "quality",
                 "values": {
-                    "low": "Grok Imagine 2.0 Low (XAI Key)",
-                    "medium": "Grok Imagine 2.0 Medium (XAI Key)"
+                    "low": "Grok Imagine 2.0 Low (SpaceXAI Key)",
+                    "medium": "Grok Imagine 2.0 Medium (SpaceXAI Key)"
                 }
             },
             "filename_suffix": {
@@ -380,7 +380,7 @@
                 "method": "POST",
                 "headers": {
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer {{env:XAI_API_KEY}}"
+                    "Authorization": "Bearer {{env:SPACEXAI_API_KEY}}"
                 },
                 "reference_item_template": {
                     "url": "{{item}}",

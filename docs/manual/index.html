@@ -77,7 +77,8 @@
           <a href="#place-controls"><span>05</span> Place back</a>
           <a href="#feather-controls"><span>06</span> Feather bias</a>
           <a href="#history-settings"><span>07</span> History &amp; settings</a>
-          <a href="#troubleshooting"><span>08</span> Troubleshooting</a>
+          <a href="#ai-agent"><span>08</span> AI agent (MCP)</a>
+          <a href="#troubleshooting"><span>09</span> Troubleshooting</a>
         </nav>
         <p class="sidebar-note">
           Requires Adobe Photoshop 2024 or newer and the FromPS / ToPS panel open.
@@ -197,8 +198,8 @@
           <div class="panel-map-card">
             <figure class="annotated-panel">
               <img src="assets/panel-map.png"
-                alt="FromPS / ToPS panel with both the captured source and generated result loaded" width="262"
-                height="610" />
+                alt="FromPS / ToPS panel with both the captured source and generated result loaded, and the AI agent line at the bottom"
+                width="262" height="662" />
               <!-- Markers are decorative; the adjacent numbered list contains the accessible descriptions. -->
               <span class="marker marker-1" aria-hidden="true">1</span>
               <span class="marker marker-2" aria-hidden="true">2</span>
@@ -208,6 +209,7 @@
               <span class="marker marker-6" aria-hidden="true">6</span>
               <span class="marker marker-7" aria-hidden="true">7</span>
               <span class="marker marker-8" aria-hidden="true">8</span>
+              <span class="marker marker-9" aria-hidden="true">9</span>
             </figure>
 
             <div class="map-legend-groups">
@@ -267,6 +269,17 @@
                   <span>8</span>
                   <div><strong>Place Back</strong><small>Inserts the incoming image at the active capture's original
                       coordinates.</small></div>
+                </div>
+              </div>
+
+              <!-- Group 5: AI agent line -->
+              <div class="map-legend-group">
+                <div class="map-legend-item">
+                  <span>9</span>
+                  <div><strong>AI agent line<sup class="helper-mark"
+                        aria-label="Requires Photoshop Helper">*</sup></strong><small>Shows the agent connection
+                      and the current task, with buttons to abort it and to open AI Assist (turned on by FromPS /
+                      ToPS AI… in the panel menu).</small></div>
                 </div>
               </div>
             </div>
@@ -712,10 +725,107 @@
           </aside>
         </section>
 
+        <!-- The agent is a separate tool that uses the panel only as its way into Photoshop, so it gets one short section. -->
+        <section class="doc-section" id="ai-agent" aria-labelledby="ai-agent-title">
+          <div class="section-heading">
+            <p class="section-number">08</p>
+            <div>
+              <p class="section-kicker">Optional tool</p>
+              <h2 id="ai-agent-title">AI agent (MCP)<sup class="helper-mark"
+                  aria-label="Requires Photoshop Helper">*</sup></h2>
+              <p>
+                Photoshop Helper includes an MCP (Model Context Protocol) server. Through it, the AI agent you
+                already use can inspect the open Photoshop document and edit it. This is separate from the capture
+                and place-back workflow above.
+              </p>
+            </div>
+          </div>
+
+          <div class="global-grid">
+            <article class="global-card">
+              <div>
+                <h3>Connect your agent — once</h3>
+                <p>
+                  Any agent application on this computer that supports MCP servers works: a terminal CLI, a desktop
+                  app, or an IDE extension (Claude Code, Codex, Grok, Antigravity, and others).
+                </p>
+                <ol class="plain-list">
+                  <li>In the Photoshop Helper tray menu, choose <strong>AI Agent for Photoshop → AI
+                      Assist…</strong></li>
+                  <li>Save the agent's access key: tray menu → <strong>Access Tokens → Save Token to User
+                      Environment…</strong> This key is separate from the plugin
+                    <a href="#helper-requirement">pairing</a> token, which needs no setup.</li>
+                  <li>In AI Assist, click <strong>Copy setup text</strong> and paste it into your agent's chat — the
+                    agent adds the server to its own settings. For Claude Code, Codex, Grok, and Antigravity the
+                    list above the button also offers a ready terminal command.</li>
+                  <li>Restart the agent. The server appears in it as <strong>photoshop-helper</strong>.</li>
+                </ol>
+              </div>
+            </article>
+
+            <article class="global-card">
+              <div>
+                <h3>Run a task</h3>
+                <ol class="plain-list">
+                  <li>Open the panel menu (<strong>≡</strong>) and choose
+                    <strong>FromPS / ToPS AI…</strong> A status line appears at the bottom of the panel, and
+                    Photoshop becomes reachable for the agent.</li>
+                  <li>Ask the agent to work on the active Photoshop document. AI Assist has a ready starter prompt:
+                    <strong>Copy starter prompt</strong>.</li>
+                  <li>Follow the task and its current step in the line. The full step list and the final report are
+                    in the AI Assist window.</li>
+                </ol>
+              </div>
+            </article>
+
+            <!-- Second row of the same grid: the line's screenshot beside the list that explains its buttons. -->
+            <figure class="detail-figure">
+              <img src="assets/ai-assist-panel.png"
+                alt="AI agent line showing Waiting for a task, the time left before it turns off, and the Open AI Assist button"
+                width="262" height="110" />
+              <figcaption>AI agent line at the bottom of the panel, below the ToPS card.</figcaption>
+            </figure>
+
+            <article class="global-card">
+              <div>
+                <h3>AI agent line</h3>
+                <dl class="inline-definitions">
+                  <div>
+                    <dt>Open AI Assist</dt>
+                    <dd>The window button at the right end of the line. Opens Photoshop Helper's AI Assist window:
+                      connection setup, the full step list, and the final report.</dd>
+                  </div>
+                  <div>
+                    <dt>Abort task</dt>
+                    <dd>Stops the current task so a new one can start.</dd>
+                  </div>
+                  <div>
+                    <dt>Turn off</dt>
+                    <dd>Choose <strong>FromPS / ToPS AI…</strong> again. A running task is paused, not
+                      cancelled.</dd>
+                  </div>
+                  <div>
+                    <dt>Auto-off</dt>
+                    <dd>The line turns itself off after an hour without tasks.</dd>
+                  </div>
+                </dl>
+              </div>
+            </article>
+          </div>
+
+          <aside class="note note-important">
+            <span class="note-icon" aria-hidden="true">!</span>
+            <p>
+              <strong>Connect only agents you trust:</strong> while the line is on, a connected agent can run
+              scripts in Photoshop that change the document. With the line off, it cannot reach Photoshop.
+            </p>
+          </aside>
+        </section>
+
         <!-- Troubleshooting is intentionally short and action-oriented so it remains useful inside an installer. -->
         <section class="doc-section" id="troubleshooting" aria-labelledby="troubleshooting-title">
           <div class="section-heading">
-            <p class="section-number">08</p>
+            <p class="section-number">09</p>
             <div>
               <p class="section-kicker">Fast fixes</p>
               <h2 id="troubleshooting-title">Troubleshooting</h2>
@@ -760,6 +870,24 @@
                 the Helper's tray menu, choose <strong>Access Tokens → Copy Plugin Pairing Token</strong>, and paste
                 it into the plugin's <strong>Settings</strong> dialog.</p>
             </details>
+            <details>
+              <summary>The AI agent does not see the Photoshop tools</summary>
+              <p>Check that Photoshop Helper is running and that its tray menu shows <strong>Access Tokens → Token
+                  Saved in User Environment</strong>. Then restart the agent together with the terminal or editor
+                it runs in: programs opened before the key was saved cannot read it.</p>
+            </details>
+            <details>
+              <summary>The AI agent reports that the connection to Photoshop is unavailable</summary>
+              <p>Open the panel menu and choose <strong>FromPS / ToPS AI…<sup class="helper-mark"
+                    aria-label="Requires Photoshop Helper">*</sup></strong> The line turns itself off after an hour
+                without tasks and whenever the panel is closed.</p>
+            </details>
+            <details>
+              <summary>A new agent task will not start, or the line shows “No activity”</summary>
+              <p>Only one task runs at a time. If the agent crashed, ran out of its limits, or was restarted, click
+                <strong>Abort task</strong> in the line or in the AI Assist window to free Photoshop for the next
+                task.</p>
+            </details>
           </div>
         </section>
 
@@ -772,8 +900,8 @@
             <p>
               Photoshop keeps plugins inside a restricted sandbox, so they cannot directly perform some everyday
               operating-system actions. Photoshop Helper is a small local companion app that handles those tasks and
-              makes the plugin faster and more convenient to use. Controls marked with <strong>*</strong> need Photoshop
-              Helper running in the system tray.
+              makes the plugin faster and more convenient to use. It also runs the MCP server that AI agents connect
+              to. Controls marked with <strong>*</strong> need Photoshop Helper running in the system tray.
             </p>
             <ul class="helper-actions" aria-label="Actions that require Photoshop Helper">
               <li>
@@ -787,6 +915,10 @@
               <li>
                 <strong>Export to WebHelper</strong>
                 <span>Send the image and mask directly</span>
+              </li>
+              <li>
+                <strong>Work with an AI agent</strong>
+                <span>FromPS / ToPS AI and the MCP server</span>
               </li>
             </ul>
             <p class="helper-independent">

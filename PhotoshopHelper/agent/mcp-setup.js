@@ -53,7 +53,7 @@ function buildInstallCommands({ port }) {
         },
         {
             cli: 'grok',
-            label: 'xAI Grok',
+            label: 'SpaceXAI Grok',
             // cmd.exe (the shell Helper uses on Windows) leaves ${VAR} alone inside double
             // quotes. PowerShell and sh expand it, so a pasted command must use single quotes
             // or the reference never reaches ~/.grok/config.toml.

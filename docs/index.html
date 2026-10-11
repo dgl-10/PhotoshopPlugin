@@ -40,6 +40,7 @@
       </a>
       <nav class="nav" aria-label="Primary">
         <a href="#how">How it works</a>
+        <a class="nav-wide-only" href="#agent">AI agent</a>
         <a href="manual/index.html">Manual</a>
         <a href="#download">Download</a>
         <a href="#faq">FAQ</a>
@@ -52,6 +53,7 @@
     </div>
     <div id="mobile-nav" class="mobile-nav" hidden>
       <a href="#how">How it works</a>
+      <a href="#agent">AI agent</a>
       <a href="manual/index.html">Manual</a>
       <a href="#download">Download</a>
       <a href="#faq">FAQ</a>
@@ -190,8 +192,9 @@
             <h3>Generate anywhere</h3>
             <p>
               Drag image + mask into ChatGPT, Midjourney, Gemini, or any editor —
-              or use the built-in <strong>WebHelper</strong> with your own API keys
-              (Fal, Replicate, BFL, xAI, Civitai, and more).
+              or generate in the built-in <strong>WebHelper</strong>: with your own API keys
+              (Fal, Replicate, BFL, SpaceXAI, Civitai, and more) or through an AI CLI on the plan
+              you already pay for (ChatGPT, Gemini, Grok).
             </p>
           </article>
           <article class="step">
@@ -243,12 +246,13 @@
           </article>
           <article class="feature">
             <h3>No vendor lock-in</h3>
-            <p>Browser drag-and-drop or your own APIs. Choose the model that fits the project.</p>
+            <p>Browser drag-and-drop, your own APIs, or an AI CLI on the plan you already pay for. Choose the model
+              that fits the project.</p>
           </article>
           <article class="feature">
             <h3>WebHelper workspace</h3>
-            <p>Local API command center: multi-task jobs, mask overlay, regenerate, chain results, keep keys on your
-              machine.</p>
+            <p>Local generation workspace for API providers and signed-in AI CLIs: multi-task jobs, mask overlay,
+              regenerate, chain results, keep keys on your machine.</p>
           </article>
           <article class="feature">
             <h3>Free core workflow</h3>
@@ -257,7 +261,8 @@
           </article>
           <article class="feature">
             <h3>Runs locally</h3>
-            <p>PhotoshopHelper lives on your machine for clipboard, drag-and-drop, and localhost API workflows.</p>
+            <p>PhotoshopHelper lives on your machine for clipboard, drag-and-drop, and localhost workflows. Images
+              leave it only for the AI service you choose.</p>
           </article>
         </div>
 
@@ -272,6 +277,52 @@
               loading="lazy" />
             <figcaption>Compare generations side by side</figcaption>
           </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI AGENT -->
+    <section class="section agent" id="agent" aria-labelledby="agent-title">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="section-kicker">New · optional tool</p>
+          <h2 id="agent-title">Your own AI agent, working in your open document.</h2>
+          <p class="section-sub">
+            Connect the agent you already use and ask in plain words.
+          </p>
+        </div>
+
+        <ul class="audience-list agent-asks" aria-label="Examples of what you can ask">
+          <li>“Make it warmer and more cinematic — but keep everything editable.”</li>
+          <li>“Make it black and white, but leave the red dress in color.”</li>
+          <li>“Which layer is causing this purple cast?”</li>
+        </ul>
+
+        <div class="feature-grid">
+          <article class="feature">
+            <h3>Your plan, your model</h3>
+            <p>It runs on the AI subscription you already pay for, with the model you choose: Claude Code, Codex,
+              Grok, Antigravity, or any agent app that supports MCP.</p>
+          </article>
+          <article class="feature">
+            <h3>Your layers stay yours</h3>
+            <p>It works by rules written for Photoshop: tone and color on adjustment layers, original layers left
+              intact. Every action is a named History step you can undo.</p>
+          </article>
+          <article class="feature">
+            <h3>More than scripts</h3>
+            <p>It can press Capture and Place Back for you, generate through the providers you set up, and draws on
+              a knowledge base of verified Photoshop recipes that updates by itself.</p>
+          </article>
+        </div>
+
+        <div class="quickstart-note">
+          <span class="quickstart-note-icon" aria-hidden="true">💡</span>
+          <p>
+            <strong>You hold the switch:</strong> the agent reaches Photoshop only while you turn on
+            <strong>FromPS / ToPS AI…</strong> in the panel menu. Setup is done once, and a task takes minutes, not
+            seconds. <a href="manual/index.html#ai-agent">Set it up in the manual →</a>
+          </p>
         </div>
       </div>
     </section>
@@ -394,7 +445,7 @@
             <div class="quickstart-note">
               <span class="quickstart-note-icon" aria-hidden="true">💡</span>
               <p>
-                <strong>No API keys needed for browser workflow:</strong> Drag-and-drop into ChatGPT, Midjourney, or Gemini works right away. WebHelper is only needed if you want direct API generation using your own keys.
+                <strong>No API keys needed for browser workflow:</strong> Drag-and-drop into ChatGPT, Midjourney, or Gemini works right away. WebHelper is only needed if you want to generate in a local workspace — with your own API keys or through a signed-in AI CLI.
               </p>
             </div>
           </div>
@@ -430,23 +481,36 @@
           <details class="faq-item" open>
             <summary>Does it generate images by itself?</summary>
             <p>
-              No. It is a bridge. It sends your Photoshop selections to the AI tool of your choice
-              (browser-based or API) and brings the results back.
+              No. It is a bridge with no image model of its own. It sends your Photoshop selections
+              to the AI tool of your choice (a browser tool, an API provider, or an AI CLI you are
+              signed in to) and brings the results back.
             </p>
           </details>
           <details class="faq-item">
             <summary>Do I need API keys?</summary>
             <p>
-              Only if you want WebHelper’s API features. The browser drag-and-drop workflow
-              needs no API keys.
+              Not for the browser drag-and-drop workflow. In WebHelper you need either API keys for
+              direct API providers, or an installed and signed-in AI CLI, which runs on your
+              existing ChatGPT, Gemini, or Grok plan.
             </p>
           </details>
           <details class="faq-item">
             <summary>Does it send my images somewhere in the middle?</summary>
             <p>
               Browser drag-and-drop goes to whatever site you drop into. WebHelper sends from
-              your machine to the API provider you configured. There are no middleman servers
+              your machine to the API provider you configured, or — with CLI generation — to the
+              vendor of the CLI you signed in to. If you connect an AI agent, its vendor receives
+              what the agent looks at in the document. There are no middleman servers
               operated by FromPS / ToPS.
+            </p>
+          </details>
+          <details class="faq-item">
+            <summary>Can an AI agent change my Photoshop document?</summary>
+            <p>
+              Only if you connect one yourself and turn on <strong>FromPS / ToPS AI…</strong> in the
+              panel menu. While it is on, the agent can inspect the open document and run Photoshop
+              scripts in it; each action is a named step in History, and the switch turns itself off
+              after an hour without tasks. With it off, no agent can reach Photoshop.
             </p>
           </details>
           <details class="faq-item">

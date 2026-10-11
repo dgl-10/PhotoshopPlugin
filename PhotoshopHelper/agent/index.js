@@ -61,7 +61,8 @@ function createAgentService({
     onAgentSeen = () => {},
     idleWithoutTaskMs = DEFAULT_IDLE_WITHOUT_TASK_MS,
     helperVersion,
-    logger = console
+    logger = console,
+    trackUsage = () => {}
 }) {
     const tasks = createTaskSession();
     const knowledgeBase = createKnowledgeBase({
@@ -136,7 +137,8 @@ function createAgentService({
         tasks,
         knowledgeBase,
         journal,
-        progress
+        progress,
+        trackUsage
     });
 
     /**

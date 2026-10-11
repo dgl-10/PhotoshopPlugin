@@ -1,5 +1,19 @@
 'use strict';
 
+/**
+ * NOTE: THIS MODULE IS CURRENTLY UNUSED IN PRODUCTION.
+ *
+ * This file was created during Stage 1 experimental LLM integration (direct API
+ * and standalone CLI runner). It is not imported or called by the main application
+ * runtime; it is currently only referenced by its unit tests (_tests_/llmEngine.test.js).
+ *
+ * Active CLI agents and model tiers are managed via `agent/cli-service.js` and the
+ * GUI (AI CLI Settings), and Photoshop document automation is handled through the
+ * external MCP server (`photoshop-helper`).
+ *
+ * Kept here for future reference and potential re-activation.
+ */
+
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -13,6 +27,54 @@ const VALID_API_PROVIDERS = new Set(['openai']);
 const VALID_CLI_TYPES = new Set(['codex', 'claude', 'agy', 'grok']);
 
 // ── Configuration ────────────────────────────────────────────────────────────
+
+/*
+ * =============================================================================
+ * ENVIRONMENT TEMPLATE DEFINITIONS (.env.template)
+ * =============================================================================
+ * The following environment configuration block was originally part of
+ * PhotoshopHelper/.env.template (Stage 1 LLM & legacy Agent setup).
+ * It was removed from .env.template to keep the active template clean,
+ * and preserved here so it can easily be copied back if work on this module resumes:
+ *
+ * # ── LLM Configuration (Stage 1) ──────────────────────────────────────────────
+ * # These settings control the experimental LLM integration.
+ * # LLM features are completely optional — Helper works normally without them.
+ *
+ * # Execution mode: "api" (direct HTTP call to an LLM provider) or
+ * #                 "cli" (local CLI agent, requires a user subscription).
+ * # Leave empty to disable LLM features entirely.
+ * LLM_MODE=
+ *
+ * # API Settings (used only when LLM_MODE=api)
+ * # Uses the OPENAI_API_KEY defined in the Local API Keys section above.
+ * LLM_API_PROVIDER=openai
+ * LLM_API_MODEL=gpt-5-mini
+ *
+ * # CLI Settings (used only when LLM_MODE=cli)
+ * # Supported CLI types: codex, claude, agy, grok
+ * # The CLI must be installed and authorized by the user beforehand.
+ * LLM_CLI_TYPE=codex
+ * LLM_CLI_MODEL=gpt-5.6-luna
+ *
+ * # ============================================
+ * # AI AGENT FOR PHOTOSHOP
+ * # ============================================
+ * # The AI Assistant panel in the Photoshop plugin launches the CLI chosen above, so
+ * # LLM_MODE must be "cli".
+ * # MCP server yourself and talk to it in your own terminal.
+ *
+ * # hidden  - the agent runs in the background and its answer appears in the panel
+ * # visible - the agent runs in its own console window that you can watch and type into.
+ * #           Helper cannot read a separate console, so the panel then shows only the steps
+ * #           the agent took through Photoshop.
+ * AGENT_CLI_WINDOW=hidden
+ *
+ * # The folder the launched agent works in. One folder for all tasks, separate from your own
+ * # projects. Leave empty to use the default inside PhotoshopHelper's data folder.
+ * AGENT_WORK_DIR=
+ * =============================================================================
+ */
 
 /**
  * Read and validate LLM configuration from environment variables.

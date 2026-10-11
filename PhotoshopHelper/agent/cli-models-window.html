@@ -164,6 +164,19 @@
             margin-bottom: .6rem;
         }
 
+        .cm-tier-title .tooltip.tooltip-bottom::after {
+            left: 0;
+            transform: translate(-6px, .2rem);
+            text-transform: none;
+            font-weight: normal;
+            letter-spacing: normal;
+            white-space: normal;
+            width: max-content;
+            min-width: 280px;
+            max-width: 450px;
+            text-align: left;
+        }
+
         .cm-tier-grid {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -329,7 +342,12 @@
 
             <!-- Light tier -->
             <div class="cm-tier">
-                <div class="cm-tier-title">Light</div>
+                <div class="cm-tier-title">
+                    Light
+                    <span class="tooltip tooltip-bottom" data-tooltip="Currently not in use. Reserved for future features.">
+                        <i class="cs-info-icon">i</i>
+                    </span>
+                </div>
                 <div class="cm-tier-grid">
                     <div class="form-group">
                         <label class="form-label" for="cm-light-model">Model</label>
@@ -368,7 +386,12 @@
 
             <!-- Medium tier -->
             <div class="cm-tier">
-                <div class="cm-tier-title">Medium</div>
+                <div class="cm-tier-title">
+                    Medium
+                    <span class="tooltip tooltip-bottom" data-tooltip="Used in Native Image Generation (WebHelper) and as Knowledge Base (KB) model in AI Assist starter prompt.">
+                        <i class="cs-info-icon">i</i>
+                    </span>
+                </div>
                 <div class="cm-tier-grid">
                     <div class="form-group">
                         <label class="form-label" for="cm-medium-model">Model</label>
@@ -407,7 +430,12 @@
 
             <!-- High tier -->
             <div class="cm-tier">
-                <div class="cm-tier-title">High</div>
+                <div class="cm-tier-title">
+                    High
+                    <span class="tooltip tooltip-bottom" data-tooltip="Used as the Vision (CV) model for canvas inspection in AI Assist starter prompt.">
+                        <i class="cs-info-icon">i</i>
+                    </span>
+                </div>
                 <div class="cm-tier-grid">
                     <div class="form-group">
                         <label class="form-label" for="cm-high-model">Model</label>

@@ -1,6 +1,6 @@
 # 🧩 Photoshop Helper
 
-**Photoshop Helper** is a specialized Electron application that acts as a bridge between Adobe Photoshop (UXP) and the operating system. It works around the security restrictions of the UXP platform to provide full clipboard support, Drag & Drop functionality, and a powerful UI for AI-driven image generation via cloud services.
+**Photoshop Helper** is a specialized Electron application that acts as a bridge between Adobe Photoshop (UXP) and the operating system. It works around the security restrictions of the UXP platform to provide full clipboard support, Drag & Drop functionality, a powerful UI for AI-driven image generation via cloud services or local AI CLIs, and an MCP server for AI agents working in Photoshop.
 
 ---
 
@@ -8,8 +8,9 @@
 
 - **Clipboard Harmony:** Copy and paste full PNG images (UXP natively supports text only).
 - **Pro Drag & Drop:** Drag a single file or a group of files from Photoshop directly into a browser or file explorer.
-- **WebHelper UI:** A local SPA (`http://localhost:18345/webhelper`) for working with neural networks (Grok, FLUX, Seedream, Civitai), including native image generation through configured AI CLIs.
-- **Nebula Integration:** Dynamic API key injection via the Nebula Broker.
+- **WebHelper UI:** A local SPA (`http://localhost:18345/webhelper`) for working with neural networks (Grok, FLUX, Seedream, Civitai).
+- **CLI Generation:** Native image generation through an AI CLI already installed and signed in on the machine (OpenAI Codex, SpaceXAI Grok, Google Antigravity), on the person's own subscription and without an image API key. Configured in **AI CLI Settings...** in the tray menu.
+- **AI Agent for Photoshop (MCP):** An MCP server at `http://127.0.0.1:18345/mcp` that lets the AI agent the person already uses read and change the open Photoshop document and generate images through the configured providers. Any agent application on this computer that supports MCP servers works — a terminal CLI, a desktop app, or an IDE extension (Claude Code, Codex, Grok, Antigravity, and others).
 
 ---
 
@@ -25,24 +26,27 @@ npm install
 Create a `.env` file in the project root based on the example below:
 ```env
 # Local keys (all are optional; the recommended minimum is FAL_API_KEY only)
-XAI_API_KEY=
+SPACEXAI_API_KEY=
 FAL_API_KEY=
 REPLICATE_API_KEY=
 BFL_API_KEY=
 OPENAI_API_KEY=
 CIVITAI_API_KEY=
 
-# Nebula integration (recommended for security).
-# Defines the mapping between .env keys and Nebula (i.e., your personal GSM — Google Secret Manager).
-NEBULA_CS=XAI_API_KEY=XAI_API_KEY,FAL_API_KEY=FAL_API_KEY...
-# To disable Nebula, simply comment out the NEBULA_CS= line.
-
 # Standard key injection via environment variables is also supported.
 
 # Local server authentication (optional — see "Access control" below).
 PHOTOSHOP_HELPER_LOCAL_API_TOKEN=
 WEBHELPER_ACCESS_PASSWORD=
+
+# AI agent (optional): minutes without a task before the plugin's
+# "FromPS / ToPS AI" line closes itself. Default: 60.
+PHOTOSHOP_HELPER_AGENT_LINE_IDLE_MINUTES=
 ```
+
+CLI generation and the AI agent need no `.env` entries: the CLIs are chosen and their
+models selected in **AI CLI Settings...** in the tray menu, and the agent is connected from
+**AI Agent for Photoshop → AI Assist...**.
 
 ### 3. Run
 ```bash
@@ -85,7 +89,7 @@ WebHelper works from its own page without any setup.
 
 ### 🌐 WebHelper (AI API)
 - 🌐 `GET /webhelper` — Entry point for the web UI (SPA).
-- 🌐 `GET /api/webhelper/providers` — List of available models (Grok, FAL, FLUX, Civitai) and their parameters.
+- 🌐 `GET /api/webhelper/providers` — List of available models (Grok, FAL, FLUX, Civitai, and the CLI provider when one is configured) and their parameters. This one read-only route also accepts the 🔑 Local API token, because Local API and MCP clients use it for provider discovery.
 - 🌐 `POST /api/webhelper/task` — Create a new task (upload Source + Mask from Photoshop).
 - 🌐 `POST /api/webhelper/task/from-file` — **Iterative workflow**: create a new task from an existing generation result.
 - 🌐 `GET /api/webhelper/queue` — Queue of new tasks (polled by the UI).
@@ -101,6 +105,18 @@ WebHelper works from its own page without any setup.
 - 🔑 `GET /api/local/v1/generations/:generationId` — Return one generation's state and absolute output paths.
 - See [Local_Generation_API.md](Local_Generation_API.md) for the complete request schema, polling flow, authentication, and examples.
 
+### 🤖 AI Agent (MCP)
+- 🔑 `POST /mcp` — MCP server (Streamable HTTP, JSON-RPC 2.0) for AI agents. Publishes the document tools (`ps_`, `from_ps_`, `to_ps_`), the knowledge base tools (`ps_kb_`), and the generation tools (`gen_`). Registered in an agent under the name `photoshop-helper`.
+- 🔌 `GET /api/agent/state` — Connection and task state shown by the plugin's FromPS / ToPS AI line.
+- 🔌 `POST /api/agent/stop` — Close the active agent task.
+- 🔌 `GET /api/agent/mcp-setup` — Registration commands for Claude Code, Codex, Grok, and Antigravity, plus a text any agent can follow to register the server itself.
+- 🔌 `POST /api/agent/mcp-setup/install` — Run the registration command for one of those four agents (`{ "cli": "claude" | "codex" | "grok" | "agy" }`).
+- 🔌 `POST /api/agent/open-window` — Bring the AI Assist window to the front.
+- 🔌 `ws://127.0.0.1:18346` — Command channel to the plugin. The plugin opens it only while its FromPS / ToPS AI line is on and must present the plugin token in its first message.
+
+### 🔒 Internal
+- `POST /api/internal/cli-image/generate` — Private route the generator uses to run the CLI provider. It accepts only a per-process secret that never leaves Helper and is not part of the public API.
+
 ---
 
 ## 📁 Project Structure
@@ -111,12 +127,13 @@ PhotoshopHelper/
 │   ├── index.js                      # Agent service entry point (MCP tools, WS bridge, session coordinator)
 │   ├── agent-api.js                  # Plugin REST API router (task state, abort, assist window trigger)
 │   ├── task-session.js               # Document-bound task session coordinator and timeout tracking
-│   ├── mcp-setup.js                  # CLI MCP registration commands and configuration generator
+│   ├── mcp-setup.js                  # MCP registration commands and setup text for agents
 │   ├── mcp-tools.js                  # Core Photoshop document MCP tools (ps_* commands)
 │   ├── combine-tools.js              # Aggregates document (ps_*) and generation (gen_*) tool layers
 │   ├── gen-tools.js                  # MCP tools for image generation (gen_* commands)
 │   ├── journal.js                    # Diagnostic logger for MCP tool calls and results
 │   ├── knowledge-base.js             # Knowledge base loader, search index, and article provider for MCP tools
+│   ├── reduce-image.js               # Reduced copies of images for the agent to look at
 │   ├── cli-service.js                # Core CLI agent service, discovery, and tier execution (Light/Medium/High)
 │   ├── cli-runner.js                 # Subprocess manager for spawning and controlling external CLI agents
 │   ├── cli-prompts.js                # Standardized system prompts and model querying templates for CLI agents
@@ -136,6 +153,9 @@ PhotoshopHelper/
 │   ├── assist-window.js              # Electron window manager for the AI Assist window
 │   ├── assist-window-preload.js      # Secure IPC bridge for the AI Assist window
 │   └── assist-window-renderer.js     # Live status and task step renderer for AI Assist window
+├── knowledge-base/                   # Author knowledge base for the agent (downloaded by installed Helpers from main)
+│   ├── rules.md                      # Rules handed to the agent at ps_start_task
+│   └── articles/                     # One verified recipe per article
 ├── setup/                            # Initial configuration and setup wizard
 │   ├── config-paths.js               # Logic for locating configuration files
 │   ├── first-run-wizard.html         # First run configuration UI
@@ -191,13 +211,27 @@ PhotoshopHelper/
 ## 🔧 Technical Details
 
 - **Security:** The application is designed for local and personal use. **Important: it is not intended for public deployment.** Its local HTTP server requires a paired token or a same-origin browser request on every route except the health check — see [SECURITY.md](../SECURITY.md#local-http-server-access-control) for the full model. An environment detection system (`/api/is-local`) is implemented, allowing the UI to adapt when accessed via temporary tunnels (ngrok, cloudflared, etc.).
-- **Temp Management:** Session files are stored in `%TEMP%\ps_webhelper_tasks`. Task uploads live in `_WH_Tasks`, generated images and their JSON sidecars live in `_WH_Generated`, and CLI working files live in `_WH_CliScratch`. Files older than 30 days are removed from every subdirectory.
-- **Nebula Secrets:** When `NEBULA_CS` is set, the application automatically calls `nebulabroker emit` to inject keys from your personal GSM (Google Secret Manager) into `process.env`.
+- **Temp Management:** Session files are stored in `%TEMP%\ps_webhelper_tasks`. Task uploads live in `_WH_Tasks`, generated images and their JSON sidecars live in `_WH_Generated`, CLI working files live in `_WH_CliScratch`, and captures the agent saves to files live in `_Agent_Captures`. Files older than 30 days are removed from every subdirectory.
 - **High-Res Copy:** When copying from WebHelper, NativeImage is used to guarantee the original resolution is preserved without browser-side compression.
 - **Template Engine:** `templateEngine.js` resolves provider placeholders and parses
   safe conditional object keys such as `{{?source_image && model == 'model/edit'}}endpoint_url`.
   It contains no arbitrary JavaScript evaluation; the complete expression grammar is
   documented in `Providers_Configuration_Guide.md`.
+- **CLI Runs:** CLI generation runs only a CLI that is installed on `PATH` and ticked as
+  **Enabled** in **AI CLI Settings...**, with the model chosen there for its Medium tier.
+  Runs are non-interactive, so approval prompts are switched off on the command line (see
+  [SECURITY.md](../SECURITY.md#ai-agents-and-command-line-tools)). Model lists fetched
+  through **Refresh via CLI** are cached for 14 days in `cli-models-cache` in the data folder.
+- **Agent Channel:** Document tools reach Photoshop over the WebSocket channel on port
+  `18346`. The plugin opens it only when the person turns on **FromPS / ToPS AI...** in the
+  panel menu, and it closes itself after an hour without tasks
+  (`PHOTOSHOP_HELPER_AGENT_LINE_IDLE_MINUTES`). Turning the line off pauses a task rather
+  than cancelling it.
+- **Knowledge Base:** The author's rules and articles in `knowledge-base/` are downloaded
+  from the repository's `main` branch at startup and on the update schedule (tray:
+  **AI Agent for Photoshop → Check for Knowledge Base Updates**), like the provider catalog.
+  Articles and marks written by agents are kept separately in `knowledge-base.user` in the
+  data folder and are never uploaded. Development runs read the project folder directly.
 
 ---
 
@@ -211,8 +245,9 @@ To communicate with the helper from your plugin, use the standard `fetch` API.
 }
 ```
 
-The plugin-only routes (clipboard, drag, file save) require the Helper's plugin token on
-every request, sent as an `X-API-Key` header. Pairing is automatic: on startup, the Helper
+The plugin-only routes (clipboard, drag, file save, `/api/agent/*`) require the Helper's
+plugin token on every request, sent as an `X-API-Key` header. The agent channel on
+`ws://127.0.0.1:18346` uses the same token in its first (`hello`) message. Pairing is automatic: on startup, the Helper
 writes the token into the plugin's private UXP data folder (`getDataFolder()`), which the
 plugin reads without any user interaction. If a plugin installation is not found by that
 scan — an unusual install location, or a change to Adobe's storage layout — copy the token

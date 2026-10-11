@@ -383,10 +383,14 @@ function createAgentTools({
     progress,
     dialogWaitMs = DIALOG_WAIT_MS,
     reduceImage = createImageReducer(),
-    captureDir = DEFAULT_CAPTURE_DIR
+    captureDir = DEFAULT_CAPTURE_DIR,
+    trackUsage = () => {}
 }) {
     // Seconds, for the tool descriptions and answers.
     const dialogWaitSeconds = Math.max(1, Math.round(dialogWaitMs / 1000));
+
+    // Counter of executed scripts; every two scripts deduct one usage tick.
+    let executeScriptCount = 0;
 
     // The interactive ps_execute_script whose dialog may still be open, or whose result
     // arrived and has not been handed to the agent yet. Only one can exist: Photoshop is
@@ -912,6 +916,13 @@ function createAgentTools({
                             + 'wherever the new image differs from the old one. Omit it to use what '
                             + 'the panel\'s own Place Back would use right now — the person\'s '
                             + 'usual choice.'
+                    },
+                    layer_name: {
+                        type: 'string',
+                        description: 'A name for the new layer that says what it is, so the '
+                            + 'person\'s layer list reads well — for example "Fixed fingers, left '
+                            + 'hand". Without it the layer keeps the image file\'s name. In '
+                            + 'inpaint_mask mode the "[ai mask]" prefix still goes in front of it.'
                     }
                 },
                 required: ['task_id', 'capture_id'],
@@ -1112,6 +1123,13 @@ function createAgentTools({
         task.photoshopVersion = opened.photoshopVersion || 'unknown';
         journal.startTask(task);
         note(task.id, `started: ${intent}`, 'ps_start_task');
+
+        // Track usage for starting an agent task (1 tick)
+        try {
+            Promise.resolve(trackUsage(1)).catch(() => {});
+        } catch {
+            // Tracking failure must not break task startup
+        }
 
         const rules = knowledgeBase.readRules();
         const rulesFallback = !knowledgeBase.hasAuthorBase()
@@ -1575,6 +1593,17 @@ function createAgentTools({
         // and the agent must not read it as "nothing happened". It is counted as a failed
         // call, once, because to the struggle question it is exactly that.
         if (rejected) tasks.noteFailure(task.id, { rejectedCommands: true });
+
+        // Track usage: every two successfully executed scripts count as 1 tick
+        executeScriptCount += 1;
+        if (executeScriptCount % 2 === 0) {
+            try {
+                Promise.resolve(trackUsage(1)).catch(() => {});
+            } catch {
+                // Tracking failure must not break script delivery
+            }
+        }
+
         return textResult(text);
     }
 
@@ -1901,7 +1930,8 @@ function createAgentTools({
             taskId: task.id,
             captureId: args.capture_id,
             mode: args.mode,
-            feather: args.feather
+            feather: args.feather,
+            layerName: typeof args.layer_name === 'string' ? args.layer_name : undefined
         }, TIMEOUT_SCRIPT_MS);
 
         const placed = (answer && answer.placed) || {};

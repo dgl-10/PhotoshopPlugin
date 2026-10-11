@@ -478,11 +478,11 @@ This is the service that owns the API key and the HTTP endpoint, not the model b
 | `"replicate"` | Replicate |
 | `"fal"` | FAL |
 | `"openai"` | OpenAI (direct) |
-| `"xai"` | xAI (direct) |
+| `"spacexai"` | SpaceXAI (direct) |
 | `"bfl"` | Black Forest Labs (direct) |
 | `"civitai"` | Civitai Orchestration |
 
-A future combobox may collapse first-party hosts (`openai`, `xai`, `bfl`, …) into a
+A future combobox may collapse first-party hosts (`openai`, `spacexai`, `bfl`, …) into a
 single **Direct** group. Keep the specific host slug in configuration so that grouping
 can be coarse (Replicate / FAL / Direct) or fine (OpenAI vs BFL) without a data change.
 
@@ -537,7 +537,7 @@ This section defines everything the server needs to make the HTTP request to the
     "method": "POST",
     "headers": {
         "Content-Type": "application/json",
-        "Authorization": "Bearer {{env:XAI_API_KEY}}"
+        "Authorization": "Bearer {{env:SPACEXAI_API_KEY}}"
     },
     "body_template": {
         "prompt": "{{prompt}}",
@@ -691,13 +691,12 @@ Replaced with the value of `key` from the context. The context includes:
 Resolved from `process.env` on the server. Used for API keys and secrets.
 
 ```jsonc
-"Authorization": "Bearer {{env:XAI_API_KEY}}"  // → "Bearer sk-abc123..."
+"Authorization": "Bearer {{env:SPACEXAI_API_KEY}}"  // → "Bearer sk-abc123..."
 "x-key": "{{env:BFL_API_KEY}}"                 // → "bfl-xyz789..."
 ```
 
 API keys are loaded from:
-1. The `.env` file in the project root
-2. Optionally, from a NebulaSecrets broker (if configured via `NEBULA_CS` env var)
+- The `.env` file in the project root (or system environment variables)
 
 > **Dynamic Provider Filtering:** When the client requests the list of available providers (`GET /api/webhelper/providers`), the server automatically scans each provider's configuration (and its linked `response_config`) for any `{{env:...}}` placeholders. If a required environment variable is missing or empty in `process.env`, the provider is considered unavailable and is completely excluded from the list sent to the UI.
 
@@ -1542,7 +1541,7 @@ When the user clicks "Generate", this is the complete server-side sequence:
 
 | Aspect | Implementation |
 |--------|---------------|
-| **API Keys** | Stored in `.env` file or injected via NebulaSecrets. Referenced via `{{env:VAR_NAME}}` in templates. Never exposed to the browser. |
+| **API Keys** | Stored in `.env` file or environment variables. Referenced via `{{env:VAR_NAME}}` in templates. Never exposed to the browser. |
 | **Request Config** | `request_config`, `response_config`, `image_format`, `filename_suffix`, and `preprocessor` are all stripped from provider data before sending to the browser (`GET /api/webhelper/providers`). |
 | **Browser Isolation** | The browser only sees client-safe metadata including `id`, `name`, `generation_modes`, `tags`, `parameters`, `mask_handling`, `max_reference_images`, `supports_negative_prompt`, `english_only`, `allowed_aspect_ratios`, `remarks`, and `nice_name`. |
 | **Dynamic Visibility**| Providers requiring API keys (via `{{env:VAR_NAME}}`) that are absent or empty in the server's `process.env` are entirely filtered out and never sent to the client. |

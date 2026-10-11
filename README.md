@@ -8,6 +8,8 @@ Photoshop's built-in AI is convenient, but many artists also use external tools.
 
 <img src="_screenshots/01/result_04/02.png" alt="plugin's basic workflow" width="1200">
 
+> 🆕 **New:** your own AI agent can now work in the open Photoshop document — see [AI Agent for Photoshop](#-ai-agent-for-photoshop-mcp).
+
 ---
 
 ## Download
@@ -75,11 +77,11 @@ Choose your path:
 | Method | How |
 |--------|-----|
 | 🌐 **Anywhere Drag & Drop (or Copy/Paste)** | Drag & Drop your image + mask directly into ChatGPT / Midjourney / Gemini in your browser, or into any other program. |
-| ⚡ **API Generation** | Use the built-in WebHelper for direct API generations using your own API keys. |
+| ⚡ **WebHelper Generation** | Generate in the built-in WebHelper — with your own API keys, or through an AI CLI on the plan you already pay for. |
 
 ### Step 3: Generate
 
-Use the generated images and masks as a reference in your favorite AI tool. Drag and drop them directly into your browser, or use the built-in WebHelper for API-based generation.
+Use the generated images and masks as a reference in your favorite AI tool. Drag and drop them directly into your browser, or generate in the built-in WebHelper.
 
 ### Step 4: Import Result
 
@@ -103,13 +105,13 @@ Hit **Place Back** to finish the workflow. The plugin **automatically**:
 
 ---
 
-## ⚡ Built-in WebHelper: Your Local API Workspace
+## ⚡ Built-in WebHelper: Your Local Generation Workspace
 
 While the browser-based workflow is great, **WebHelper** is designed for those who need to generate images using their own **API keys**. It gives you a single local command center (`localhost`) that connects Photoshop directly to professional-grade AI models.
 
 If you prefer using your own credentials for privacy, higher limits, or specific models — WebHelper handles the technical bridge. Your images and masks arrive there **automatically** from Photoshop, letting you generate, compare, and send results back in one click.
 
-**Already paying for AI?** WebHelper turns your existing ChatGPT/Codex, Gemini/Antigravity, Grok access into one unified image-generation workspace—using supported CLIs and your subscription allowance, with no separate image API key or API-token bill.
+**Already paying for AI?** If you have an AI CLI installed and signed in on this computer — on your ChatGPT, Gemini, or Grok plan — WebHelper can generate through it, with no image API key needed. Your capture arrives from Photoshop automatically, results sit side by side, and the one you pick goes back without downloading or dragging files. One-time CLI setup is required (the supported CLIs are listed in **AI CLI Settings...** in the tray menu); these generators receive the image and the prompt, not the mask.
 
 <table>
   <tr>
@@ -121,7 +123,7 @@ If you prefer using your own credentials for privacy, higher limits, or specific
 ### 🧩 Built-in API Providers (Infrastructures)
 WebHelper is designed as a universal bridge. It includes modular **Response Handlers** that automatically manage the technical communication patterns of different AI architectures:
 
-- **Universal Sync**: For direct APIs that return images immediately in the response (e.g., **xAI / Grok**).
+- **Universal Sync**: For direct APIs that return images immediately in the response (e.g., **SpaceXAI / Grok**).
 - **FAL.ai Handler**: Optimized for FAL's asynchronous generation pipeline.
 - **Replicate Handler**: Optimized for Replicate's asynchronous generation pipeline.
 - **BFL.ai Handler**: Specialized polling engine for **Black Forest Labs (Flux models)** asynchronous generation pipeline.
@@ -134,9 +136,9 @@ WebHelper is designed as a universal bridge. It includes modular **Response Hand
 ---
 
 ### WebHelper Features:
-- 🤖 **Native CLI generation**: Use an installed, enabled Codex, Grok, or Antigravity CLI that is marked for native image generation; WebHelper runs its configured Medium model without requiring another API key
+- 🤖 **CLI generation**: Generate through an installed, signed-in AI CLI on your ChatGPT, Gemini, or Grok plan — no image API key
 - 🖼️ **Reference images**: Attach additional reference images to guide the AI
-- 🎭 **Mask overlay**: See exactly what the AI will inpaint (toggle: image / mask / overlay)
+- 🎭 **Mask overlay**: See exactly what the AI will inpaint (toggle: image / mask / overlay) — with providers that accept a mask
 - 🔄 **Multi-task**: Send multiple selections from Photoshop — each becomes an independent task
 - 📊 **Parameter memory**: Settings are preserved when switching between AI providers
 - 📋 **One-click copy**: Copy result straight to clipboard and paste into Photoshop
@@ -153,13 +155,38 @@ https://github.com/user-attachments/assets/4891579d-1a0f-4fa3-847f-225eda7ca1b4
 
 ---
 
+## 🤖 AI Agent for Photoshop (MCP)
+
+*An optional tool — the capture and place-back workflow above works without it.*
+
+**Your own AI agent, working in the document you have open.** Connect the agent you already use and ask in plain words:
+
+> *"Make it warmer and more cinematic — but keep everything editable."*
+>
+> *"Make it black and white, but leave the red dress in color."*
+>
+> *"Which layer is causing this purple cast?"*
+
+- 🧠 **Your plan, your model** — it runs on the AI subscription you already pay for, with the model you choose. Any agent application on this computer that supports MCP servers works: a terminal CLI, a desktop app, or an IDE extension (Claude Code, Codex, Grok, Antigravity, and others).
+- 🗂️ **Your layers stay yours** — it works by rules written for Photoshop: tone and color on adjustment layers, original layers left intact. Every action is a separate named step in History, undone the usual way.
+- 📚 **It knows Photoshop's quirks** — a built-in knowledge base of verified recipes covers the commands AI models usually get wrong, and it updates by itself.
+- 🎯 **It can run the bridge for you** — the agent can press **Capture** and **Place Back** and generate through the providers configured in WebHelper.
+- 🔌 **You hold the switch** — the agent reaches Photoshop only while **FromPS / ToPS AI…** is turned on in the panel menu, and the switch turns itself off after an hour without tasks.
+
+> [!NOTE]
+> Setup is done once, and a task takes minutes, not seconds — it is for work you would rather hand over than rush. A connected agent can run scripts that change the document, so connect only agents you trust. Setup steps are in the [manual](https://dgl-10.github.io/PhotoshopPlugin/manual/index.html#ai-agent).
+
+---
+
 ## 🔒 Privacy and Security
 
-PhotoshopHelper runs locally on your machine and is used for clipboard, drag-and-drop, and optional WebHelper API workflows.
+PhotoshopHelper runs locally on your machine and is used for clipboard, drag-and-drop, optional WebHelper generation (API providers or a signed-in AI CLI), and the optional MCP server for AI agents.
 
-Browser drag-and-drop workflows do not require API keys. API keys are only needed when you configure WebHelper providers yourself. 
+Browser drag-and-drop workflows do not require API keys. API keys are only needed when you configure WebHelper API providers yourself; CLI generation runs on the plan of the CLI you signed in to.
 
 To make the workflow work, the plugin/helper needs access to the local file system, clipboard, localhost communication, and network/API requests for the providers or browser tools you choose.
+
+With CLI generation, PhotoshopHelper starts the CLI you installed, and the CLI sends the prompt and images to its vendor under your own account. With the AI agent, the agent's vendor receives whatever the agent reads — the document's structure, layer settings, and images of the canvas — and the agent can reach Photoshop only while **FromPS / ToPS AI…** is turned on in the panel. See [PRIVACY.md](PRIVACY.md) for details.
 
 The plugin and Helper authenticate to each other with a token that PhotoshopHelper generates and delivers automatically — no setup step is required. See [SECURITY.md](SECURITY.md) for the full local access model.
 
@@ -174,7 +201,7 @@ The helper is not intended to be exposed as a public server. Keep it on localhos
 | Component | What it does |
 |-----------|-------------|
 | **FromPS / ToPS Plugin** | The Photoshop panel — capture selections, place results back |
-| **PhotoshopHelper** | Background companion app — enables clipboard, drag & drop, WebHelper, and local API access |
+| **PhotoshopHelper** | Background companion app — enables clipboard, drag & drop, WebHelper, local API access, and the MCP server for AI agents |
 
 ---
 
@@ -219,13 +246,13 @@ FromPS / ToPS is not another model-specific generator. It is a bridge for workfl
 ## ❓ FAQ
 
 **1. Does it generate images by itself?**
-No, it is a bridge. It sends your Photoshop selections to the AI tool of your choice (browser-based or API) and brings the results back.
+No, it is a bridge with no image model of its own. It sends your Photoshop selections to the AI tool of your choice (a browser tool, an API provider, or an AI CLI you are signed in to) and brings the results back.
 
 **2. Do I need API keys?**
-Only if you want to use the built-in WebHelper API feature. The browser drag-and-drop workflow requires no API keys.
+Not for the browser drag-and-drop workflow. In WebHelper you need either API keys for direct API providers, or an installed and signed-in AI CLI, which runs on your existing ChatGPT, Gemini, or Grok plan.
 
 **3. Does it send my images anywhere?**
-If you use the browser drag-and-drop, the images go to whatever website you drop them into. If you use WebHelper, the images are sent directly from your local machine to the API provider you configured. There are no middleman servers.
+If you use the browser drag-and-drop, the images go to whatever website you drop them into. If you use WebHelper, the images are sent directly from your local machine to the API provider you configured, or — with CLI generation — to the vendor of the CLI you signed in to. If you connect an AI agent, its vendor receives what the agent looks at in the document. There are no middleman servers.
 
 **4. Is it free?**
 Yes. The app is free to use and the core workflow is not locked behind a payment. If you use it heavily, it may occasionally show a dismissible support reminder. A supporter key simply snoozes those reminders for a long time.
@@ -238,6 +265,9 @@ FromPS / ToPS does not claim rights over your outputs. Usage rights for generate
 
 **7. Do I need to configure anything for the plugin to talk to PhotoshopHelper?**
 No. PhotoshopHelper pairs itself with the plugin automatically on startup. If the panel ever reports that the Helper is "not paired," copy the token from the tray menu (Access Tokens) into the plugin's Settings dialog as a one-time fallback.
+
+**8. Can an AI agent change my Photoshop document?**
+Only if you connect one yourself and turn on **FromPS / ToPS AI…** in the panel menu. While it is on, the agent can inspect the open document and run Photoshop scripts in it; each action is a named step in History, and the switch turns itself off after an hour without tasks. With it off, no agent can reach Photoshop.
 
 ---
 

@@ -130,6 +130,18 @@ test('the panel hands its FromPS and ToPS cards to the agent commands', () => {
     assert.match(handlers, /ps\.captureSelectionInModal\(/);
     assert.match(handlers, /ps\.placeBackInModal\(/);
     assert.doesNotMatch(handlers, /ps\.captureSelection\(|ps\.placeBack\(/);
+    // The agent's layer name is set before the inpaint mask step, which puts "[ai mask]" in front.
+    const psJs = source('modules', 'ps.js');
+    assert.match(psJs, /if \(layerName\) \{[\s\S]*?newLayer\.name = ownName \|\| layerName;[\s\S]*?applySmartObjectNativeMask\(doc\)/);
+    // A prefix the agent wrote itself, in any spelling, is dropped so it is not doubled.
+    const strip = psJs.match(/layerName\.replace\((\/.+?\/i), ''\)/);
+    assert.ok(strip, 'the agent\'s own "[ai mask]" prefix is stripped in mask mode');
+    const prefix = new Function(`return ${strip[1]};`)();
+    for (const name of ['[ai mask] Hair', '[AI Mask]Hair', ' [ ai  mask ] Hair']) {
+        assert.equal(name.replace(prefix, ''), 'Hair', name);
+    }
+    assert.equal('Hair [ai mask]'.replace(prefix, ''), 'Hair [ai mask]', 'only a leading prefix');
+    assert.match(handlers, /historyName,\s*layerName\s*\)/);
     // The capture is always named by id and checked against the task's document.
     assert.match(handlers, /if \(!Number\.isInteger\(payload\.captureId\)\)/);
     assert.match(handlers, /capture\.context\.documentId !== doc\.id/);

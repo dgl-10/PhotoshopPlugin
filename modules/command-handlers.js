@@ -468,7 +468,7 @@ function describeFeather(options) {
  * its id, never taken as "whatever the card shows now": the person may have switched it
  * while the agent was thinking.
  *
- * @param {object} payload - { taskId, captureId, mode, feather }.
+ * @param {object} payload - { taskId, captureId, mode, feather, layerName }.
  * @returns {Promise<object>} What was placed and where, and the status.
  */
 async function agentToPsPlaceBack(payload) {
@@ -515,6 +515,11 @@ async function agentToPsPlaceBack(payload) {
             ? featherFor(payload.feather, capture.isSelectAll)
             : link.getFeatherOptions(capture.isSelectAll);
 
+        // The agent's own name for the new layer; without it the layer keeps the file's name.
+        const layerName = typeof payload.layerName === 'string' && payload.layerName.trim()
+            ? payload.layerName.trim()
+            : null;
+
         // The History panel is read by the person, who knows the capture by its number in the list.
         const historyName = mode === 'selection'
             ? `Agent: restore selection of capture ${current.number}`
@@ -528,7 +533,8 @@ async function agentToPsPlaceBack(payload) {
                 capture.bounds,
                 capture.maskData,
                 feather,
-                historyName
+                historyName,
+                layerName
             ),
             historyName
         );

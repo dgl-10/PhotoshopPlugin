@@ -118,8 +118,11 @@ try {
 }
 
 
-// Load secrets right at startup before accessing any API keys
-// Nebula is the author's personal utility that loads secrets from GSM (Google Secret Manager) and is only used in this code block
+// Load secrets right at startup before accessing any API keys.
+// Note: Nebula is the author's private utility used for a personal workflow to fetch secrets
+// from GSM (Google Secret Manager) via the local `nebulabroker` CLI. It is kept here solely
+// for the author's private convenience and is not a public feature or requirement.
+// If NEBULA_CS is not provided, this step is safely skipped and standard .env keys are used.
 function loadNebulaSecrets() {
     // Read env var and ensure it's not undefined or an empty/whitespace-only string
     const nebulaConstuctionString = process.env.NEBULA_CS;
@@ -247,7 +250,8 @@ function initAgentService() {
         },
         idleWithoutTaskMs: resolveAgentLineIdleTimeoutMs(),
         helperVersion: VERSION,
-        logger: log
+        logger: log,
+        trackUsage
     });
 
     initAssistWindow({ agentService, port: PORT });

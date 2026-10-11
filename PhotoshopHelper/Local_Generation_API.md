@@ -12,6 +12,11 @@ http://127.0.0.1:18345
 
 It is bound to the loopback interface and is not designed for public deployment.
 
+The same generation service is also published to MCP agents as the `gen_` tools of
+Photoshop Helper's MCP server (`POST /mcp`, same token). A generation started through
+`gen_start` can be read through this API and the other way round; the tools pass
+provider parameters through exactly as described here.
+
 ## API overview
 
 The complete API consists of two endpoints:
@@ -51,8 +56,12 @@ GET http://127.0.0.1:18345/api/webhelper/providers
 ```
 
 ```powershell
-Invoke-RestMethod -Uri 'http://127.0.0.1:18345/api/webhelper/providers'
+Invoke-RestMethod -Uri 'http://127.0.0.1:18345/api/webhelper/providers' `
+    -Headers @{ Authorization = "Bearer $env:PHOTOSHOP_HELPER_LOCAL_API_TOKEN" }
 ```
+
+This endpoint belongs to WebHelper, but it also accepts the Local API token (see
+**Authentication**); that token opens no other WebHelper route.
 
 Do not attempt to read provider configurations directly from disk. Provider availability
 is evaluated dynamically by the server (validating configured credentials, applying user
@@ -63,6 +72,11 @@ The response body is `{ "providers": [ ... ] }`. This can include runtime provid
 as `native-cli-image-generator`; a returned runtime provider can be selected by `providerId`
 exactly like a catalog provider. Its server-side transport remains private and cannot be
 recreated as an inline `provider` object.
+
+`native-cli-image-generator` runs an AI CLI installed on the machine (its `cli` parameter
+lists the CLIs available right now) on the person's own subscription instead of a paid
+image API. It does not accept a mask, and one generation can take several minutes, so
+keep polling rather than treating a long `running` state as a failure.
 
 There are two ways to select a provider on `POST /api/local/v1/generations`:
 
@@ -261,18 +275,19 @@ model is being overridden. See **First reference used as source**.
 
 Both Local API endpoints always require a shared token — this API triggers paid provider
 calls, so it is never reachable without one. A token is generated automatically on first
-run and stored in the Helper's local settings.
+run and stored in the Helper's local settings. The same token protects Photoshop Helper's
+MCP server (`POST /mcp`).
 
 You can manage this token from the system tray menu (**Access Tokens**):
 - **Copy Local API Token**: Copies the current token to your clipboard.
-- **Save Local API Token to User Environment...**: Exports `PHOTOSHOP_HELPER_LOCAL_API_TOKEN`
+- **Save Token to User Environment...**: Exports `PHOTOSHOP_HELPER_LOCAL_API_TOKEN`
   into your Windows User Environment Variables on demand. This allows local scripts,
-  CLI tools, and AI agents (such as MCP servers, Claude Code, or Antigravity) to
-  authenticate automatically without prompting for credentials.
+  CLI tools, and AI agents (such as Claude Code, Codex, Grok, or Antigravity connected to
+  the MCP server) to authenticate automatically without prompting for credentials. The
+  item shows a checkmark once the saved value matches the active token. Terminals and
+  agents that were already open must be restarted to see the variable.
 - **Copy Env Var Name (PHOTOSHOP_HELPER_LOCAL_API_TOKEN)**: Copies the environment
   variable name string to your clipboard for easy pasting into code or configurations.
-- **Regenerate Local API Token...**: Generates a fresh token, immediately invalidating the
-  old one.
 
 ### Environment variable override (optional)
 
@@ -648,7 +663,7 @@ $result.outputPaths
 ```
 
 Replace `your-token` with the value copied from the tray menu (**Access Tokens → Copy
-Local API Token**), exported to your environment (**Access Tokens → Save Local API Token to User Environment...**),
+Local API Token**), exported to your environment (**Access Tokens → Save Token to User Environment...**),
 or with your pinned `PHOTOSHOP_HELPER_LOCAL_API_TOKEN` if configured in `.env`.
 
 

@@ -198,6 +198,9 @@ test('the from_ps_ and to_ps_ tools describe the panel buttons they stand for', 
     );
     assert.deepEqual(placeBack.inputSchema.properties.feather.enum, ['off', 'outward', 'center', 'inward']);
     assert.match(placeBack.inputSchema.properties.feather.description, /Omit it to use what the panel/);
+    // The name is optional; the "[ai mask]" prefix of an inpaint mask layer stays.
+    assert.equal(placeBack.inputSchema.required.includes('layer_name'), false);
+    assert.match(placeBack.inputSchema.properties.layer_name.description, /"\[ai mask\]" prefix still goes in front/);
 });
 
 test('to_ps_place_back passes its choices through and reports the layer, mask and blur it made', async context => {
@@ -220,12 +223,15 @@ test('to_ps_place_back passes its choices through and reports the layer, mask an
     });
     const taskId = await startTask(tools, 'put the hand back');
 
-    const result = await tools.call('to_ps_place_back', { task_id: taskId, capture_id: 12, feather: 'outward' });
+    const result = await tools.call('to_ps_place_back', {
+        task_id: taskId, capture_id: 12, feather: 'outward', layer_name: 'Fixed fingers, left hand'
+    });
 
     const sent = calls.at(-1);
     assert.equal(sent.action, 'agent_to_ps_place_back');
     assert.equal(sent.payload.captureId, 12);
     assert.equal(sent.payload.feather, 'outward');
+    assert.equal(sent.payload.layerName, 'Fixed fingers, left hand');
     assert.equal(sent.payload.mode, undefined, 'the plugin picks the default mode');
     assert.equal(sent.timeoutMs, 180_000);
 

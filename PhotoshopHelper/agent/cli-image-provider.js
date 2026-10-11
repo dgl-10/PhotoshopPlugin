@@ -48,7 +48,7 @@ const CLI_PROFILES = {
         tag_family: 'gpt-image'
     },
     grok: {
-        label: 'xAI Grok',
+        label: 'SpaceXAI Grok',
         allowed_aspect_ratios: ['1:1', '3:2', '2:3', '16:9', '9:16'],
         tag_family: 'grok'
     },

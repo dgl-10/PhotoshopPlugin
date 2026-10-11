@@ -5,6 +5,7 @@
 
 const { app, action, core, imaging, constants } = require('photoshop');
 const settings = require('./settings.js');
+const { readImagePixelSize } = require('./image-size.js');
 
 // Default margin, in pixels, a capture adds around the selection on every side.
 const CAPTURE_PADDING = 50;
@@ -1225,11 +1226,14 @@ async function placeBack(placeBackMode, fileToken, bounds, maskImageData, feathe
  * @param {object} [featherOptions={}] - See placeBack.
  * @param {string|null} [historyName=null] - Name of the History step. By default the
  *        panel's own name for this mode.
+ * @param {string|null} [layerName=null] - Name for the new layer. By default it keeps the name
+ *        Place gives it (the file's name). In 'mask' mode the "[ai mask]" prefix still goes
+ *        in front of it.
  * @returns {Promise<object|undefined>} For a placement, what was done: the new layer, the
  *        mask's edge shift and feather, and the Gaussian Blur radius (null when it was not
  *        applied). Nothing for 'selection'.
  */
-async function placeBackInModal(executionContext, placeBackMode, fileToken, bounds, maskImageData, featherOptions = {}, historyName = null) {
+async function placeBackInModal(executionContext, placeBackMode, fileToken, bounds, maskImageData, featherOptions = {}, historyName = null, layerName = null) {
     const doc = app.activeDocument;
 
     const isSelectionOnly = placeBackMode === 'selection';
@@ -1267,7 +1271,8 @@ async function placeBackInModal(executionContext, placeBackMode, fileToken, boun
             // An editable (PSB) smart object needs the image rasterized first, and rasterizing
             // bakes in whatever size Place gave it. Placed straight into a document smaller than
             // the image, Place scales it down to fit the canvas, so the raster would come out
-            // reduced. Placing it into a huge temporary document keeps it at 100% for the raster.
+            // reduced. Placing it into a huge temporary document keeps it at 100% for the raster,
+            // and restorePlacedPixelSize undoes the scaling Place does by the file's resolution.
             console.log("Using High-Res Editable Smart Object path...");
             const result = await placeAsEditableSmartObject(fileToken, bounds, doc);
             placedImageWidth = result.placedImageWidth;
@@ -1356,6 +1361,15 @@ async function placeBackInModal(executionContext, placeBackMode, fileToken, boun
                 console.error("Step 3 Failed (Transform):", transformError);
                 throw new Error(`Failed to transform image: ${transformError.message}`);
             }
+        }
+
+        // Name the new layer before the mask step, which puts its "[ai mask]" prefix in front.
+        // A prefix the caller wrote itself, in any case or spacing, is dropped here so that
+        // the mask step adds the one proper prefix instead of a second one.
+        if (layerName) {
+            const ownName = applyPlaceBackAsMask ? layerName.replace(/^\s*\[\s*ai\s*mask\s*\]\s*/i, '') : layerName;
+            const newLayer = doc.activeLayers[0];
+            if (newLayer) newLayer.name = ownName || layerName;
         }
 
         if (applyPlaceBackAsMask) {
@@ -1456,6 +1470,52 @@ async function placeBackInModal(executionContext, placeBackMode, fileToken, boun
 }
 
 /**
+ * Scale a just-placed layer to the pixel size written in its file's header.
+ *
+ * Place sizes an image by the resolution stored in the file, so one saved at another
+ * resolution than the document comes in larger or smaller than its pixels. When the header
+ * cannot be read, or its proportions do not match the layer (a JPEG turned by its EXIF
+ * orientation, say), the layer is left as Place made it.
+ *
+ * @param {object} layer - The placed layer, active in its document.
+ * @param {string} fileToken - Session token of the placed file.
+ */
+async function restorePlacedPixelSize(layer, fileToken) {
+    let pixelSize = null;
+    try {
+        const { storage } = require('uxp');
+        const entry = storage.localFileSystem.getEntryForSessionToken(fileToken);
+        pixelSize = readImagePixelSize(await entry.read({ format: storage.formats.binary }));
+    } catch (readError) {
+        console.warn("Could not read the placed file's pixel size:", readError);
+    }
+    if (!pixelSize || !layer) return;
+
+    /**
+     * @returns {{width: number, height: number}} The layer's size as Photoshop reports it.
+     */
+    const measure = () => {
+        const b = layer.bounds;
+        return { width: b.right - b.left, height: b.bottom - b.top };
+    };
+
+    const placed = measure();
+    if (!(placed.width > 0 && placed.height > 0)) return;
+    const sameProportions = Math.abs(placed.width / placed.height - pixelSize.width / pixelSize.height) < 0.01;
+    if (!sameProportions) return;
+
+    // Layer bounds come back in whole pixels, so a scale worked out from the placed size is a
+    // little off: 245.76 px reads as 246, and 1024 px then comes out as 1023. Transforming a
+    // smart object loses nothing, so a second pass from the new, much larger size finishes it.
+    for (let pass = 0; pass < 3; pass++) {
+        const current = pass === 0 ? placed : measure();
+        if (current.width === pixelSize.width && current.height === pixelSize.height) return;
+        console.log(`Placed layer is ${current.width}x${current.height}, file is ${pixelSize.width}x${pixelSize.height}: restoring its pixel size.`);
+        await transformLayerToBounds(layer, { left: 0, top: 0, width: pixelSize.width, height: pixelSize.height });
+    }
+}
+
+/**
  * Places an image into a temporary large document to prevent downscaling,
  * rasterizes it at 100% resolution, converts it to a Smart Object,
  * and duplicates it back to the target document.
@@ -1481,7 +1541,7 @@ async function placeAsEditableSmartObject(fileToken, bounds, targetDoc) {
             fill: "transparent"
         });
 
-        // Step 1: Place Event (will be 100% scale because canvas is huge)
+        // Step 1: Place Event (the huge canvas keeps Place from shrinking it to fit)
         await action.batchPlay([
             {
                 _obj: "placeEvent",
@@ -1491,6 +1551,11 @@ async function placeAsEditableSmartObject(fileToken, bounds, targetDoc) {
                 }
             }
         ], { synchronousExecution: true });
+
+        // Step 1.5: Place also scales the image by the resolution stored in the file against
+        // this 72 ppi document: a 1024 px file saved at 300 ppi lands at 246 px, and Step 2
+        // would bake that in. Bring the layer back to the file's own pixel size first.
+        await restorePlacedPixelSize(tempDoc.activeLayers[0], fileToken);
 
         // Step 2: Rasterize (Bakes at 100% resolution)
         await action.batchPlay([

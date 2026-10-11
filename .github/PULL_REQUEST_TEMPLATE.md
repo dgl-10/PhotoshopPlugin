@@ -9,6 +9,9 @@ Describe the workflow problem and the change made.
 - [ ] Clipboard / drag-and-drop
 - [ ] PhotoshopHelper local API
 - [ ] WebHelper
+- [ ] CLI integration (AI CLI Settings, CLI generation)
+- [ ] AI agent (MCP server, agent tools, FromPS / ToPS AI line, AI Assist window)
+- [ ] Knowledge base
 - [ ] Provider configuration
 - [ ] Setup / updater / packaging
 - [ ] Documentation
@@ -23,7 +26,7 @@ Describe the workflow problem and the change made.
 
 ## Platforms tested
 
-List Windows/macOS version, architecture, Photoshop version, plugin version, and Helper version.
+List Windows/macOS version, architecture, Photoshop version, plugin version, and Helper version. For CLI or agent changes, also list the CLI or agent application and its version.
 
 ## Notes
 
