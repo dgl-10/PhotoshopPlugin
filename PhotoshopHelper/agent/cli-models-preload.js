@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 /**
- * Preload for the CLI Model Config window (Window B).
+ * Preload for the AI Agent & CLI Settings window of a single CLI (Window B).
  *
  * Exposes cliModelsBridge to the renderer via contextBridge.
  * The CLI name the window was opened for is injected as a URL hash

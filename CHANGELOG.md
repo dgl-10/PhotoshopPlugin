@@ -2,7 +2,7 @@
 
 All notable changes to **FromPS / ToPS** and **PhotoshopHelper** are documented in this file.
 
-## [1.3.0]
+## [1.3.1]
 
 ### 🤖 Model Context Protocol (MCP) & AI Agent Integration
 - **Photoshop MCP Server**: Published a local Model Context Protocol server endpoint (`http://127.0.0.1:18345/mcp`, Streamable HTTP / JSON-RPC 2.0) secured by the Local API token, allowing external AI coding assistants and agents (Claude Code, OpenAI Codex, SpaceXAI Grok, Google Antigravity, and others) to interact directly with Photoshop.

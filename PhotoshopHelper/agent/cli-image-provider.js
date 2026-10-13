@@ -23,6 +23,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const { buildCliImagePrompt } = require('./cli-prompts');
+const { CLI_LABELS } = require('./cli-labels');
 
 const CLI_IMAGE_PROVIDER_ID = 'native-cli-image-generator';
 const INTERNAL_AUTH_HEADER = 'x-photoshop-helper-internal-key';
@@ -57,27 +58,23 @@ const DEFAULT_ASPECT_RATIOS = ['1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16'
  */
 const CLI_PROFILES = {
     codex: {
-        label: 'OpenAI Codex',
+        label: CLI_LABELS.codex,
         tag_family: 'gpt-image'
     },
     grok: {
-        label: 'SpaceXAI Grok',
+        label: CLI_LABELS.grok,
         allowed_aspect_ratios: ['1:1', '3:2', '2:3', '16:9', '9:16'],
         tag_family: 'grok'
     },
     agy: {
-        label: 'Google Antigravity',
+        label: CLI_LABELS.agy,
         max_reference_images: 3,
         tag_family: 'nana-banana'
     },
     claude: {
-        label: 'Claude Code'
+        label: CLI_LABELS.claude
     }
 };
-
-const CLI_LABELS = Object.fromEntries(
-    Object.entries(CLI_PROFILES).map(([cli, profile]) => [cli, profile.label])
-);
 
 /**
  * Error type used inside the private endpoint. The machine-readable code is returned in

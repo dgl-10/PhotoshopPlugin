@@ -9,7 +9,7 @@
 - **Clipboard Harmony:** Copy and paste full PNG images (UXP natively supports text only).
 - **Pro Drag & Drop:** Drag a single file or a group of files from Photoshop directly into a browser or file explorer.
 - **WebHelper UI:** A local SPA (`http://localhost:18345/webhelper`) for working with neural networks (Grok, FLUX, Seedream, Civitai).
-- **CLI Generation:** Native image generation through an AI CLI already installed and signed in on the machine (OpenAI Codex, SpaceXAI Grok, Google Antigravity), on the person's own subscription and without an image API key. Configured in **AI CLI Settings...** in the tray menu.
+- **CLI Generation:** Native image generation through an AI CLI already installed and signed in on the machine (OpenAI Codex, SpaceXAI Grok, Google Antigravity), on the person's own subscription and without an image API key. Configured in **AI Agents & CLI Settings...** in the tray menu.
 - **AI Agent for Photoshop (MCP):** An MCP server at `http://127.0.0.1:18345/mcp` that lets the AI agent the person already uses read and change the open Photoshop document and generate images through the configured providers. Any agent application on this computer that supports MCP servers works — a terminal CLI, a desktop app, or an IDE extension (Claude Code, Codex, Grok, Antigravity, and others).
 
 ---
@@ -45,7 +45,7 @@ PHOTOSHOP_HELPER_AGENT_LINE_IDLE_MINUTES=
 ```
 
 CLI generation and the AI agent need no `.env` entries: the CLIs are chosen and their
-models selected in **AI CLI Settings...** in the tray menu, and the agent is connected from
+models selected in **AI Agents & CLI Settings...** in the tray menu, and the agent is connected from
 **AI Agent for Photoshop → AI Assist...**.
 
 ### 3. Run
@@ -135,20 +135,21 @@ PhotoshopHelper/
 │   ├── knowledge-base.js             # Knowledge base loader, search index, and article provider for MCP tools
 │   ├── reduce-image.js               # Reduced copies of images for the agent to look at
 │   ├── cli-service.js                # Core CLI agent service, discovery, and tier execution (Light/Medium/High)
+│   ├── cli-labels.js                 # Display names of the supported CLIs and agent platforms (single source)
 │   ├── cli-runner.js                 # Subprocess manager for spawning and controlling external CLI agents
 │   ├── cli-prompts.js                # Standardized system prompts and model querying templates for CLI agents
 │   ├── cli-transcript.js             # Output parser converting varied CLI streams into human-readable transcripts
 │   ├── cli-image-provider.js         # Virtual WebHelper image provider adapter backed by local CLI agents
 │   ├── cli-window.js                 # External console window for live CLI agent output streaming
 │   ├── cli-models-cache.js           # Cache storage manager for CLI models and capabilities
-│   ├── cli-models-window.html        # Markup for the CLI models catalog window
-│   ├── cli-models-window.js          # Window controller for CLI models catalog
-│   ├── cli-models-preload.js         # Secure IPC bridge for the CLI models window
-│   ├── cli-models-renderer.js        # UI logic and renderer for CLI models catalog window
-│   ├── cli-settings-window.html      # Markup for the CLI settings window
-│   ├── cli-settings-window.js        # Window controller for CLI settings
-│   ├── cli-settings-preload.js       # Secure IPC bridge for the CLI settings window
-│   ├── cli-settings-renderer.js      # UI logic and renderer for CLI settings window
+│   ├── cli-models-window.html        # Markup for the per-agent AI Agent & CLI settings window (models and tiers)
+│   ├── cli-models-window.js          # Window controller for the per-agent AI Agent & CLI settings
+│   ├── cli-models-preload.js         # Secure IPC bridge for the per-agent AI Agent & CLI settings window
+│   ├── cli-models-renderer.js        # UI logic and renderer for the per-agent AI Agent & CLI settings window
+│   ├── cli-settings-window.html      # Markup for the AI Agents & CLI settings window
+│   ├── cli-settings-window.js        # Window controller for AI Agents & CLI settings
+│   ├── cli-settings-preload.js       # Secure IPC bridge for the AI Agents & CLI settings window
+│   ├── cli-settings-renderer.js      # UI logic and renderer for AI Agents & CLI settings window
 │   ├── assist-window.html            # Markup for the AI Assist floating status window
 │   ├── assist-window.js              # Electron window manager for the AI Assist window
 │   ├── assist-window-preload.js      # Secure IPC bridge for the AI Assist window
@@ -218,7 +219,7 @@ PhotoshopHelper/
   It contains no arbitrary JavaScript evaluation; the complete expression grammar is
   documented in `Providers_Configuration_Guide.md`.
 - **CLI Runs:** CLI generation runs only a CLI that is installed on `PATH` and ticked as
-  **Enabled** in **AI CLI Settings...**, with the model chosen there for its Medium tier.
+  **Enabled** in **AI Agents & CLI Settings...**, with the model chosen there for its Medium tier.
   Runs are non-interactive, so approval prompts are switched off on the command line (see
   [SECURITY.md](../SECURITY.md#ai-agents-and-command-line-tools)). Model lists fetched
   through **Refresh via CLI** are cached for 14 days in `cli-models-cache` in the data folder.

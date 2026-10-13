@@ -12,6 +12,9 @@
  */
 
 const { spawn } = require('node:child_process');
+// The names come from cli-labels.js and not from cli-service.js: cli-service loads
+// cli-runner, which loads this file, so requiring cli-service here would close a circle.
+const { CLI_LABELS } = require('./cli-labels');
 
 // The name the server is registered under. It decides what the tools are called on the
 // agent's side (mcp__photoshop-helper__ps_start_task), so changing it is not cosmetic.
@@ -37,7 +40,7 @@ function buildInstallCommands({ port }) {
     return [
         {
             cli: 'claude',
-            label: 'Claude Code',
+            label: CLI_LABELS.claude,
             command: `claude mcp add --transport http ${SERVER_NAME} ${url} `
                 + `--header "Authorization: Bearer \${${TOKEN_ENV_VAR}}"`,
             note: 'Claude Code expands ${VAR} from the environment when it connects, so the '
@@ -46,14 +49,14 @@ function buildInstallCommands({ port }) {
         },
         {
             cli: 'codex',
-            label: 'OpenAI Codex',
+            label: CLI_LABELS.codex,
             command: `codex mcp add ${SERVER_NAME} --url ${url} --bearer-token-env-var ${TOKEN_ENV_VAR}`,
             note: 'Codex reads the token from the environment variable by name.',
             canInstallFromHelper: true
         },
         {
             cli: 'grok',
-            label: 'SpaceXAI Grok',
+            label: CLI_LABELS.grok,
             // cmd.exe (the shell Helper uses on Windows) leaves ${VAR} alone inside double
             // quotes. PowerShell and sh expand it, so a pasted command must use single quotes
             // or the reference never reaches ~/.grok/config.toml.
@@ -66,7 +69,7 @@ function buildInstallCommands({ port }) {
         },
         {
             cli: 'agy',
-            label: 'Google Antigravity',
+            label: CLI_LABELS.agy,
             // Antigravity does not support environment variable interpolation in HTTP headers at runtime
             // (${env:VAR} or ${VAR} are treated as literal strings). The command expands the variable
             // via the shell at install time so that the real token is written into ~/.gemini/config/mcp_config.json.

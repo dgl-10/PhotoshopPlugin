@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * Main-process module for the CLI Settings window (Window A).
+ * Main-process module for the AI Agents & CLI Settings window (Window A).
  *
  * Shows a table of the four supported CLIs with their installation status,
  * enabled checkbox, native image gen checkbox, and a "Configure" button that
- * opens the Model Config window (Window B) for the selected CLI.
+ * opens the AI Agent & CLI Settings window (Window B) for the selected CLI.
  *
  * Pattern mirrors assist-window.js: one module, one BrowserWindow reference,
  * IPC handlers registered once, window state remembered between opens.
@@ -72,7 +72,7 @@ function registerIpc() {
         await setCliNativeImageGen(cli, value);
     });
 
-    // Open the Model Config window for the requested CLI (Window B).
+    // Open the AI Agent & CLI Settings window for the requested CLI (Window B).
     ipcMain.handle('cli-settings:open-model-config', async (_event, { cli }) => {
         await openCliModelsWindow(cli, { parent: settingsWindow });
     });
@@ -81,7 +81,7 @@ function registerIpc() {
 // ── Public API ─────────────────────────────────────────────────────────────
 
 /**
- * Wire this module to the Model Config window opener. Must be called once
+ * Wire this module to the Window B opener. Must be called once
  * during startup, before the first openCliSettingsWindow() call.
  *
  * @param {object}   options
@@ -94,7 +94,7 @@ function initCliSettingsWindow({ openModelsWindow }) {
 }
 
 /**
- * Open the CLI Settings window, or bring the existing one to the front.
+ * Open the AI Agents & CLI Settings window, or bring the existing one to the front.
  *
  * @param {object} [options]
  * @param {import('electron').BrowserWindow} [options.parent]
@@ -116,7 +116,7 @@ async function openCliSettingsWindow(options = {}) {
         minHeight: MIN_HEIGHT,
         parent: parentWindow,
         modal: Boolean(parentWindow && options.modal),
-        title: 'PhotoshopHelper — AI CLI Settings',
+        title: 'PhotoshopHelper — AI Agents & CLI Settings',
         autoHideMenuBar: true,
         webPreferences: {
             preload: path.join(__dirname, 'cli-settings-preload.js'),

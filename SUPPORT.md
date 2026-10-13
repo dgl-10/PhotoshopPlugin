@@ -14,7 +14,7 @@ FromPS / ToPS connects Photoshop to external browser tools and optional API prov
    Helper tray menu (**Access Tokens → Copy Plugin Pairing Token**) into the plugin's
    Settings dialog.
 6. For CLI generation, confirm that the CLI works on its own in a terminal and is signed in,
-   and that in **AI CLI Settings...** (Helper tray menu) it is **Enabled**, ticked for
+   and that in **AI Agents & CLI Settings...** (Helper tray menu) it is **Enabled**, ticked for
    **Image**, and has a **Medium** model selected. Otherwise WebHelper does not offer the
    **CLI Native Image Generator**.
 7. For the AI agent, open **AI Agent for Photoshop → AI Assist...** from the Helper tray menu

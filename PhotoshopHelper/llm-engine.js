@@ -8,7 +8,7 @@
  * runtime; it is currently only referenced by its unit tests (_tests_/llmEngine.test.js).
  *
  * Active CLI agents and model tiers are managed via `agent/cli-service.js` and the
- * GUI (AI CLI Settings), and Photoshop document automation is handled through the
+ * GUI (AI Agents & CLI Settings), and Photoshop document automation is handled through the
  * external MCP server (`photoshop-helper`).
  *
  * Kept here for future reference and potential re-activation.

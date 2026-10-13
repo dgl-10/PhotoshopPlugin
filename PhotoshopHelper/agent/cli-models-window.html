@@ -4,14 +4,15 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PhotoshopHelper — Model Configuration</title>
+    <title>PhotoshopHelper — AI Agent & CLI Settings</title>
     <!-- Spectre.css — same version used across all Helper windows -->
     <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre.min.css">
     <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-exp.min.css">
     <link rel="stylesheet" href="https://unpkg.com/spectre.css/dist/spectre-icons.min.css">
 
     <style>
-        html, body {
+        html,
+        body {
             height: 100%;
             overflow-x: hidden;
         }
@@ -36,6 +37,12 @@
             margin: 0;
         }
 
+        .cm-subtitle {
+            font-size: .75rem;
+            color: #667;
+            margin-top: .15rem;
+        }
+
         .cm-body {
             flex: 1 1 auto;
             overflow-y: auto;
@@ -53,17 +60,21 @@
             flex: none;
         }
 
-        /* Options bar: Enabled & Native Image Gen */
+        /* CLI Integration section */
+
+        /* Options bar inside cli box */
         .cm-options-bar {
             display: flex;
             align-items: center;
             flex-wrap: wrap;
-            gap: .8rem 1.2rem;
-            padding: .6rem .8rem;
-            background: #f7f8f9;
-            border: 1px solid #dadee4;
-            border-radius: .2rem;
-            margin-bottom: .8rem;
+            gap: .8rem 1.4rem;
+            margin-bottom: .6rem;
+        }
+
+        .cm-checkbox-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: .25rem;
         }
 
         .cm-options-bar .form-checkbox {
@@ -74,12 +85,13 @@
         .cm-native-gen-wrap {
             display: inline-flex;
             align-items: center;
-            gap: .4rem;
+            gap: .25rem;
         }
 
         .cm-native-gen-hint {
             font-size: .75rem;
             color: #667;
+            margin-left: .25rem;
         }
 
         .cs-info-icon {
@@ -107,8 +119,28 @@
             display: flex;
             align-items: center;
             gap: .8rem;
-            margin-bottom: 1rem;
             flex-wrap: nowrap;
+        }
+
+        .cm-refresh-btn-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: .35rem;
+            flex-shrink: 0;
+        }
+
+        .cm-options-bar .tooltip.tooltip-bottom::after,
+        .cm-refresh-bar .tooltip.tooltip-bottom::after {
+            left: 0;
+            transform: translate(-6px, .2rem);
+            text-transform: none;
+            font-weight: normal;
+            letter-spacing: normal;
+            white-space: normal;
+            width: max-content;
+            min-width: 250px;
+            max-width: 360px;
+            text-align: left;
         }
 
         #cm-refresh-btn {
@@ -281,8 +313,11 @@
 
 <body>
     <div class="cm-header">
-        <!-- Title is set by the renderer once it knows the CLI name -->
-        <h5 id="cm-title">Model Configuration</h5>
+        <div>
+            <!-- Title is set by the renderer once it knows the CLI name -->
+            <h5 id="cm-title">AI Agent & CLI Settings</h5>
+            <div class="cm-subtitle">Models configured below are used in AI Assist starter prompts even without a local CLI. WebHelper uses the Medium tier only through an installed and enabled CLI.</div>
+        </div>
     </div>
 
     <div class="cm-body">
@@ -301,50 +336,67 @@
         <!-- Main content -->
         <div id="cm-content" hidden>
 
-            <!-- Options bar: Enabled & Native Image Gen checkboxes -->
-            <div class="cm-options-bar">
-                <label class="form-checkbox">
-                    <input type="checkbox" id="cm-enabled">
-                    <i class="form-icon"></i> Enabled
-                </label>
-                <div class="cm-native-gen-wrap">
-                    <label class="form-checkbox" id="cm-native-image-gen-label">
-                        <input type="checkbox" id="cm-native-image-gen">
-                        <i class="form-icon"></i> Native Image Generation
-                    </label>
-                    <span class="tooltip tooltip-bottom" data-tooltip="Enable if CLI supports native image generation included in your subscription.">
-                        <i class="cs-info-icon">i</i>
-                    </span>
-                    <span id="cm-native-image-gen-hint" class="cm-native-gen-hint"></span>
+            <!-- CLI Integration Section -->
+            <div class="cm-tier">
+                <div class="cm-tier-title">CLI Integration</div>
+                <div class="cm-options-bar">
+                    <div class="cm-checkbox-wrap">
+                        <label class="form-checkbox">
+                            <input type="checkbox" id="cm-enabled">
+                            <i class="form-icon"></i> Enabled
+                        </label>
+                        <span class="tooltip tooltip-bottom"
+                            data-tooltip="Enables automatic execution via local CLI by PhotoshopHelper (internal use only).">
+                            <i class="cs-info-icon">i</i>
+                        </span>
+                    </div>
+                    <div class="cm-native-gen-wrap">
+                        <label class="form-checkbox" id="cm-native-image-gen-label">
+                            <input type="checkbox" id="cm-native-image-gen">
+                            <i class="form-icon"></i> Native Image Generation
+                        </label>
+                        <span class="tooltip tooltip-bottom"
+                            data-tooltip="Allows internal image generation using your AI subscription via CLI for WebHelper and Local Generation API.">
+                            <i class="cs-info-icon">i</i>
+                        </span>
+                        <span id="cm-native-image-gen-hint" class="cm-native-gen-hint"></span>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Refresh Models bar -->
-            <div class="cm-refresh-bar">
-                <button id="cm-refresh-btn" class="btn btn-sm">
-                    <i class="icon icon-refresh mr-1"></i>
-                    <span id="cm-refresh-btn-text">Refresh via CLI</span>
-                </button>
-                <span id="cm-cache-age" class="cm-cache-age"></span>
-                <span id="cm-refresh-status" class="cm-refresh-status" hidden>
-                    <span class="loading mr-1"></span>
-                    <span id="cm-refresh-status-text">Querying CLI...</span>
-                    <span id="cm-refresh-timer" class="text-bold ml-1 text-primary">0s</span>
-                    <span id="cm-refresh-hint" class="cm-refresh-hint ml-1" hidden>(analyzing models...)</span>
-                </span>
-            </div>
+                <!-- Refresh Models bar -->
+                <div class="cm-refresh-bar">
+                    <div class="cm-refresh-btn-wrap">
+                        <button id="cm-refresh-btn" class="btn btn-sm">
+                            <i class="icon icon-refresh mr-1"></i>
+                            <span id="cm-refresh-btn-text">Refresh via CLI</span>
+                        </button>
+                        <span id="cm-refresh-info" class="tooltip tooltip-bottom"
+                            data-tooltip="Queries the local CLI to discover available models, effort levels, and native image generation capabilities. Analysis typically takes 2 to 6 minutes.">
+                            <i class="cs-info-icon">i</i>
+                        </span>
+                    </div>
+                    <span id="cm-cache-age" class="cm-cache-age"></span>
+                    <span id="cm-refresh-status" class="cm-refresh-status" hidden>
+                        <span class="loading mr-1"></span>
+                        <span id="cm-refresh-status-text">Querying CLI...</span>
+                        <span id="cm-refresh-timer" class="text-bold ml-1 text-primary">0s</span>
+                        <span id="cm-refresh-hint" class="cm-refresh-hint ml-1" hidden>(analyzing models...)</span>
+                    </span>
+                </div>
 
-            <!-- Refresh error toast (inline, dismissable) -->
-            <div id="cm-refresh-error" class="toast toast-error" hidden style="margin-bottom:.8rem;">
-                <button class="btn btn-clear float-right" id="cm-refresh-error-close"></button>
-                <span id="cm-refresh-error-text"></span>
+                <!-- Refresh error toast (inline, dismissable) inside the CLI card -->
+                <div id="cm-refresh-error" class="toast toast-error" hidden style="margin-top:.6rem;">
+                    <button class="btn btn-clear float-right" id="cm-refresh-error-close"></button>
+                    <span id="cm-refresh-error-text"></span>
+                </div>
             </div>
 
             <!-- Light tier -->
             <div class="cm-tier">
                 <div class="cm-tier-title">
                     Light
-                    <span class="tooltip tooltip-bottom" data-tooltip="Currently not in use. Reserved for future features.">
+                    <span class="tooltip tooltip-bottom"
+                        data-tooltip="Currently not in use. Reserved for future features.">
                         <i class="cs-info-icon">i</i>
                     </span>
                 </div>
@@ -352,14 +404,10 @@
                     <div class="form-group">
                         <label class="form-label" for="cm-light-model">Model</label>
                         <div class="input-group cm-combobox">
-                            <input
-                                id="cm-light-model"
-                                class="form-input"
-                                type="text"
-                                placeholder="e.g. gemini-3.8-flash"
-                                autocomplete="off"
-                            />
-                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-light-model-btn" tabindex="-1" title="Show all models">
+                            <input id="cm-light-model" class="form-input" type="text"
+                                placeholder="e.g. gemini-3.8-flash" autocomplete="off" />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-light-model-btn"
+                                tabindex="-1" title="Show all models">
                                 <i class="icon icon-caret"></i>
                             </button>
                             <ul class="menu cm-combo-menu" id="cm-light-model-menu" hidden></ul>
@@ -368,14 +416,10 @@
                     <div class="form-group">
                         <label class="form-label" for="cm-light-effort">Effort</label>
                         <div class="input-group cm-combobox">
-                            <input
-                                id="cm-light-effort"
-                                class="form-input"
-                                type="text"
-                                placeholder="e.g. low"
-                                autocomplete="off"
-                            />
-                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-light-effort-btn" tabindex="-1" title="Show all efforts">
+                            <input id="cm-light-effort" class="form-input" type="text" placeholder="e.g. low"
+                                autocomplete="off" />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-light-effort-btn"
+                                tabindex="-1" title="Show all efforts">
                                 <i class="icon icon-caret"></i>
                             </button>
                             <ul class="menu cm-combo-menu" id="cm-light-effort-menu" hidden></ul>
@@ -388,7 +432,8 @@
             <div class="cm-tier">
                 <div class="cm-tier-title">
                     Medium
-                    <span class="tooltip tooltip-bottom" data-tooltip="Used in Native Image Generation (WebHelper) and as Knowledge Base (KB) model in AI Assist starter prompt.">
+                    <span class="tooltip tooltip-bottom"
+                        data-tooltip="Used in Native Image Generation (WebHelper) and as Knowledge Base (KB) model in AI Assist starter prompt.">
                         <i class="cs-info-icon">i</i>
                     </span>
                 </div>
@@ -396,14 +441,10 @@
                     <div class="form-group">
                         <label class="form-label" for="cm-medium-model">Model</label>
                         <div class="input-group cm-combobox">
-                            <input
-                                id="cm-medium-model"
-                                class="form-input"
-                                type="text"
-                                placeholder="e.g. gemini-3.8-flash"
-                                autocomplete="off"
-                            />
-                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-medium-model-btn" tabindex="-1" title="Show all models">
+                            <input id="cm-medium-model" class="form-input" type="text"
+                                placeholder="e.g. gemini-3.8-flash" autocomplete="off" />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-medium-model-btn"
+                                tabindex="-1" title="Show all models">
                                 <i class="icon icon-caret"></i>
                             </button>
                             <ul class="menu cm-combo-menu" id="cm-medium-model-menu" hidden></ul>
@@ -412,14 +453,10 @@
                     <div class="form-group">
                         <label class="form-label" for="cm-medium-effort">Effort</label>
                         <div class="input-group cm-combobox">
-                            <input
-                                id="cm-medium-effort"
-                                class="form-input"
-                                type="text"
-                                placeholder="e.g. high"
-                                autocomplete="off"
-                            />
-                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-medium-effort-btn" tabindex="-1" title="Show all efforts">
+                            <input id="cm-medium-effort" class="form-input" type="text" placeholder="e.g. high"
+                                autocomplete="off" />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-medium-effort-btn"
+                                tabindex="-1" title="Show all efforts">
                                 <i class="icon icon-caret"></i>
                             </button>
                             <ul class="menu cm-combo-menu" id="cm-medium-effort-menu" hidden></ul>
@@ -432,7 +469,8 @@
             <div class="cm-tier">
                 <div class="cm-tier-title">
                     High
-                    <span class="tooltip tooltip-bottom" data-tooltip="Used as the Vision (CV) model for canvas inspection in AI Assist starter prompt.">
+                    <span class="tooltip tooltip-bottom"
+                        data-tooltip="Used as the Vision (CV) model for canvas inspection in AI Assist starter prompt.">
                         <i class="cs-info-icon">i</i>
                     </span>
                 </div>
@@ -440,14 +478,10 @@
                     <div class="form-group">
                         <label class="form-label" for="cm-high-model">Model</label>
                         <div class="input-group cm-combobox">
-                            <input
-                                id="cm-high-model"
-                                class="form-input"
-                                type="text"
-                                placeholder="e.g. gemini-3.1-pro"
-                                autocomplete="off"
-                            />
-                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-high-model-btn" tabindex="-1" title="Show all models">
+                            <input id="cm-high-model" class="form-input" type="text" placeholder="e.g. gemini-3.1-pro"
+                                autocomplete="off" />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-high-model-btn"
+                                tabindex="-1" title="Show all models">
                                 <i class="icon icon-caret"></i>
                             </button>
                             <ul class="menu cm-combo-menu" id="cm-high-model-menu" hidden></ul>
@@ -456,14 +490,10 @@
                     <div class="form-group">
                         <label class="form-label" for="cm-high-effort">Effort</label>
                         <div class="input-group cm-combobox">
-                            <input
-                                id="cm-high-effort"
-                                class="form-input"
-                                type="text"
-                                placeholder="e.g. high"
-                                autocomplete="off"
-                            />
-                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-high-effort-btn" tabindex="-1" title="Show all efforts">
+                            <input id="cm-high-effort" class="form-input" type="text" placeholder="e.g. high"
+                                autocomplete="off" />
+                            <button type="button" class="btn input-group-btn cm-combo-btn" id="cm-high-effort-btn"
+                                tabindex="-1" title="Show all efforts">
                                 <i class="icon icon-caret"></i>
                             </button>
                             <ul class="menu cm-combo-menu" id="cm-high-effort-menu" hidden></ul>

@@ -1,5 +1,5 @@
 /**
- * Renderer for the CLI Model Config window (Window B).
+ * Renderer for the AI Agent & CLI Settings window of a single CLI (Window B).
  *
  * Responsible for:
  *   - Reading the CLI name from the URL hash (e.g. #claude).
@@ -20,13 +20,12 @@
     /** CLI identifier extracted from the window URL hash. */
     const CLI = (window.location.hash || '').replace('#', '').trim() || 'unknown';
 
-    /** Display names for the four CLI identifiers. */
-    const CLI_LABELS = {
-        claude: 'Anthropic Claude',
-        codex:  'OpenAI Codex',
-        grok:   'SpaceX AI Grok Build',
-        agy:    'Google Antigravity'
-    };
+    /**
+     * Display name of this CLI. The main process puts it into the window URL next to the
+     * CLI identifier (see cli-models-window.js), so the names stay written down in one
+     * place, agent/cli-labels.js.
+     */
+    const CLI_LABEL = new URLSearchParams(window.location.search).get('label') || CLI;
 
     /** The three tiers in display order. */
     const TIERS = ['light', 'medium', 'high'];
@@ -45,6 +44,12 @@
      * Used to decide whether to show "No cached data".
      */
     let cacheLoaded = false;
+
+    /**
+     * Known native image generation support from cache/prompt (true, false, or null/undefined).
+     * @type {boolean|null}
+     */
+    let nativeSupport = null;
 
     // ── DOM helpers ──────────────────────────────────────────────────────
 
@@ -244,11 +249,11 @@
      * @param {'light'|'medium'|'high'} tier
      */
     function validateEffort(tier) {
-        const modelInput  = getInput(tier, 'model');
+        const modelInput = getInput(tier, 'model');
         const effortInput = getInput(tier, 'effort');
         if (!modelInput || !effortInput) return;
 
-        const modelValue  = modelInput.value.trim();
+        const modelValue = modelInput.value.trim();
         const effortValue = effortInput.value.trim();
 
         if (!cacheLoaded || effortValue === '') {
@@ -270,12 +275,42 @@
         effortInput.closest('.form-group')?.classList.toggle('has-error', isError);
     }
 
-    /** Validate all tier fields. */
+    /**
+     * Validate the Native Image Gen checkbox.
+     * Highlights the checkbox with Spectre's `is-error` class if the user has it enabled
+     * but the CLI reported that native image generation is not supported.
+     */
+    function validateNativeImageGen() {
+        const cb = byId('cm-native-image-gen');
+        const hint = byId('cm-native-image-gen-hint');
+        if (!cb) return;
+
+        const label = cb.closest('.form-checkbox');
+        const isError = cacheLoaded && cb.checked && nativeSupport === false;
+        cb.classList.toggle('is-error', isError);
+        if (label) label.classList.toggle('is-error', isError);
+
+        if (hint) {
+            hint.classList.toggle('text-error', isError);
+            if (isError) {
+                hint.textContent = '(not detected by CLI)';
+            } else if (nativeSupport === true) {
+                hint.textContent = '(supported)';
+            } else if (nativeSupport === false) {
+                hint.textContent = '(not supported by CLI)';
+            } else {
+                hint.textContent = '';
+            }
+        }
+    }
+
+    /** Validate all tier fields and options. */
     function validateAll() {
         for (const tier of TIERS) {
             validateModel(tier);
             validateEffort(tier);
         }
+        validateNativeImageGen();
     }
 
     // ── Cache age formatting ─────────────────────────────────────────────
@@ -303,9 +338,9 @@
     function fillTierInputs(tiers) {
         for (const tier of TIERS) {
             const cfg = tiers[tier] || {};
-            const modelIn  = getInput(tier, 'model');
+            const modelIn = getInput(tier, 'model');
             const effortIn = getInput(tier, 'effort');
-            if (modelIn)  modelIn.value  = cfg.model  || '';
+            if (modelIn) modelIn.value = cfg.model || '';
             if (effortIn) effortIn.value = cfg.effort || '';
         }
     }
@@ -322,10 +357,10 @@
             const rec = recommended && recommended[key];
             if (!rec) continue;
 
-            const modelIn  = getInput(tier, 'model');
+            const modelIn = getInput(tier, 'model');
             const effortIn = getInput(tier, 'effort');
 
-            if (modelIn  && modelIn.value.trim()  === '' && rec.model)  modelIn.value  = rec.model;
+            if (modelIn && modelIn.value.trim() === '' && rec.model) modelIn.value = rec.model;
             if (effortIn && effortIn.value.trim() === '' && rec.effort) effortIn.value = rec.effort;
         }
     }
@@ -353,39 +388,25 @@
     // ── Checkbox state & validation ──────────────────────────────────────
 
     /**
-     * Update the Native Image Gen checkbox according to known support from config/cache.
+     * Update the Native Image Gen checkbox according to stored settings and known support.
      *
      * Rules:
-     * - Known to support (true): checkbox is enabled (interactable), keep checked state.
-     * - Known to NOT support (false): checkbox is disabled, value forced to false.
-     * - Unknown (null/undefined): checkbox is interactable, keep user's setting as is.
+     * - The control is always interactable if the CLI is installed.
+     * - Preserves the user's choice and applies validation styling (is-error if forced without CLI support).
      *
-     * @param {boolean|null|undefined} nativeSupport - Known support flag from cache/prompt.
-     * @param {boolean}               currentChecked - Current or stored checked state.
+     * @param {boolean} currentChecked - Current or stored checked state.
      */
-    function updateNativeImageGenState(nativeSupport, currentChecked) {
+    function updateNativeImageGenState(currentChecked) {
         const cb = byId('cm-native-image-gen');
-        const hint = byId('cm-native-image-gen-hint');
+        const label = cb?.closest('.form-checkbox');
         if (!cb) return;
 
-        if (nativeSupport === false) {
-            cb.checked = false;
-            cb.disabled = true;
-            if (hint) hint.textContent = '(not supported by CLI)';
-            // If it was checked before, persist the false state to avoid inconsistency.
-            if (currentChecked) {
-                void window.cliModelsBridge.setNativeImageGen(CLI, false);
-            }
-        } else if (nativeSupport === true) {
-            cb.checked = Boolean(currentChecked);
-            cb.disabled = !isInstalled;
-            if (hint) hint.textContent = '(supported)';
-        } else {
-            // Unknown — leave control enabled (if CLI installed) and preserve user choice.
-            cb.checked = Boolean(currentChecked);
-            cb.disabled = !isInstalled;
-            if (hint) hint.textContent = '';
+        cb.checked = Boolean(currentChecked);
+        cb.disabled = !isInstalled;
+        if (!isInstalled && label) {
+            label.title = 'Requires CLI binary installed on PATH for internal execution';
         }
+        validateNativeImageGen();
     }
 
     /**
@@ -395,9 +416,13 @@
      */
     function updateEnabledState(enabled) {
         const cb = byId('cm-enabled');
+        const label = cb?.closest('.form-checkbox');
         if (!cb) return;
         cb.checked = Boolean(enabled);
         cb.disabled = !isInstalled;
+        if (!isInstalled && label) {
+            label.title = 'Requires CLI binary installed on PATH for internal execution';
+        }
     }
 
     // ── State loading ────────────────────────────────────────────────────
@@ -410,11 +435,19 @@
     function applyState(state) {
         isInstalled = state.settings ? Boolean(state.settings.installed) : true;
 
+        if (!isInstalled) {
+            const refreshBtn = byId('cm-refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.disabled = true;
+                refreshBtn.title = `${CLI_LABEL} CLI binary not found on PATH. Manual model entry only.`;
+            }
+        }
+
         // Apply checkboxes state
         if (state.settings) {
             updateEnabledState(state.settings.enabled);
-            const nativeSupport = state.cache?.data?.supports_native_image_generation;
-            updateNativeImageGenState(nativeSupport, state.settings.nativeImageGen);
+            nativeSupport = state.cache?.data?.supports_native_image_generation;
+            updateNativeImageGenState(state.settings.nativeImageGen);
         }
 
         // Fill stored tier values.
@@ -424,7 +457,7 @@
 
         // Populate combobox menus and update validation from cache.
         if (state.cache && state.cache.data) {
-            cacheLoaded     = true;
+            cacheLoaded = true;
             availableModels = buildModelMap(state.cache.data.all_available_models);
             updateAllModelMenus();
             for (const tier of TIERS) updateEffortsForTier(tier);
@@ -437,8 +470,8 @@
 
         validateAll();
 
-        setShown(byId('cm-loading'),  false);
-        setShown(byId('cm-content'),  true);
+        setShown(byId('cm-loading'), false);
+        setShown(byId('cm-content'), true);
         setShown(byId('cm-save-btn'), true);
     }
 
@@ -457,6 +490,7 @@
         const nigCb = byId('cm-native-image-gen');
         if (nigCb) {
             nigCb.addEventListener('change', async () => {
+                validateNativeImageGen();
                 await window.cliModelsBridge.setNativeImageGen(CLI, nigCb.checked);
             });
         }
@@ -464,8 +498,8 @@
         // Combobox buttons and text inputs for all tiers
         for (const tier of TIERS) {
             for (const field of ['model', 'effort']) {
-                const btn   = getButton(tier, field);
-                const menu  = getMenu(tier, field);
+                const btn = getButton(tier, field);
+                const menu = getMenu(tier, field);
                 const input = getInput(tier, field);
 
                 if (btn && menu) {
@@ -528,8 +562,7 @@
                 setShown(byId('cm-refresh-error'), false);
                 setShown(byId('cm-refresh-status'), true);
 
-                const label = CLI_LABELS[CLI] || CLI;
-                setText('cm-refresh-status-text', `Querying ${label} CLI...`);
+                //setText('cm-refresh-status-text', `Querying ${CLI_LABEL} CLI...`);
                 setText('cm-refresh-timer', '0s');
                 setShown(byId('cm-refresh-hint'), false);
 
@@ -556,16 +589,14 @@
                     }
 
                     if (result.data) {
-                        cacheLoaded     = true;
+                        cacheLoaded = true;
                         availableModels = buildModelMap(result.data.all_available_models);
                         updateAllModelMenus();
                         for (const tier of TIERS) updateEffortsForTier(tier);
 
-                        // Update Native Image Gen checkbox from refreshed prompt data.
-                        const nigSupport = result.data.supports_native_image_generation;
-                        const nigCurrent = byId('cm-native-image-gen')?.checked ?? false;
-                        const shouldCheck = nigSupport === true ? true : (nigSupport === false ? false : nigCurrent);
-                        updateNativeImageGenState(nigSupport, shouldCheck);
+                        // Update Native Image Gen detection state without overwriting user's checkbox state.
+                        nativeSupport = result.data.supports_native_image_generation;
+                        validateNativeImageGen();
 
                         // Fill only EMPTY fields with recommended values.
                         applyRecommendedToEmpty(result.data.recommended_tiers);
@@ -604,7 +635,7 @@
                 const tiers = {};
                 for (const tier of TIERS) {
                     tiers[tier] = {
-                        model:  (getInput(tier, 'model')?.value  || '').trim(),
+                        model: (getInput(tier, 'model')?.value || '').trim(),
                         effort: (getInput(tier, 'effort')?.value || '').trim()
                     };
                 }
@@ -631,16 +662,25 @@
 
     // ── Bootstrap ────────────────────────────────────────────────────────
 
-    async function init() {
-        // Update window title and refresh button with the CLI display name.
-        const label = CLI_LABELS[CLI] || CLI;
+    function updateLabels(label) {
         const titleEl = byId('cm-title');
-        if (titleEl) titleEl.textContent = `Model Configuration — ${label}`;
+        if (titleEl) titleEl.textContent = `AI Agent & CLI Settings — ${label}`;
+        document.title = `PhotoshopHelper — AI Agent & CLI Settings — ${label}`;
 
         const refreshBtn = byId('cm-refresh-btn');
         const refreshBtnText = byId('cm-refresh-btn-text');
         if (refreshBtnText) refreshBtnText.textContent = `Refresh via ${label} CLI`;
         if (refreshBtn) refreshBtn.title = `Query local ${label} CLI to discover available models and capabilities`;
+
+        const refreshInfo = byId('cm-refresh-info');
+        if (refreshInfo) {
+            refreshInfo.setAttribute('data-tooltip', `Queries the local ${label} CLI to discover available models, effort levels, and native image generation capabilities. The analysis typically takes 2 to 6 minutes.`);
+        }
+    }
+
+    async function init() {
+        // Update window title and refresh button with the CLI display name.
+        updateLabels(CLI_LABEL);
 
         wireControls();
 
@@ -649,14 +689,17 @@
             if (!state) {
                 setText('cm-error-text', 'Could not load settings. Please restart Helper.');
                 setShown(byId('cm-loading'), false);
-                setShown(byId('cm-error'),   true);
+                setShown(byId('cm-error'), true);
                 return;
+            }
+            if (state.settings?.label) {
+                updateLabels(state.settings.label);
             }
             applyState(state);
         } catch (err) {
             setText('cm-error-text', `Error loading settings: ${err.message}`);
             setShown(byId('cm-loading'), false);
-            setShown(byId('cm-error'),   true);
+            setShown(byId('cm-error'), true);
         }
     }
 

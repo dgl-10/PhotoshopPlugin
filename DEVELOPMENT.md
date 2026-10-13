@@ -29,7 +29,7 @@ Most AI plugins for Photoshop require an embedded API key and charge a fee for e
 - Automatically receives tasks (Image + Mask) from the FromPS plugin
 - Allows you to select a model, write prompts, and configure generation parameters
 - Displays a visual mask overlay and supports Reference images
-- Can generate through an installed AI CLI instead of an image API key. CLIs are set up in **AI CLI Settings...** in the Helper tray menu; WebHelper adds one in-memory provider, **CLI Native Image Generator** (`native-cli-image-generator`), when at least one installed CLI is enabled, marked for native image generation, and has a Medium model selected. This provider does not accept masks.
+- Can generate through an installed AI CLI instead of an image API key. CLIs are set up in **AI Agents & CLI Settings...** in the Helper tray menu; WebHelper adds one in-memory provider, **CLI Native Image Generator** (`native-cli-image-generator`), when at least one installed CLI is enabled, marked for native image generation, and has a Medium model selected. This provider does not accept masks.
 - Finished generations can be copied and pasted back into Photoshop via ToPS in one click
 - Can operate either alongside the plugin or fully standalone
 
@@ -106,7 +106,7 @@ Most AI plugins for Photoshop require an embedded API key and charge a fee for e
 
 ### Generating through an AI CLI (WebHelper)
 1. Install the CLI and sign in to it with your own subscription
-2. Open **AI CLI Settings...** from the Helper tray menu. Installed CLIs are detected automatically
+2. Open **AI Agents & CLI Settings...** from the Helper tray menu. Installed CLIs are detected automatically
 3. Tick **Enabled** and **Image** for the CLI, then click **Configure** and choose at least the **Medium** model (**Refresh via CLI** asks the CLI itself for its current model list)
 4. In WebHelper choose **CLI Native Image Generator** and pick the CLI in its **CLI provider** field. A run can take several minutes; **Show CLI window** lets you watch it
 
@@ -212,20 +212,21 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
     │   ├── knowledge-base.js             # Knowledge base loader, search index, and article provider for MCP tools
     │   ├── reduce-image.js               # Reduced copies of images for the agent to look at
     │   ├── cli-service.js                # Core CLI agent service, discovery, and tier execution (Light/Medium/High)
+    │   ├── cli-labels.js                 # Display names of the supported CLIs and agent platforms (single source)
     │   ├── cli-runner.js                 # Subprocess manager for spawning and controlling external CLI agents
     │   ├── cli-prompts.js                # Standardized system prompts and model querying templates for CLI agents
     │   ├── cli-transcript.js             # Output parser converting varied CLI streams into human-readable transcripts
     │   ├── cli-image-provider.js         # Virtual WebHelper image provider adapter backed by local CLI agents
     │   ├── cli-window.js                 # External console window for live CLI agent output streaming
     │   ├── cli-models-cache.js           # Cache storage manager for CLI models and capabilities
-    │   ├── cli-models-window.html        # Markup for the CLI models catalog window
-    │   ├── cli-models-window.js          # Window controller for CLI models catalog
-    │   ├── cli-models-preload.js         # Secure IPC bridge for the CLI models window
-    │   ├── cli-models-renderer.js        # UI logic and renderer for CLI models catalog window
-    │   ├── cli-settings-window.html      # Markup for the CLI settings window
-    │   ├── cli-settings-window.js        # Window controller for CLI settings
-    │   ├── cli-settings-preload.js       # Secure IPC bridge for the CLI settings window
-    │   ├── cli-settings-renderer.js      # UI logic and renderer for CLI settings window
+    │   ├── cli-models-window.html        # Markup for the per-agent AI Agent & CLI settings window (models and tiers)
+    │   ├── cli-models-window.js          # Window controller for the per-agent AI Agent & CLI settings
+    │   ├── cli-models-preload.js         # Secure IPC bridge for the per-agent AI Agent & CLI settings window
+    │   ├── cli-models-renderer.js        # UI logic and renderer for the per-agent AI Agent & CLI settings window
+    │   ├── cli-settings-window.html      # Markup for the AI Agents & CLI settings window
+    │   ├── cli-settings-window.js        # Window controller for AI Agents & CLI settings
+    │   ├── cli-settings-preload.js       # Secure IPC bridge for the AI Agents & CLI settings window
+    │   ├── cli-settings-renderer.js      # UI logic and renderer for AI Agents & CLI settings window
     │   ├── assist-window.html            # Markup for the AI Assist floating status window
     │   ├── assist-window.js              # Electron window manager for the AI Assist window
     │   ├── assist-window-preload.js      # Secure IPC bridge for the AI Assist window
@@ -369,7 +370,7 @@ are listed in `.gitignore`.
 ### CLI integration
 
 `agent/cli-service.js` detects installed CLIs (`claude`, `codex`, `grok`, `agy`) on
-`PATH`, reads the per-CLI settings saved by the **AI CLI Settings** window, and runs a
+`PATH`, reads the per-CLI settings saved by the **AI Agents & CLI Settings** window, and runs a
 prompt with the Light, Medium, or High model chosen for that CLI. `agent/cli-runner.js`
 builds each CLI's command line and parses its output; CLI vendors change their options
 between versions, so this file is where a broken CLI update is usually fixed.

@@ -83,7 +83,7 @@ While WebHelper is designed as a local service, it is common to access it remote
   execute commands and change files with the user's rights. Its prompt carries the text and
   images of the generation request, so whoever can start a generation can steer that CLI.
   This is one more reason not to expose WebHelper beyond this machine. Generation launches
-  only CLIs ticked as **Enabled** in **AI CLI Settings...**, so leave the rest unticked;
+  only CLIs ticked as **Enabled** in **AI Agents & CLI Settings...**, so leave the rest unticked;
   **Refresh via CLI** runs only when the person presses it.
 - **MCP registration.** Helper never edits an agent's configuration on its own. The setup
   text shown in the AI Assist window is pasted into the agent's chat or run as a terminal

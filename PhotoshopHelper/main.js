@@ -256,7 +256,7 @@ function initAgentService() {
 
     initAssistWindow({ agentService, port: PORT });
 
-    // Init the CLI settings windows. Window A (CLI overview) needs a reference
+    // Init the AI Agents & CLI Settings windows. Window A (overview) needs a reference
     // to Window B's opener so the "Configure" button can open it.
     initCliModelsWindow();
     initCliSettingsWindow({ openModelsWindow: openCliModelsWindow });
@@ -440,7 +440,9 @@ function updateTrayMenu() {
             }
         },
         {
-            label: 'AI CLI Settings...',
+            // "&&" is an escaped "&" on every platform. A single "&" marks an access key on
+            // Windows and Linux, and Electron drops it from menu labels on macOS as well.
+            label: 'AI Agents && CLI Settings...',
             click: () => { void openCliSettingsWindow(); }
         },
         {

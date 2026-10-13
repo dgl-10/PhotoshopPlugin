@@ -1,11 +1,11 @@
 /**
- * Renderer for the CLI Settings window (Window A).
+ * Renderer for the AI Agents & CLI Settings window (Window A).
  *
  * Draws a table of the four supported CLIs. For each one it shows:
  *   - Install status (detected by the main process via `where`/`which`).
  *   - An "Enabled" checkbox (disabled when the CLI is not installed).
  *   - A "Native Image Gen" checkbox (also disabled when not installed).
- *   - A "Configure" button that opens the Model Config window (Window B)
+ *   - A "Configure" button that opens the AI Agent & CLI Settings window (Window B)
  *     for that specific CLI.
  *
  * Changes to checkboxes are saved immediately — there is no explicit Save button.
@@ -14,14 +14,6 @@
 
 (function () {
     'use strict';
-
-    /** Display names for the four CLI identifiers. */
-    const CLI_LABELS = {
-        claude: 'Anthropic Claude',
-        codex:  'OpenAI Codex',
-        grok:   'SpaceX AI Grok Build',
-        agy:    'Google Antigravity'
-    };
 
     /** Ordered list that drives the table row order. */
     const CLI_ORDER = ['claude', 'codex', 'grok', 'agy'];
@@ -52,17 +44,17 @@
      * Create a <tr> for one CLI.
      *
      * @param {string} cli   - CLI identifier.
-     * @param {object} state - { installed, enabled, nativeImageGen, tiers }.
+     * @param {object} state - { label, installed, enabled, nativeImageGen, tiers }. The
+     *   display name comes from the main process (agent/cli-labels.js) as `label`.
      * @returns {HTMLTableRowElement}
      */
     function buildRow(cli, state) {
         const tr = document.createElement('tr');
-        if (!state.installed) tr.classList.add('cs-row-disabled');
 
         // ── CLI name ──
         const tdName = document.createElement('td');
         tdName.className = 'cs-cli-name';
-        tdName.textContent = CLI_LABELS[cli] || cli;
+        tdName.textContent = state.label || cli;
         tr.appendChild(tdName);
 
         // ── Status badge ──
@@ -85,6 +77,9 @@
         cbEnabled.type     = 'checkbox';
         cbEnabled.checked  = state.enabled;
         cbEnabled.disabled = !state.installed;
+        if (!state.installed) {
+            labelEnabled.title = 'Requires CLI binary installed on PATH for internal execution';
+        }
         cbEnabled.addEventListener('change', async () => {
             await window.cliSettingsBridge.setEnabled(cli, cbEnabled.checked);
         });
@@ -101,19 +96,31 @@
         const cbNig = document.createElement('input');
         cbNig.type = 'checkbox';
 
-        if (state.nativeImageGenNotSupported) {
-            cbNig.checked = false;
-            cbNig.disabled = true;
-            labelNig.title = 'Not supported by this CLI';
-        } else {
-            cbNig.checked = state.nativeImageGen;
-            cbNig.disabled = !state.installed;
-            if (state.nativeImageGenSupported) {
+        cbNig.checked  = Boolean(state.nativeImageGen);
+        cbNig.disabled = !state.installed;
+
+        function updateNigValidation() {
+            if (!state.installed) {
+                labelNig.title = 'Requires CLI binary installed on PATH for internal image generation';
+                return;
+            }
+            const isError = cbNig.checked && state.nativeImageGenNotSupported;
+            cbNig.classList.toggle('is-error', isError);
+            labelNig.classList.toggle('is-error', isError);
+            if (isError) {
+                labelNig.title = 'CLI reported no native support (forced by user)';
+            } else if (state.nativeImageGenSupported) {
                 labelNig.title = 'Supported by this CLI';
+            } else if (state.nativeImageGenNotSupported) {
+                labelNig.title = 'Not supported by this CLI';
+            } else {
+                labelNig.title = '';
             }
         }
+        updateNigValidation();
 
         cbNig.addEventListener('change', async () => {
+            updateNigValidation();
             await window.cliSettingsBridge.setNativeImageGen(cli, cbNig.checked);
         });
         labelNig.appendChild(cbNig);
@@ -127,7 +134,6 @@
         const btnConfigure = document.createElement('button');
         btnConfigure.className = 'btn btn-sm btn-primary';
         btnConfigure.textContent = 'Configure';
-        btnConfigure.disabled = !state.installed;
         btnConfigure.addEventListener('click', async () => {
             await window.cliSettingsBridge.openModelConfig(cli);
         });
@@ -178,12 +184,12 @@
         try {
             const state = await window.cliSettingsBridge.getState();
             if (!state) {
-                showError('Could not load CLI settings. Please restart Helper.');
+                showError('Could not load AI Agents & CLI settings. Please restart Helper.');
                 return;
             }
             render(state);
         } catch (error) {
-            showError(`Error loading CLI settings: ${error.message}`);
+            showError(`Error loading AI Agents & CLI settings: ${error.message}`);
         }
     }
 

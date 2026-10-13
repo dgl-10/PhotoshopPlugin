@@ -22,14 +22,6 @@
     let setupTextShown = false;
     let promptTextShown = false;
 
-    /** Display names for supported CLIs. */
-    const CLI_LABELS = {
-        claude: 'Anthropic Claude',
-        codex:  'OpenAI Codex',
-        grok:   'SpaceX AI Grok Build',
-        agy:    'Google Antigravity'
-    };
-
     /** Display order for CLIs in the platform picker. */
     const CLI_ORDER = ['claude', 'codex', 'grok', 'agy'];
 
@@ -393,14 +385,14 @@
     // ── Platform starter prompt ──────────────────────────────────────────────
 
     /**
-     * A CLI is only valid for the starter prompt picker if it is enabled
-     * and has non-empty medium and high tier models defined.
+     * An agent platform is valid for the starter prompt picker if it
+     * has non-empty medium and high tier models defined.
      *
-     * @param {object} cfg - Single CLI config object.
+     * @param {object} cfg - Single CLI/Agent config object.
      * @returns {boolean}
      */
     function isPlatformValid(cfg) {
-        if (!cfg || !cfg.enabled) return false;
+        if (!cfg) return false;
         const medModel = (cfg.tiers?.medium?.model || '').trim();
         const highModel = (cfg.tiers?.high?.model || '').trim();
         return Boolean(medModel && highModel);
@@ -479,7 +471,8 @@
                 if (isPlatformValid(cfg)) {
                     const option = document.createElement('option');
                     option.value = cli;
-                    option.textContent = CLI_LABELS[cli] || cli;
+                    // The display name arrives from the main process (agent/cli-labels.js).
+                    option.textContent = cfg.label || cli;
                     select.appendChild(option);
                     if (cli === prevSelected) {
                         isPrevSelectedStillValid = true;

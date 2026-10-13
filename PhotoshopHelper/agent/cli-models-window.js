@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Main-process module for the CLI Model Config window (Window B).
+ * Main-process module for the AI Agent & CLI Settings window of a single CLI (Window B).
  *
  * Opens a separate BrowserWindow for each CLI so the user can configure
  * Light / Medium / High tier model and effort settings. The CLI name is
@@ -17,6 +17,7 @@ const path = require('node:path');
 const { BrowserWindow, ipcMain } = require('electron');
 
 const {
+    CLI_LABELS,
     getCliConfig,
     fetchModelsForCli,
     getCachedModels,
@@ -114,7 +115,7 @@ function initCliModelsWindow() {
 }
 
 /**
- * Open the Model Config window for a specific CLI, or bring the existing one
+ * Open the AI Agent & CLI Settings window for a specific CLI, or bring the existing one
  * to the front. Opens as a modal window over Window A when a parent is passed.
  *
  * @param {string} cli - One of: claude, codex, grok, agy.
@@ -139,7 +140,7 @@ async function openCliModelsWindow(cli, options = {}) {
         parent: parentWindow,
         modal: Boolean(parentWindow),
         skipTaskbar: true,
-        title: `PhotoshopHelper — Model Configuration`,
+        title: `PhotoshopHelper — AI Agent & CLI Settings`,
         autoHideMenuBar: true,
         webPreferences: {
             preload: path.join(__dirname, 'cli-models-preload.js'),
@@ -148,11 +149,11 @@ async function openCliModelsWindow(cli, options = {}) {
         }
     });
 
-    // The CLI name is passed as a URL hash so the renderer can identify itself
-    // without an extra IPC round-trip.
+    // The CLI name is passed as a URL hash, and its display name as a query parameter,
+    // so the renderer can identify and title itself without an extra IPC round-trip.
     win.loadFile(
         path.join(__dirname, 'cli-models-window.html'),
-        { hash: cli }
+        { hash: cli, query: { label: CLI_LABELS[cli] || cli } }
     );
 
     openWindows.set(cli, win);

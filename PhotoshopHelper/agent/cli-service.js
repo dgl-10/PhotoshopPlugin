@@ -28,6 +28,7 @@ const { createTranscript } = require('./cli-transcript');
 const { openCliWindow } = require('./cli-window');
 const { buildModelListPrompt } = require('./cli-prompts');
 const { readCache, writeCache } = require('./cli-models-cache');
+const { CLI_LABELS } = require('./cli-labels');
 const {
     getCliSettings,
     setCliEnabled,
@@ -99,15 +100,10 @@ async function getCliConfig() {
         const nativeSupported = nativeSupport === true;
         const nativeNotSupported = nativeSupport === false;
 
-        // If from cache/config we know the CLI does NOT support native image gen,
-        // force nativeImageGen to false and persist it if it was previously true.
-        let nativeImageGen = Boolean(s.nativeImageGen);
-        if (nativeNotSupported && nativeImageGen) {
-            nativeImageGen = false;
-            void setCliNativeImageGen(cli, false);
-        }
+        const nativeImageGen = Boolean(s.nativeImageGen);
 
         result[cli] = {
+            label: CLI_LABELS[cli] || cli,
             installed: installed[cli] === true,
             enabled: Boolean(s.enabled),
             nativeImageGen,
@@ -377,14 +373,14 @@ function resolveWorkDir() {
  *   4. If all attempts fail → return { error }.
  *   5. On success → validate JSON shape, write to disk cache, return { data, fromCache: false }.
  *
- * @param {string} cli - One of: claude, codex, grok (not agy — not launchable).
+ * @param {string} cli - One of: claude, codex, grok, agy.
  * @returns {Promise<{ data: object, fromCache: false } | { error: string }>}
  */
 async function fetchModelsForCli(cli) {
     const settings = await getCliSettings();
     const cliConfig = (settings && settings[cli]) || {};
     const medium = cliConfig.tiers?.medium || {};
-    const prompt = buildModelListPrompt();
+    const prompt = buildModelListPrompt(cli);
     const cwd = resolveWorkDir();
 
     // Attempt 1: use the medium tier model + effort if configured.
@@ -396,13 +392,21 @@ async function fetchModelsForCli(cli) {
             prompt,
             model: medium.model.trim(),
             effort: medium.effort || null,
-            cwd
+            cwd,
+            showWindow: true
         });
     }
 
     // Attempt 2 (fallback): no --model flag — let the CLI use its default.
     if (!result || !result.ok) {
-        result = await runOneShotCli({ cli, prompt, model: null, effort: null, cwd });
+        result = await runOneShotCli({
+            cli,
+            prompt,
+            model: null,
+            effort: null,
+            cwd,
+            showWindow: true
+        });
     }
 
     if (!result.ok) {
@@ -416,11 +420,6 @@ async function fetchModelsForCli(cli) {
     }
 
     writeCache(cli, data);
-    if (data.supports_native_image_generation === false) {
-        await setCliNativeImageGen(cli, false);
-    } else if (data.supports_native_image_generation === true) {
-        await setCliNativeImageGen(cli, true);
-    }
     return { data, fromCache: false };
 }
 
@@ -462,7 +461,7 @@ async function runWithTier(prompt, tier) {
     if (!cliName) {
         return {
             ok: false, text: '', sessionId: null,
-            error: 'No enabled and installed CLI found. Enable at least one CLI in CLI Settings.'
+            error: 'No enabled and installed CLI found. Enable at least one CLI in AI Agents & CLI Settings.'
         };
     }
 
@@ -545,6 +544,7 @@ async function runWithSelectedCli(cliName, prompt, tier, options = {}) {
 module.exports = {
     // Config
     ALL_CLIS,
+    CLI_LABELS, // Defined in cli-labels.js; re-exported so callers of this service keep one import
     detectInstalled,
     detectAllInstalled,
     getCliConfig,

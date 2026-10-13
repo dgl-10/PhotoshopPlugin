@@ -9,7 +9,7 @@ Describe the workflow problem and the change made.
 - [ ] Clipboard / drag-and-drop
 - [ ] PhotoshopHelper local API
 - [ ] WebHelper
-- [ ] CLI integration (AI CLI Settings, CLI generation)
+- [ ] CLI integration (AI Agents & CLI Settings, CLI generation)
 - [ ] AI agent (MCP server, agent tools, FromPS / ToPS AI line, AI Assist window)
 - [ ] Knowledge base
 - [ ] Provider configuration

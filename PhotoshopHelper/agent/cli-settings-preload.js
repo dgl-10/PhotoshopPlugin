@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 /**
- * Preload for the CLI Settings window (Window A).
+ * Preload for the AI Agents & CLI Settings window (Window A).
  *
  * Exposes cliSettingsBridge to the renderer via contextBridge.
  * All calls go straight to the main process over IPC — no HTTP involved.
@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('cliSettingsBridge', {
     setNativeImageGen: (cli, value) => ipcRenderer.invoke('cli-settings:set-native-image-gen', { cli, value }),
 
     /**
-     * Ask the main process to open the Model Config window for a specific CLI.
+     * Ask the main process to open the AI Agent & CLI Settings window (Window B) for a specific CLI.
      * @param {string} cli
      */
     openModelConfig: (cli) => ipcRenderer.invoke('cli-settings:open-model-config', { cli })

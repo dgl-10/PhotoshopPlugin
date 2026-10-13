@@ -137,7 +137,7 @@ test('only installed, enabled native-image CLIs with a Medium model are offered'
         claude: eligibleCli({ nativeImageGen: false })
     });
 
-    assert.deepEqual(options, [{ value: 'codex', label: 'OpenAI Codex' }]);
+    assert.deepEqual(options, [{ value: 'codex', label: 'OpenAI ChatGPT/Codex' }]);
 });
 
 test('the strict CLI instruction keeps the user prompt as an exact JSON string', () => {
