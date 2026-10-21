@@ -15,11 +15,7 @@ const batchPlayWatch = require('./batchplay-watch.js');
 const ps = require('./ps.js');
 const settings = require('./settings.js');
 const { describeError } = require('./error-text.js');
-
-// Photoshop lets only one plugin hold a modal scope at a time, and by default a request
-// gives up after one second. The person is working in the same document, so a second or
-// two of waiting is normal; ten seconds of queuing turns a spurious failure into a pause.
-const MODAL_TIMEOUT_MS = 10_000;
+const { runInModalScope } = require('./modal-scope.js');
 
 // The channel's own ceiling is 100 MiB per message: above it the message is dropped and
 // the connection closes. Refusing well short of that keeps a greedy capture from taking
@@ -71,8 +67,8 @@ function requirePanel() {
 }
 
 /**
- * Run something in a modal scope, with a message the agent can act on when Photoshop
- * refuses to give us one.
+ * Run something in a modal scope. While Photoshop is busy the call waits; if it stays busy,
+ * the agent gets a message it can act on (modal-scope.js).
  *
  * @param {Function} body - Target function for executeAsModal.
  * @param {string} commandName - Name shown in Photoshop's progress bar.
@@ -84,20 +80,13 @@ function requirePanel() {
  * @returns {Promise<*>} Whatever body returned.
  */
 async function inModalScope(body, commandName, { interactive = false } = {}) {
-    const modalOptions = { commandName, timeOut: MODAL_TIMEOUT_MS };
+    const modalOptions = { commandName };
     if (interactive) modalOptions.interactive = true;
-    try {
-        return await core.executeAsModal(body, modalOptions);
-    } catch (error) {
-        // Error 9 is Photoshop saying another plugin is already modal.
-        if (error && error.number === 9) {
-            throw new Error(
-                'Photoshop would not let the plugin work right now: another plugin is holding it, '
-                + 'or a dialog is open. Tell the person, wait, and try again.'
-            );
-        }
-        throw error;
-    }
+    return runInModalScope(
+        (target, options) => core.executeAsModal(target, options),
+        body,
+        modalOptions
+    );
 }
 
 /**

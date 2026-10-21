@@ -115,7 +115,12 @@ function openAssistWindow(section) {
  */
 async function connectChannel() {
     if (bridgeClient) {
-        bridgeClient.connect();
+        if (bridgeClient.getStatus() !== 'auth-failed') {
+            bridgeClient.connect();
+            return;
+        }
+        bridgeClient.disconnect({ reason: 'Refreshing pairing token after auth failure', intentional: true });
+        bridgeClient = null; return connectChannel();
         return;
     }
 
@@ -124,6 +129,8 @@ async function connectChannel() {
     if (!lineOn) return;
     if (!token) {
         console.warn('[agent-line] No pairing token yet — the channel stays closed.');
+        channelStatus = 'auth-failed';
+        if (lineOn) render(lastState);
         return;
     }
 
@@ -164,6 +171,7 @@ async function connectChannel() {
 function disconnectChannel(reasonCode, reason) {
     if (!bridgeClient) return;
     bridgeClient.disconnect({ reason, reasonCode, intentional: true });
+    bridgeClient = null;
 }
 
 // ── Small helpers for drawing ────────────────────────────────────────────────
@@ -440,8 +448,8 @@ function render(state) {
         renderPlain('red', 'PhotoshopHelper is not running', 'Start it — the line connects by itself', true);
         return;
     }
-    if (state.error) {
-        renderPlain('red', 'Helper not paired!', 'Add its token in Settings', true);
+    if (state.error || channelStatus === 'auth-failed') {
+        renderPlain('red', 'Helper not paired!', 'Add its token in Settings or restart Helper', true);
         return;
     }
 

@@ -1,7 +1,7 @@
 ---
 id: workspaces-that-cannot-be-scripted
 title: Workspaces that cannot be recorded, and so cannot be scripted
-problem: a job needs Select and Mask, Blur Gallery, Adaptive Wide Angle, Vanishing Point or a Neural Filter, and there is no recorded command name to script it with
+problem: a job needs Blur Gallery, Adaptive Wide Angle, Vanishing Point or a Neural Filter, and there is no recorded command name to script it with
 confidence: author-verified
 task: verified by the author in Photoshop — tried recording each with Actions → Copy As JavaScript
 photoshop: 25.3.1, 27.10.1
@@ -15,14 +15,15 @@ failed: 0
 Entering these workspaces silently stops the Actions recording: no step appears, although
 the result lands in History. So there is no recorded name to use.
 
-- **Select and Mask**
 - **Blur Gallery** — tried with Iris Blur; Field Blur and Tilt-Shift are the same workspace
   and were not tried separately
 - **Adaptive Wide Angle**
 - **Vanishing Point** — reported the same by others ([Adobe Community](https://community.adobe.com/questions-712/automate-vanishing-point-tool-by-script-1178490)), not tried here
 
 Not every workspace behaves this way — Content-Aware Fill and Sky Replacement record fine
-(`content-aware-fill-and-sky-replacement`) — so try recording before giving up on one.
+(`content-aware-fill-and-sky-replacement`), and so does Select and Mask (`select-and-mask`),
+which was on this list until a later recording on 25.3.1 came out fine. So try recording
+before giving up on one, even one listed here.
 
 **Neural Filters** — undetermined: the test photos had no face the filters would accept.
 

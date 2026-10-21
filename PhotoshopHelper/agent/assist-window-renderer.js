@@ -35,7 +35,7 @@
         '- Primary Agent (Orchestrator): Write ExtendScript/UXP scripts and call MCP tools directly.',
         '- Vision (CV): Delegate every look at the canvas (ps_get_image) to a subagent running your flagship vision model with extra-high effort: [TOP_TIER_VISION_MODEL] (effort: [EXTRA_HIGH_EFFORT]). Use it not only to review results but to locate things: ask it concrete questions — where exactly is this edge or object, in document pixels (the image caption gives the scale) — and let it request a full-size crop of a region when precision matters.',
         '- Exact geometry: when the task depends on an edge or a distance (follow an outline, keep N px away, place along a contour), do not trust visual estimates. Get the edge as data — a selection (Select Subject, Color Range), a mask, or pixel analysis in a script — compute from it, then have the vision subagent confirm on a close-up.',
-        '- Knowledge Base (KB): When searching or reading the PhotoshopHelper knowledge base (ps_kb_list, ps_kb_read), delegate the lookup to a subagent running: [MID_TIER_RESEARCH_MODEL] (effort: [HIGH_EFFORT]).',
+        '- Knowledge Base (KB): First look at the document and the canvas image (ps_get_document, ps_get_image) to understand the picture and form your plan. Only after that, delegate knowledge base lookups (ps_kb_list, ps_kb_read) to a subagent running: [MID_TIER_RESEARCH_MODEL] (effort: [HIGH_EFFORT]). Treat this KB subagent as a reusable helper you can query again whenever new technical questions arise during the task, rather than searching everything upfront.',
         '',
         'Final Report Requirements:',
         'When the task is complete, provide a comprehensive report:',

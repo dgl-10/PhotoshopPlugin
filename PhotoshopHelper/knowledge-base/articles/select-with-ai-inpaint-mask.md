@@ -1,37 +1,32 @@
 ---
 id: select-with-ai-inpaint-mask
 title: Select hair, fur, smoke or lace with a mask an image generator draws
-problem: selecting hair, fur, smoke, lace or another object with a fine or see-through edge that Select Subject and Color Range do not separate well — an image generator draws a black-and-white mask of the capture, Place Back puts it in as an inpaint mask, and that layer becomes the selection
-confidence: agent-written
-task: written by an agent from the owner's description and the plugin's capture, Place Back and CLI generation code; not run end to end yet
-photoshop: unknown
-date: 2026-10-09
+problem: selecting hair, fur, smoke, lace or another object with a fine or see-through edge that Select Subject, Color Range and Select and Mask do not separate well — an image generator draws a black-and-white mask of the capture, Place Back puts it in as an inpaint mask, and that layer becomes the selection
+confidence: author-verified
+task: verified by the author — verified end-to-end with capture, generation and inpaint mask place back
+photoshop: 25.3.1
+date: 2026-10-21
 helped: 0
 failed: 0
 ---
 
-## Not tried yet
-
-Nobody has run this whole flow yet. Two parts are known to work: `inpaint_mask` is the
-panel's own Custom Inpaint Mask, and loading its layer as a selection with the form in
-step 6 was verified in a real run. The prompt, the generation step and the way the capture
-reaches the generator are **not verified**.
-
 ## When to use it
 
 When Photoshop's own selection tools (`select-subject-and-color-range`) leave a chopped,
-hard edge on an object that has none — hair, fur, smoke, lace, a veil — a generator can
-draw the mask. Select and Mask, Photoshop's own tool for such edges, cannot be run from a
-script (`workspaces-that-cannot-be-scripted`), though the person can run it.
+hard edge on an object that has none — hair, fur, smoke, lace, a veil — and Select and
+Mask run over that selection (`select-and-mask`, Refine Hair included) does not fix it, a
+generator can draw the mask.
 
 ## Who draws the mask
 
 That depends on which agent you are:
 
 - **Codex, Antigravity.** You have a built-in image generation tool on the person's
-  subscription. Use it for the mask without asking for permission (step 4).
+  subscription. Use it for the mask without asking for permission (step 4). If it refuses
+  because a generation limit is reached, tell the person and work as "Any other agent"
+  below.
 - **Grok.** You have one too, but it draws poor masks. Do not use it here; work as the next
-  point says.
+  point says. For other pictures it is fine.
 - **Any other agent** (Claude Code has no image generator at all, and the rest). Give the
   person the prompt and the
   capture's number in the FromPS card. They drag the piece from there into their own
@@ -151,7 +146,7 @@ take the best one as a starting point and finish the selection whichever way sui
 case: Photoshop's own selection commands, combining it with another selection, your own
 code over the mask's pixels (the saved mask file, or the selection read with
 `imaging.getSelection` and written back with `imaging.putSelection`, as `modules/ps.js`
-does), or Select and Mask in the person's hands. Agents have finished hard selections this
+does), or Select and Mask over it (`select-and-mask`). Agents have finished hard selections this
 way when generation alone fell short. One thing worth knowing if you read the selection as
 pixels: `getSelection` may hand back a tighter box than you asked for; use the
 `sourceBounds` it returns.

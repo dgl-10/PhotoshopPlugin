@@ -11,10 +11,7 @@
  */
 
 const { app, core } = require('photoshop');
-
-// Photoshop hands out one modal scope at a time and gives up after a second by default.
-// The person is working in the same document, so it is worth queuing for longer.
-const MODAL_TIMEOUT_MS = 10_000;
+const { runInModalScope } = require('./modal-scope.js');
 
 // One entry per task. Only one task runs at a time, but keying by id keeps a stale
 // answer from a finished task out of a new one.
@@ -320,7 +317,8 @@ async function withWorkingDocument(taskId, body) {
  *
  * Plain assignment is the documented way and works in most versions. Some versions refuse
  * it outside a modal scope, so the fallback opens a short one — which is cheap, and much
- * better than a call failing because the person happened to be looking elsewhere.
+ * better than a call failing because the person happened to be looking elsewhere. It waits
+ * while Photoshop is busy, like every other modal scope of the agent's (modal-scope.js).
  *
  * @param {object} doc - Document to bring to the front.
  * @returns {Promise<void>}
@@ -333,9 +331,13 @@ async function setActiveDocument(doc) {
         console.warn('[agent-document] Switching documents needs a modal scope:', error.message);
     }
 
-    await core.executeAsModal(async () => {
-        app.activeDocument = doc;
-    }, { commandName: 'Agent: switch document', timeOut: MODAL_TIMEOUT_MS });
+    await runInModalScope(
+        (target, options) => core.executeAsModal(target, options),
+        async () => {
+            app.activeDocument = doc;
+        },
+        { commandName: 'Agent: switch document' }
+    );
 }
 
 /**

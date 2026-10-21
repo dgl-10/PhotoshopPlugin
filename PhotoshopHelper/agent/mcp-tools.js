@@ -90,6 +90,12 @@ const ASSISTANT_CLOSED_MESSAGE =
 // the channel. A task whose document went away is closed here rather than left to time out.
 const DOCUMENT_CLOSED_MARKER = '[document-closed]';
 
+// The plugin marks a call Photoshop refused because it stayed busy (a dialog, the person in
+// the middle of something, another plugin). That is not the agent's struggle, so it is not
+// counted for the question ps_finish_task asks. The same string is defined in the plugin's
+// modules/modal-scope.js.
+const PHOTOSHOP_BUSY_MARKER = '[photoshop-busy]';
+
 // When a script throws, the commands Photoshop rejected before that ride at the end of the
 // error text behind this marker, as JSON. The same string is defined in the plugin's
 // modules/batchplay-watch.js.
@@ -117,18 +123,51 @@ const MAX_BATCH_ARTICLES = 4;
 // where its files are. An agent told the folders reads them, and then edits or adds files
 // by hand, past the article header and the two layers — and possibly into the
 // author's layer. Reads through the tools also land in the task journal.
-const KB_READING_RULE =
-    'Look at the knowledge base before your first change to the document and before you write '
-    + 'a new article, and read it from a sub-agent, not in your main context. An article can '
-    + 'be any length, so the number of articles tells you nothing about how much text you would '
-    + 'take in, and whatever you read in your main context is sent again with every later call '
-    + 'until the task ends. Give the sub-agent the problem; have it open every article whose '
-    + 'index line looks like it — several at once through article_ids — and bring back the '
-    + 'recipe and the article id, which you need later to mark with ps_kb_mark_helped or '
-    + 'ps_kb_mark_failed. The sub-agent needs this server\'s ps_kb_ tools '
-    + 'and the task id; if your sub-agents cannot call MCP tools, read the base yourself '
-    + 'through the tools. If starting a sub-agent needs the person to allow it, ask them for '
-    + 'that in one short line.';
+//
+// The rule comes in two parts. KB_READING_RULE_START goes into the ps_start_task answer and
+// is read only by the main agent: look at the picture first, then use one sub-agent for the
+// base throughout the task. KB_READING_RULE_TOOL goes into the descriptions of ps_kb_list
+// and ps_kb_read, which the sub-agent reads too. So its "look at the document first" step
+// is addressed to the main agent by name — the main agent sees these descriptions from the
+// start of the session, before ps_start_task — and the sub-agent is told plainly to answer
+// only the question it was given, instead of looking at the canvas, starting sub-agents of
+// its own, or bringing back every article that looks related.
+const KB_READING_RULE_START =
+    'First look at the document and the image (ps_get_document, ps_get_image) so you see what '
+    + 'is on the canvas and work out your plan; do not search the knowledge base right after '
+    + 'ps_start_task before looking at the picture. Once you know what technical step you '
+    + 'need, check the knowledge base before your first change to the document and before you '
+    + 'write a new article, and read it from a sub-agent, not in your main context. This holds '
+    + 'even when the base is small: an article can be any length, so the number of articles '
+    + 'tells you nothing about how much text you would take in, and whatever you read in your '
+    + 'main context is sent again with every later call. Use that sub-agent '
+    + 'as a reusable reference throughout the task rather than trying to look up everything '
+    + 'upfront: give it the technical question for the current step, not the whole task; have '
+    + `it open the matching articles (up to ${MAX_BATCH_ARTICLES} via article_ids) and bring `
+    + 'back the recipe and the '
+    + 'article id (needed later for ps_kb_mark_helped or ps_kb_mark_failed). When a new '
+    + 'question comes up later, message the same sub-agent again if your client can message '
+    + 'an existing sub-agent, or start a new one for that step. The sub-agent needs this '
+    + 'server\'s ps_kb_ tools and the task id; if your sub-agents cannot call MCP tools, read '
+    + 'the base yourself through the tools. If starting a sub-agent needs the person to allow '
+    + 'it, ask them for that in one short line.';
+
+const KB_READING_RULE_TOOL =
+    'Read the knowledge base from a sub-agent, not in your main context. This holds even when '
+    + 'the base is small: an article can be any length, so the number of articles tells you '
+    + 'nothing about how much text you would take in, and whatever you read in your main '
+    + 'context is sent again with every later call. If you are the main agent: turn to the '
+    + 'base only after you have looked at the document and know which technical step you '
+    + 'need, and give the sub-agent that one question and the task id, not the whole task; it '
+    + 'needs this server\'s ps_kb_ tools. If your sub-agents cannot call MCP tools, read the '
+    + 'base yourself through the tools. If starting a sub-agent needs the person to allow it, '
+    + 'ask them for that in one short line. If you are the sub-agent sent to read the base: do '
+    + 'not look at the document and do not start sub-agents of your own. Open only the '
+    + `articles whose index line matches the question (up to ${MAX_BATCH_ARTICLES} via `
+    + 'article_ids); if no line matches, say so and open nothing. Bring back the article id '
+    + 'and only the part of the recipe that answers the question, with its descriptors, '
+    + 'scripts and any block the article says to pass on word for word exactly as written — '
+    + 'not whole articles.';
 
 // This many failed calls in one task means the agent was fighting Photoshop rather than
 // working it. Two is deliberately low: one rejected descriptor is a typo, two is a wrong
@@ -291,6 +330,15 @@ function describePlacement(placed) {
             : 'hard edge, no Feather');
         const chosen = placed.featherFromPanel ? ', as the panel is set' : '';
         lines.push(`Mask: the capture's selection, feather ${placed.feather}${chosen}: ${parts.join(', ')}.`);
+        // Agents used to trace this mask along the outline of the fixed object right after
+        // placing; the answer is read at exactly that moment, so the rule is repeated here.
+        lines.push(
+            'Usually this mask needs nothing: it is the capture\'s selection, margin included, '
+            + 'on purpose. Do not trace it along the outline of what you fixed. Change it to cut '
+            + 'out a moderation cover (generator-moderation-cover-layer), or try moving its edge '
+            + 'where lines do not meet at the border of the piece, then check on a full-size '
+            + 'close-up.'
+        );
     } else {
         lines.push('No mask: the capture carried none.');
     }
@@ -300,7 +348,12 @@ function describePlacement(placed) {
             + '(more blur the more the image was scaled down).'
         : 'No Gaussian Blur filter was added: Photoshop refused it.');
 
-    lines.push('Look at the result with ps_get_image.');
+    lines.push(
+        'Look at the result with ps_get_image, and at a full-size close-up of the border: if the '
+        + 'piece is a shade lighter, darker, more or less saturated, or tinted against the picture '
+        + 'around it, correct that with adjustment layers clipped to this layer, not through the '
+        + 'mask (placed-piece-tone-match).'
+    );
     return lines.join('\n');
 }
 
@@ -435,7 +488,7 @@ function createAgentTools({
      * Describe the knowledge base to an agent that has just arrived.
      *
      * There is one way in: the ps_kb_ tools. Where the articles live on disk is never
-     * named here — see KB_READING_RULE for why.
+     * named here — see KB_READING_RULE_START for why.
      *
      * Reading is cheapest from a sub-agent: an index and three articles to find one answer
      * is a lot of text to leave sitting in the main context for the rest of the task.
@@ -452,11 +505,11 @@ function createAgentTools({
             + 'confidence label, and how often agents reported that it helped or failed.',
             '',
             'Use it only through these tools — never by reading or writing its files:',
-            '  ps_kb_list gives one line per article, ps_kb_read gives one article (or up to 4 via article_ids);',
+            `  ps_kb_list gives one line per article, ps_kb_read gives one article (or up to ${MAX_BATCH_ARTICLES} via article_ids);`,
             '  ps_kb_contribute writes a new technical article;',
             '  ps_kb_mark_helped and ps_kb_mark_failed record how an article worked for an agent.',
             'The tools keep the article header, counters, failure notes, and the two layers straight.',
-            KB_READING_RULE,
+            KB_READING_RULE_START,
             '',
             'Mark every article you actually followed: helped if it worked exactly as written, '
             + 'failed with a note if it did not or needed a change. These agent marks never change '
@@ -485,7 +538,7 @@ function createAgentTools({
         } else {
             lines.push(
                 '',
-                'The index is not included here. Ask for it with ps_kb_list, as described above.'
+                'The index is not included here; ps_kb_list returns it when you need it.'
             );
         }
 
@@ -740,7 +793,11 @@ function createAgentTools({
                 + 'problem area first — with ps_execute_script, or ask the person to — with a '
                 + 'generous margin of its surroundings, so the generator sees the anatomy and the '
                 + 'light around it. A plain rectangle or ellipse is usually enough; an exact '
-                + 'outline is rarely worth it. The capture adds `padding` px on every side and then widens the box '
+                + 'outline of what is to be redrawn is rarely worth it: the selection becomes the '
+                + 'mask of the result, and the redrawn thing seldom keeps the old outline, so such '
+                + 'a mask clips the new shape and leaves pieces of the old one showing. To keep '
+                + 'something next to it unchanged — a face beside a hand — keep the rectangle or '
+                + 'ellipse clear of it instead of tracing the outline. The capture adds `padding` px on every side and then widens the box '
                 + 'to an aspect ratio from the panel settings, so the piece can come out larger '
                 + 'than the selection. The piece is the original, never reduced: it is what goes '
                 + 'to the generator. You get the capture\'s id and the piece\'s box in the '
@@ -794,7 +851,11 @@ function createAgentTools({
                 'Look at a capture of the FromPS card — the piece itself and, if you ask, its mask '
                 + '— or save it as files for an image generator. Use it when the person captured '
                 + 'something and wants a prompt for it, to check what went into a piece, or to '
-                + 'hand a piece to your own built-in image generator. To look, you get a reduced '
+                + 'hand a piece to your own built-in image generator. When you write a prompt for a '
+                + 'piece, for the person or for yourself, use the usual form for image edits: say '
+                + 'what to change, then that everything else stays exactly as it is, and that the '
+                + 'changed part keeps the colours, light and tone of the rest of the picture — '
+                + 'generators often shift them a little. To look, you get a reduced '
                 + `copy, at most ${DEFAULT_IMAGE_MAX_SIZE} pixels on the long side, for your eyes `
                 + 'only. A generator always gets the original: ask for it with save_to_file, which '
                 + 'returns file paths instead of pictures. A capture has no mask when it was made '
@@ -870,9 +931,19 @@ function createAgentTools({
                 + 'layer\'s mask; Place Back also puts a light Gaussian Blur smart filter on the '
                 + 'layer and, with feather on, moves the mask\'s edge and sets the mask\'s own '
                 + 'Feather in Properties. That is Place Back\'s own work, not someone else\'s: the '
-                + 'answer reports the new layer and the exact values. Work on the layer afterwards '
-                + 'as needed: narrow its mask to the part that was really fixed, hide the temporary '
-                + 'cover layer you made for the capture.',
+                + 'answer reports the new layer and the exact values. Usually the mask needs '
+                + 'nothing: it is the capture\'s selection, margin included, on purpose — the '
+                + 'margin is what lets the generator fit the new piece into its surroundings. Do '
+                + 'not trace it along the outline of what you fixed (a hand, a face, an object): '
+                + 'that throws the margin away. There are two reasons to change it. One is a '
+                + 'temporary cover layer used for moderation: follow '
+                + 'generator-moderation-cover-layer. The other is lines or edges that do not meet '
+                + 'at the border of the placed piece, because models hold the surroundings '
+                + 'differently. Then you may try to fix it: move the mask\'s edge in or out at '
+                + 'that spot, look at a full-size close-up, and if it does not get better, put the '
+                + 'mask back as it was and say so in your report. Generators also often shift the '
+                + 'tone of the piece a little; how to check and correct that is in '
+                + 'placed-piece-tone-match.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -932,7 +1003,7 @@ function createAgentTools({
         {
             name: 'ps_kb_list',
             description:
-                KB_READING_RULE + ' '
+                KB_READING_RULE_TOOL + ' '
                 + 'The knowledge base index: one line per article — its id, which layer it is in, '
                 + 'manual confidence, helped/failed agent counts, Photoshop version, and problem.',
             inputSchema: {
@@ -945,10 +1016,10 @@ function createAgentTools({
         {
             name: 'ps_kb_read',
             description:
-                KB_READING_RULE + ' '
-                + 'Read one or several knowledge base articles by id (up to 4), from both layers at once. '
+                KB_READING_RULE_TOOL + ' '
+                + `Read one or several knowledge base articles by id (up to ${MAX_BATCH_ARTICLES}), from both layers at once. `
                 + 'Provide either article_id for a single article (returns markdown text), or article_ids '
-                + 'to read up to 4 articles in a single batch call (returns structured JSON with per-article status). '
+                + `to read up to ${MAX_BATCH_ARTICLES} articles in a single batch call (returns structured JSON with per-article status). `
                 + 'The article is a hint, not the truth: after following it, check the result, then '
                 + 'call ps_kb_mark_helped if it worked exactly as written or ps_kb_mark_failed if '
                 + 'it did not or needed a change. Pay particular attention to whether the Photoshop '
@@ -2178,9 +2249,15 @@ function createAgentTools({
                 tasks.abort('the document was closed');
             }
 
+            const photoshopBusy = message.includes(PHOTOSHOP_BUSY_MARKER);
+            if (photoshopBusy) {
+                message = message.replace(PHOTOSHOP_BUSY_MARKER, '').trim();
+            }
+
             // Counted so ps_finish_task can tell a task that went smoothly from one that
-            // did not. A refusal for a missing task id is not a struggle with Photoshop.
-            if (!(error instanceof TaskError)) {
+            // did not. A refusal for a missing task id is not a struggle with Photoshop, and
+            // neither is Photoshop being busy.
+            if (!(error instanceof TaskError) && !photoshopBusy) {
                 tasks.noteFailure(args.task_id);
             }
 

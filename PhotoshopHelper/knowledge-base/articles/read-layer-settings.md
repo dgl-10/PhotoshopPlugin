@@ -42,6 +42,7 @@ Useful keys in what comes back:
 | `hasUserMask`, `hasVectorMask`, `hasFilterMask` | which masks exist |
 | `bounds`, `boundsNoEffects` | with and without effects |
 | `mode`, `opacity`, `fillOpacity` | blending |
+| `channelRestrictions` | which of R/G/B are enabled in Blending Options (`layer-blend-mode-and-opacity`) |
 
 `ps_get_layer` already does this call for you and returns the interesting parts. Use
 `ps_execute_script` with the snippet above when you need a key it does not return.

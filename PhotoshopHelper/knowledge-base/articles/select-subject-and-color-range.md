@@ -15,5 +15,6 @@ failed: 0
 | Select Subject | `autoCutout` | `sampleAllLayers` (bool). **Unavailable when the active layer is hidden** — the menu item is disabled, and a script gets "The command “Select Subject” is not currently available". Make a visible layer active first |
 | Color Range | `colorRange` | `fuzziness`, `minimum` / `maximum` as `labColor`, `colorModel: 0` |
 
-When these leave a hard, chopped edge on hair, fur, smoke or lace, an image generator can
+When these leave a hard, chopped edge on hair, fur, smoke or lace, refine the selection
+with Select and Mask (`select-and-mask`). When that is not enough, an image generator can
 draw the mask instead: `select-with-ai-inpaint-mask`.

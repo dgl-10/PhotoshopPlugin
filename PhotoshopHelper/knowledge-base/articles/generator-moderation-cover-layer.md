@@ -82,5 +82,4 @@ With the new layer's id from the answer:
   same cover.
 
 Then check: where the cover was, the original picture must show again. The generator may
-have drawn a little past your shape. You may also want to narrow the rest of the mask to
-the part that was really fixed.
+have drawn a little past your shape.

@@ -1240,6 +1240,26 @@ test('rejected commands alone make the struggle question, and it names them', as
     assert.ok(tasks.getCurrent(), 'the task is still open, so it can still write');
 });
 
+test('Photoshop staying busy reaches the agent without its marker and is not counted as a struggle', async context => {
+    const { tools, tasks } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_execute_script: () => {
+            throw new Error(
+                '[photoshop-busy] Photoshop stayed busy for 10 seconds and would not let the plugin work.'
+            );
+        }
+    });
+    const taskId = await startTask(tools, 'curves');
+
+    const result = await tools.call('ps_execute_script', {
+        task_id: taskId, code: 'x', history_name: 'curves'
+    });
+
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /^Photoshop stayed busy for 10 seconds/);
+    assert.equal(tasks.getCurrent().failures, 0);
+});
+
 test('an article records who wrote it and which Photoshop it was checked on', async context => {
     const { tools, knowledgeBase } = makeTools(context, { agent_start_task: startAnswer() });
     tools.setClient({ name: 'claude-code', version: '2.1.268' });

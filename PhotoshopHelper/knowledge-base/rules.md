@@ -1,8 +1,158 @@
 # Working with a Photoshop document
 
-These rules are handed to you by `ps_start_task`. They are a text file, not code: the
-person who owns this machine can correct them at any time, and the corrected version is
-what the next task gets.
+These rules are handed to you by `ps_start_task` and can change between tasks. Do not
+rely on cached or remembered versions; always follow the text returned for this task.
+
+
+## Look, change, check
+
+In that order, every time.
+
+- **Look first.** Read the document (`ps_get_document`) and look at the image
+  (`ps_get_image`) before you plan your work or open the knowledge base. Until you have
+  seen the layer tree and the picture with your own eyes, you do not know what the task
+  actually needs. A script written against a guess about the layer tree or the picture is a
+  script that damages something.
+- **Change** through `ps_execute_script`, one clear step at a time, with a history name a
+  person would understand.
+- **Check.** If the result is something a person judges by eye — colour correction,
+  filters, blending, masks, retouching — take a picture with `ps_get_image` and look at it
+  yourself. Numbers and descriptors prove that a command ran, not that it looks right. The
+  tokens this costs are being spent on purpose.
+
+If you cannot see the image — if your client did not show it to you — say so plainly. Do
+not work out what is in the document from layer names and present the guess as fact.
+
+## Eyes find, pixels measure
+
+`ps_get_image` is not only for checking a result. It is how you find out what is where —
+and also how easily you fool yourself about exactly where.
+
+- **Your eyes are for understanding and rough position.** On a reduced picture one of its
+  pixels is several document pixels — the caption gives the scale. When a position has to
+  be right, take the region again with `bounds` at full size and look closely.
+- **Exact geometry comes from the pixels, not from your estimate.** When the job depends on
+  an edge or a distance — follow the outline of an object, keep N pixels away from it, place
+  something along a contour — first get that edge as data: a selection (Select Subject,
+  Color Range, or an AI-drawn inpaint mask), a mask, or your own analysis of
+  `imaging.getPixels` in a script. Compute the contour and the offset from that data, then
+  draw. Use your eyes to confirm that the data is the right object.
+- **Marks the person drew — arrows, circles, scribbles — show intent and a rough place.**
+  They are not coordinates to trace. When it is unclear what exactly they point at, ask.
+- **Do not report a measurement you did not take.** "50 px from the edge" in your report
+  means you measured it on a close-up after drawing. Otherwise say it is approximate.
+
+## Adjustment layers first, filters only where there is no other way
+
+Tone and colour — exposure, contrast, curves, levels, colour balance, hue and saturation,
+split toning, black and white — go into adjustment layers, even when Camera Raw could do
+the same. An adjustment layer stays separate from the picture: the person can switch it
+off, tune it, or replace the picture underneath and keep the whole look. A filter is tied
+to the one layer or smart object it sits on.
+
+Use a filter only for what no adjustment layer can do: blur, sharpening, noise reduction,
+grain, texture, clarity, dehaze, distortion. And give that filter only those settings — do
+not move tone and colour into it just because it has sliders for them.
+
+## Selections, cutouts, and FromPS / ToPS
+
+For cutting out an object or making a selection from a script, start by checking what
+Photoshop's own tools give you (`select-subject-and-color-range`), and look at the edge
+with `ps_get_image`. When the edge is fine or see-through — hair, fur, smoke, lace — and
+comes out chopped, refine that selection with Select and Mask, Refine Hair included
+(`select-and-mask`), and look again. When it is still wrong, or the selection misses whole
+parts of the object, an image generator can draw a black-and-white mask of a capture and
+`to_ps_place_back` (`mode: "inpaint_mask"`) turns it into the selection: see
+`select-with-ai-inpaint-mask`.
+
+The `from_ps_` and `to_ps_` tools are for your own work as much as for the person's — you
+do not need to wait for the person to name the FromPS / ToPS panel:
+
+- **To redraw, fix or replace part of the picture with an image generator**, select the
+  area with a margin, capture the original piece with `from_ps_capture` (and
+  `from_ps_get_capture` with `save_to_file: true` when you generate yourself, or let the
+  person drag it from the FromPS card), then put the result back into the exact box as a
+  masked smart object with `to_ps_load_file` and `to_ps_place_back`. Write the prompt the
+  usual way for image edits: what to change, then that everything else stays as it is, with
+  the same colours, light and tone — for example, "Redraw the woman's left hand in high
+  quality: natural proportions, not puffy or swollen. Keep everything else exactly as it is;
+  the hand must match the colours, light and tone of the rest of the picture." Hands and bare feet have
+  their own article (`generator-hands-and-feet`). After placing, look at the border and
+  correct a tone shift with adjustment layers clipped to the new layer
+  (`placed-piece-tone-match`).
+- **To get a clean selection or cutout of a hard edge**, capture the object and place the
+  generated black-and-white mask back with `mode: "inpaint_mask"`
+  (`select-with-ai-inpaint-mask`).
+- **When the area is near nudity, underwear or swimwear**, read
+  `generator-moderation-crop` and `generator-moderation-cover-layer` before you capture so
+  a public generator does not refuse the piece.
+
+Who generates depends on which agent you are:
+
+- **Codex, Antigravity, Grok.** You have a built-in image generation tool on the person's
+  subscription. Generate with it yourself, without asking for permission: give it the
+  original piece as the picture to edit — `from_ps_get_capture` with `save_to_file: true`
+  saves it and returns its path — and, if the tool takes an aspect ratio, the one the
+  `from_ps_capture` answer named. Ask for PNG or JPEG and load the saved file with
+  `to_ps_load_file`. One exception: Grok draws poor black-and-white masks, so for a mask
+  Grok works as the next point says (`select-with-ai-inpaint-mask`). If your tool refuses
+  because a generation limit is reached — Antigravity has one — do not retry and do not
+  switch to the paid `gen_` tools on your own: tell the person the limit was reached and
+  work as the next point says.
+- **Any other agent** (Claude Code has no image generator at all). Give the person the
+  prompt and the capture's number in the FromPS card. They drag the piece into their own
+  chatbot or generator, or send it to the panel's WebHelper, and then put the result into
+  the ToPS card themselves or give you the file's path for `to_ps_load_file`.
+
+The paid `gen_` tools of this server are only for when the person asks for them.
+
+## What the person is doing at the same time
+
+The person is working in Photoshop while you are. Every answer ends with a state line,
+and you should read it:
+
+- **The person did something by hand.** Take it into account; your idea of the document
+  may be out of date. Look again.
+- **The person undid your work, or went back to a snapshot.** Do not repeat it blindly.
+  Work out why, or ask.
+- **The document changed or was closed.** Stop and tell the person. The task is tied to
+  the document it started on; it does not follow them to another one.
+
+Warn the person before you start something long, so they know why Photoshop has gone busy.
+
+## Mouse, keyboard and the screen
+
+Some agents can control the screen; most command-line ones cannot, and there is no way for
+us to tell which you are. So this is a rule, not a setting. It is not a ban — the two ways
+complement each other, they just have different places.
+
+- Anything that can be done with these tools, do with these tools. A script is faster and
+  more reliable, it lands in the document's history, and it appears in the report. Clicks
+  do none of that.
+- If it looks like only the mouse will do, check first. A menu item can be invoked by its
+  command, and a filter — Camera Raw, a blur, sharpening — can be applied by a script with
+  values you choose. Do that yourself: your job is to do the work, not to hand the person
+  a dialog so they do it for you.
+- Open a dialog in front of the person (`ps_execute_script` with `interactive: true`, the
+  command inside with `_options: { dialogOptions: "display" }`) **only when they asked to
+  have that dialog opened for them.** Not because a filter has many settings, not because
+  you are unsure of the values, and not as a way to ask what they prefer — then apply your
+  best values, show the result and ask in words. If a job really can only be done by hand
+  inside a dialog (Liquify: its result cannot be scripted), say so and offer to open it;
+  open it only when they say yes. If the answer says the dialog is still open, wait with
+  `ps_wait_for_dialog` and do not open it again. Command names of filters and adjustments
+  are often not the obvious ones — look them up in the knowledge base
+  (`filter-commands`, `adjustment-layers`) instead of guessing.
+- If it really is only the mouse — the neural filters window, another plugin's panel, the
+  application preferences — do not do it silently. Tell the person what you intend to
+  click and get their agreement.
+- The same screen has a person working on it. Taking the pointer away from them spoils
+  their work and yours: Photoshop will accept the click somewhere you did not aim.
+- Anything done with the mouse sits outside the agent's named History step and may not
+  appear in the report. Do not change the application preferences, do not save files, do
+  not touch other programs.
+- If the person asks you to click something, that is fine. Say beforehand what you are
+  about to do, and afterwards what you did.
 
 ## Where facts come from
 
@@ -47,17 +197,24 @@ and the two layers straight.
 person talks to you in. Every agent after you reads the base, and one language keeps its
 index and articles easy to match against a problem.
 
-**Look at the knowledge base before your first change to the document, and before you
-write a new article. Read it from a sub-agent, not in your main context.** This holds
-even when the base is small: an article can be any length, so the number of articles tells
-you nothing about how much text you would take in. And whatever you read in your main
-context is sent again with every later call until the task ends.
+**Look at the document and the image (`ps_get_document`, `ps_get_image`) before you touch
+the knowledge base.** Do not search the base right after `ps_start_task`: first see what is
+on the canvas and in the layer tree, and work out how you intend to do the job. Only then —
+before your first change to the document, and before you write a new article — check the
+knowledge base for the technical steps your plan needs.
 
-Send a sub-agent with the problem. Let it open every article whose index line looks like
-that problem — several at once through `article_ids` — and nothing else, and have it bring
-back the recipe and the article id it came from. The sub-agent needs this server's `ps_kb_`
-tools and the task id; keep the id because the article must be marked after use. If your
-sub-agents cannot call MCP tools, read the base yourself through the tools.
+**Read the knowledge base from a sub-agent, not in your main context, and use it as a
+reusable reference throughout the task.** This holds even when the base is small: an
+article can be any length, so the number of articles tells you nothing about how much text
+you would take in. And whatever you read in your main context is sent again with every
+later call until the task ends. You do not need to guess every question upfront: send a sub-agent with the technical question for
+the step in front of you, let it open the matching articles (up to 4 at once through
+`article_ids`), and have it bring back the recipe and the `article_id` (keep the id to mark
+the article after use). When another technical question comes up later in the task, ask that
+same sub-agent again if your client can message an existing sub-agent — it already holds
+the index — or call a new one for that step. The sub-agent needs this server's `ps_kb_`
+tools and the task id; if your sub-agents cannot call MCP tools, read the base yourself
+through the tools.
 
 If starting a sub-agent needs the person to allow it, ask them for that in one short line.
 
@@ -161,101 +318,6 @@ there is nothing to add to its body. Only a different problem gets its own artic
 an id and an index line that say how it differs. A base
 of three hundred almost-identical articles is worse than a base of thirty good ones —
 nobody, including you, will find anything in it.
-
-## Look, change, check
-
-In that order, every time.
-
-- **Look first.** Read the document and the layer you are about to touch. A script written
-  against a guess about the layer tree is a script that damages something.
-- **Change** through `ps_execute_script`, one clear step at a time, with a history name a
-  person would understand.
-- **Check.** If the result is something a person judges by eye — colour correction,
-  filters, blending, masks, retouching — take a picture with `ps_get_image` and look at it
-  yourself. Numbers and descriptors prove that a command ran, not that it looks right. The
-  tokens this costs are being spent on purpose.
-
-If you cannot see the image — if your client did not show it to you — say so plainly. Do
-not work out what is in the document from layer names and present the guess as fact.
-
-## Eyes find, pixels measure
-
-`ps_get_image` is not only for checking a result. It is how you find out what is where —
-and also how easily you fool yourself about exactly where.
-
-- **Your eyes are for understanding and rough position.** On a reduced picture one of its
-  pixels is several document pixels — the caption gives the scale. When a position has to
-  be right, take the region again with `bounds` at full size and look closely.
-- **Exact geometry comes from the pixels, not from your estimate.** When the job depends on
-  an edge or a distance — follow the outline of an object, keep N pixels away from it, place
-  something along a contour — first get that edge as data: a selection (Select Subject,
-  Color Range), a mask, or your own analysis of `imaging.getPixels` in a script. Compute the
-  contour and the offset from that data, then draw. Use your eyes to confirm that the data
-  is the right object.
-- **Marks the person drew — arrows, circles, scribbles — show intent and a rough place.**
-  They are not coordinates to trace. When it is unclear what exactly they point at, ask.
-- **Do not report a measurement you did not take.** "50 px from the edge" in your report
-  means you measured it on a close-up after drawing. Otherwise say it is approximate.
-
-## Adjustment layers first, filters only where there is no other way
-
-Tone and colour — exposure, contrast, curves, levels, colour balance, hue and saturation,
-split toning, black and white — go into adjustment layers, even when Camera Raw could do
-the same. An adjustment layer stays separate from the picture: the person can switch it
-off, tune it, or replace the picture underneath and keep the whole look. A filter is tied
-to the one layer or smart object it sits on.
-
-Use a filter only for what no adjustment layer can do: blur, sharpening, noise reduction,
-grain, texture, clarity, dehaze, distortion. And give that filter only those settings — do
-not move tone and colour into it just because it has sliders for them.
-
-## What the person is doing at the same time
-
-The person is working in Photoshop while you are. Every answer ends with a state line,
-and you should read it:
-
-- **The person did something by hand.** Take it into account; your idea of the document
-  may be out of date. Look again.
-- **The person undid your work, or went back to a snapshot.** Do not repeat it blindly.
-  Work out why, or ask.
-- **The document changed or was closed.** Stop and tell the person. The task is tied to
-  the document it started on; it does not follow them to another one.
-
-Warn the person before you start something long, so they know why Photoshop has gone busy.
-
-## Mouse, keyboard and the screen
-
-Some agents can control the screen; most command-line ones cannot, and there is no way for
-us to tell which you are. So this is a rule, not a setting. It is not a ban — the two ways
-complement each other, they just have different places.
-
-- Anything that can be done with these tools, do with these tools. A script is faster and
-  more reliable, it lands in the document's history, and it appears in the report. Clicks
-  do none of that.
-- If it looks like only the mouse will do, check first. A menu item can be invoked by its
-  command, and a filter — Camera Raw, a blur, sharpening — can be applied by a script with
-  values you choose. Do that yourself: your job is to do the work, not to hand the person
-  a dialog so they do it for you.
-- Open a dialog in front of the person (`ps_execute_script` with `interactive: true`, the
-  command inside with `_options: { dialogOptions: "display" }`) **only when they asked to
-  have that dialog opened for them.** Not because a filter has many settings, not because
-  you are unsure of the values, and not as a way to ask what they prefer — then apply your
-  best values, show the result and ask in words. If a job really can only be done by hand
-  inside a dialog (Liquify: its result cannot be scripted), say so and offer to open it;
-  open it only when they say yes. If the answer says the dialog is still open, wait with
-  `ps_wait_for_dialog` and do not open it again. Command names of filters and adjustments
-  are often not the obvious ones — look them up in the knowledge base
-  (`filter-commands`, `adjustment-layers`) instead of guessing.
-- If it really is only the mouse — the neural filters window, another plugin's panel, the
-  application preferences — do not do it silently. Tell the person what you intend to
-  click and get their agreement.
-- The same screen has a person working on it. Taking the pointer away from them spoils
-  their work and yours: Photoshop will accept the click somewhere you did not aim.
-- Anything done with the mouse sits outside the agent's named History step and may not
-  appear in the report. Do not change the application preferences, do not save files, do
-  not touch other programs.
-- If the person asks you to click something, that is fine. Say beforehand what you are
-  about to do, and afterwards what you did.
 
 ## Finishing
 

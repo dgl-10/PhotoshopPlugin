@@ -1,11 +1,11 @@
 ---
 id: filter-commands
 title: Command names and parameters of filters, from real recordings
-problem: applying a filter (Gaussian Blur, Unsharp Mask, Smart Sharpen, Reduce Noise, Lens Correction, Filter Gallery…) from a script — the batchPlay name and parameter shape
+problem: applying a filter (Gaussian Blur, Unsharp Mask, Smart Sharpen, Reduce Noise, Lens Correction, Filter Gallery…) from a script — the batchPlay name and parameter shape; and changing the settings of a smart filter already on a layer, such as the radius of the Gaussian Blur that Place Back adds
 confidence: author-verified
-task: verified by the author in Photoshop — each recorded with Actions → Copy As JavaScript
-photoshop: 27.10.1
-date: 2026-09-27
+task: verified by the author in Photoshop — each recorded with Actions → Copy As JavaScript; changing a smart filter recorded by the author on 2026-10-26
+photoshop: 27.10.1; changing a smart filter recorded on 25.3.1
+date: 2026-10-26
 helped: 0
 failed: 0
 ---
@@ -82,3 +82,22 @@ Only Strength was moved; `edgeFidelity` (Preserve Details), `colorNoise` and `sh
 ```
 
 Other effects: record one to get its `$GEft` value and parameter names.
+
+## Change a smart filter already on the layer
+
+Applying the filter again adds a second smart filter instead of changing the first. To
+change the one that is there, `set` it by its place in the layer's smart filter list —
+recorded by the author for the radius of a Gaussian Blur:
+
+```js
+{ _obj: "select", _target: [{ _ref: "layer", _id: layerId }], makeVisible: false }
+{ _obj: "set",
+  _target: [{ _ref: "filterFX", _index: 1 }, { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+  filterFX: { _obj: "filterFX", filter: { _obj: "gaussianBlur", radius: { _unit: "pixelsUnit", _value: 1.5 } } } }
+```
+
+- `filter` carries the filter's full parameters, in the same shape as in the table above.
+- `_index: 1` was recorded on a layer with one smart filter. With several, which one is 1
+  was not checked; look at the result before you trust it.
+- The recording selected the layer by name and `layerID`; selecting by `_id` is the usual
+  form.

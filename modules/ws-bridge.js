@@ -40,6 +40,7 @@ const RESULT_CACHE_SIZE = 100;
 function createWsBridgeClient({ url, token, runtimeId = null, maxReconnectDelay = 30000 }) {
     let ws = null;
     let authenticated = false;
+    let authFailed = false;
     let reconnectAttempt = 0;
     let reconnectTimer = null;
     let intentionalClose = false;
@@ -53,9 +54,10 @@ function createWsBridgeClient({ url, token, runtimeId = null, maxReconnectDelay 
     let onStatusChange = null;
 
     /**
-     * @returns {string} 'disconnected', 'connecting', 'authenticating' or 'connected'.
+     * @returns {string} 'disconnected', 'connecting', 'authenticating', 'connected' or 'auth-failed'.
      */
     function getStatus() {
+        if (authFailed) return 'auth-failed';
         if (!ws) return 'disconnected';
         if (ws.readyState === WebSocket.CONNECTING) return 'connecting';
         if (ws.readyState === WebSocket.OPEN && authenticated) return 'connected';
@@ -97,6 +99,7 @@ function createWsBridgeClient({ url, token, runtimeId = null, maxReconnectDelay 
 
     function connect() {
         intentionalClose = false;
+        authFailed = false;
 
         if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
             return;
@@ -114,7 +117,7 @@ function createWsBridgeClient({ url, token, runtimeId = null, maxReconnectDelay 
         }
 
         ws.onopen = () => {
-            reconnectAttempt = 0;
+            // reconnectAttempt is reset only on MSG.WELCOME, avoiding rapid loops on auth rejection.
             _notifyStatus();
             ws.send(JSON.stringify({
                 type: MSG.HELLO,
@@ -136,6 +139,8 @@ function createWsBridgeClient({ url, token, runtimeId = null, maxReconnectDelay 
             if (!authenticated) {
                 if (msg.type === MSG.WELCOME) {
                     authenticated = true;
+                    authFailed = false;
+                    reconnectAttempt = 0;
                     console.log('[ws-bridge-client] Authenticated with Helper.');
                     _notifyStatus();
                 }
@@ -194,6 +199,19 @@ function createWsBridgeClient({ url, token, runtimeId = null, maxReconnectDelay 
 
         ws.onclose = (event) => {
             authenticated = false;
+
+            // 4003: Invalid hello / token mismatch.
+            // 4001: Authentication timeout.
+            // When authentication fails, stop retrying indefinitely with the same invalid token.
+            if (event.code === 4003 || event.code === 4001) {
+                authFailed = true;
+                console.warn(
+                    `[ws-bridge-client] Authentication failed (${event.code}: ${event.reason || 'Invalid token'}). `
+                    + 'Stopping automatic reconnect until pairing is refreshed.'
+                );
+                _notifyStatus();
+                return;
+            }
             _notifyStatus();
 
             if (!intentionalClose) {
@@ -213,6 +231,7 @@ function createWsBridgeClient({ url, token, runtimeId = null, maxReconnectDelay 
         const intentional = options.intentional !== false;
 
         intentionalClose = true;
+        authFailed = false;
         if (reconnectTimer) {
             clearTimeout(reconnectTimer);
             reconnectTimer = null;

@@ -2,10 +2,10 @@
 id: mask-write-pixels
 title: Write your own pixels into a layer mask — a new mask, or one the layer already has
 problem: writing your own grayscale data into a layer mask from a script — a new mask, or one the layer already has (every new adjustment layer comes with a white mask), where imaging.putLayerMask lands the data but the image may not update
-confidence: agent-written
-task: merged from mask-add-from-pixels (seeded from the plugin's own code) and mask-rewrite-image-not-updated (found by an agent in task-1ee418), with an agent report from task-0b130a; the merged text is not reviewed by the author yet
-photoshop: 24.0 and later; the existing-mask trap was seen on 25.3.1
-date: 2026-10-09
+confidence: author-verified
+task: verified in Photoshop 25.3.1 — reproduction of the existing-mask trap, the standard selection/fill workaround, and layerMaskFeather
+photoshop: 24.0 and later; the existing-mask trap verified on 25.3.1
+date: 2026-10-22
 helped: 0
 failed: 0
 ---
