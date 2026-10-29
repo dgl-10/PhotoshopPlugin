@@ -2263,6 +2263,126 @@
             ]
         },
         {
+            "id": "bfl_flux3",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "FLUX 3 via BFL API Key (from $0.008 per image)",
+            "tags": {
+                "provider": "bfl",
+                "family": "flux"
+            },
+            "nice_name": {
+                "default": "FLUX 3 (BFL Key)",
+                "depends_on": "model_flux3",
+                "values": {
+                    "image": "FLUX 3 Image (BFL Key)",
+                    "image-klein": "FLUX 3 Klein (BFL Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "flux3",
+                "depends_on": "model_flux3",
+                "values": {
+                    "image": "flux3_image",
+                    "image-klein": "flux3_klein"
+                }
+            },
+            "image_format": "base64_raw",
+            "max_reference_images": 10,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "images"
+            },
+            "remarks": "<b>Pricing:</b> Fixed per image by resolution tier.<br><table style='width:100%; font-size: 0.85em; border-top: 1px solid #555; margin-top: 4px;'><tr><td><b>Tier</b></td><td><b>FLUX 3 Image</b></td><td><b>FLUX 3 Klein</b></td></tr><tr><td>768sq</td><td>$0.041</td><td>$0.008</td></tr><tr><td>1k (~1 MP)</td><td>$0.048</td><td>$0.009</td></tr><tr><td>1.5k (~2 MP)</td><td>$0.070</td><td>$0.011</td></tr><tr><td>2k (~4 MP)</td><td>$0.100</td><td>$0.014</td></tr><tr><td>4k (~16 MP)</td><td>$0.607</td><td>$0.036</td></tr></table><br>Supports up to 10 reference images (or 1 mask + up to 9 references).",
+            "request_config": {
+                "single_image_per_request": true,
+                "endpoint_url": "https://api.bfl.ai/v1/flux-3-{{model_flux3}}",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "x-key": "{{env:BFL_API_KEY}}"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "resolution": "{{resolution}}",
+                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                    "safety_tolerance": 4,
+                    "{{?model_flux3 == 'image'}}grounding": "{{grounding}}",
+                    "{{?source_image}}images": [
+                        "{{source_image}}",
+                        "{{resolved_image_array}}"
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "bfl"
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "model_flux3",
+                    "type": "dropdown",
+                    "label": "Model Variant",
+                    "options": [
+                        {
+                            "value": "image-klein",
+                            "label": "FLUX 3 Klein (5.6B) - from $0.008 (Fast & Cheap)"
+                        },
+                        {
+                            "value": "image",
+                            "label": "FLUX 3 Image - from $0.041 (Flagship Quality)"
+                        }
+                    ],
+                    "default": "image-klein"
+                },
+                {
+                    "name": "resolution",
+                    "type": "dropdown",
+                    "label": "Resolution Tier",
+                    "options": [
+                        {
+                            "value": "768sq",
+                            "label": "768x768 [Klein: $0.008 / Image: $0.041]"
+                        },
+                        {
+                            "value": "1k",
+                            "label": "1k (~1 MP) [Klein: $0.009 / Image: $0.048]"
+                        },
+                        {
+                            "value": "1.5k",
+                            "label": "1.5k (~2 MP) [Klein: $0.011 / Image: $0.070]"
+                        },
+                        {
+                            "value": "2k",
+                            "label": "2k (~4 MP) [Klein: $0.014 / Image: $0.100]"
+                        },
+                        {
+                            "value": "4k",
+                            "label": "4k (~16 MP) [Klein: $0.036 / Image: $0.607]"
+                        }
+                    ],
+                    "default": "1k"
+                },
+                {
+                    "name": "grounding",
+                    "type": "boolean",
+                    "label": "Web Search Grounding (FLUX 3 Image only, unsupported in Klein)",
+                    "default": false
+                }
+            ]
+        },
+        {
             "id": "pruna_p_image_replicate",
             "generation_modes": [
                 "t2i",
