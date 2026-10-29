@@ -51,6 +51,11 @@ selection near a trigger — a small hand a few dozen pixels from the body. A sm
 `padding`, with the context put into the selection itself on the safe sides, keeps the
 piece where you want it.
 
+A smaller `padding` is only for keeping a trigger outside the piece. When the zone is
+hidden under a cover layer (`generator-moderation-cover-layer`), there is nothing left to
+keep out: leave `padding` at its default, so the piece holds the whole object and its
+surroundings.
+
 ## full_document
 
 It sends the whole picture, with the selection only as its mask — everything the crop was

@@ -69,8 +69,9 @@ The `from_ps_` and `to_ps_` tools are for your own work as much as for the perso
 do not need to wait for the person to name the FromPS / ToPS panel:
 
 - **To redraw, fix or replace part of the picture with an image generator**, select the
-  area with a margin, capture the original piece with `from_ps_capture` (and
-  `from_ps_get_capture` with `save_to_file: true` when you generate yourself, or let the
+  area with a margin, capture the original piece with `from_ps_capture` and look at it once
+  as its description says (and use `from_ps_get_capture` with `save_to_file: true` when you
+  generate yourself, or let the
   person drag it from the FromPS card), then put the result back into the exact box as a
   masked smart object with `to_ps_load_file` and `to_ps_place_back`. Write the prompt the
   usual way for image edits: what to change, then that everything else stays as it is, with
@@ -97,14 +98,21 @@ Who generates depends on which agent you are:
   `to_ps_load_file`. One exception: Grok draws poor black-and-white masks, so for a mask
   Grok works as the next point says (`select-with-ai-inpaint-mask`). If your tool refuses
   because a generation limit is reached — Antigravity has one — do not retry and do not
-  switch to the paid `gen_` tools on your own: tell the person the limit was reached and
-  work as the next point says.
+  switch to paid generation on your own: tell the person the limit was reached and work as
+  the next point says.
 - **Any other agent** (Claude Code has no image generator at all). Give the person the
   prompt and the capture's number in the FromPS card. They drag the piece into their own
   chatbot or generator, or send it to the panel's WebHelper, and then put the result into
   the ToPS card themselves or give you the file's path for `to_ps_load_file`.
 
-The paid `gen_` tools of this server are only for when the person asks for them.
+If the person gave you a picture to follow — the real object, a pattern, a logo — it goes
+to the generator together with the piece, never retold in words. The prompt says which
+picture is to be changed and which one shows how it should look. When the person
+generates, tell them to attach that picture too.
+
+Paid generation is only for when the person asks for it: the `gen_` tools of this server,
+and any other paid image generator connected to you, even when its own description tells
+you to prefer it over your built-in one.
 
 ## What the person is doing at the same time
 
