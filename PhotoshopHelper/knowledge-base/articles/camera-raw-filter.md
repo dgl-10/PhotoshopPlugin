@@ -1,11 +1,11 @@
 ---
 id: camera-raw-filter
 title: Apply the Camera Raw Filter with your own values, and what its descriptor keys are
-problem: applying Camera Raw adjustments (exposure, contrast, HSL, colour grading, sharpening, grain…) from a script, when none of its descriptor keys are documented
+problem: applying Camera Raw adjustments (exposure, contrast, HSL, colour grading, sharpening, grain…) to a whole layer from a script, when none of its descriptor keys are documented; a whole-number exposure that is silently ignored
 confidence: author-verified
-task: verified by the author in Photoshop — keys recorded with Actions → Copy As JavaScript, each slider set to a distinct value
-photoshop: 25.3.1, 27.10.1 (Camera Raw 18.6)
-date: 2026-09-22
+task: verified by the author in Photoshop — keys recorded with Actions → Copy As JavaScript, each slider set to a distinct value; the whole-number trap, the hidden-layer error and the smart filter landing measured by an agent at the author's request on 2026-10-30
+photoshop: 25.3.1, 27.10.1 (Camera Raw 18.6, 18.7)
+date: 2026-10-30
 helped: 0
 failed: 0
 ---
@@ -41,8 +41,19 @@ asked to have the dialog opened; see `open-filter-dialog-for-the-person`. Then O
 exactly the settings the person changed, and you can replay them silently on other layers
 or documents (verified).
 
-On a smart object the filter is expected to land as a smart filter rather than in the
-pixels — not verified here; check the layer after applying if it matters.
+**Exposure must not be a whole number.** Measured on a photo: `"$Ex12": -2` changed no pixel
+at all, with no error, while `-2.0001` darkened the whole picture by 2 EV. A whole JS number
+reaches Photoshop as an integer, and Camera Raw ignores it for exposure. Write `1.0001` for
++1 EV, `-2.0001` for −2 EV. Whole numbers for the other sliders worked (`$Dhze: 50`);
+other keys with fractional values (`$ShpR`…) may need the same care — not checked.
+
+**"The command “Camera Raw Filter” is not currently available" (code -25920)** comes when the
+target layer is hidden (measured). Show the layer before applying. An empty visible layer
+did not raise it.
+
+On a smart object the filter lands as a smart filter, not in the pixels (measured
+2026-10-30). To limit it to part of the layer, see `smart-filter-mask`. For several areas
+with different settings inside one filter, see `camera-raw-local-masks`.
 
 ## Keys
 

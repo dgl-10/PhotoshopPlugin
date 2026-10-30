@@ -10,6 +10,37 @@ const { readImagePixelSize } = require('./image-size.js');
 // Default margin, in pixels, a capture adds around the selection on every side.
 const CAPTURE_PADDING = 50;
 
+// Pixel alignment step applied to each side when capture falls back to "Padded" mode
+// (e.g., 32 or 16; set to 0 to disable and restore original behavior).
+const PADDED_CAPTURE_STEP = 32;
+
+/**
+ * Snaps a padded capture dimension to the nearest multiple of `step` when possible,
+ * without clipping the selection (`selSize`) or exceeding the document (`docSize`).
+ *
+ * @param {number} targetSize - Desired dimension including padding
+ * @param {number} selSize - Original selection dimension
+ * @param {number} docSize - Document canvas dimension
+ * @param {number} step - Alignment multiple in pixels
+ * @returns {number}
+ */
+function snapPaddedDimension(targetSize, selSize, docSize, step) {
+    const clamped = Math.min(targetSize, docSize);
+    if (!step || step <= 0) return clamped;
+
+    const minMultiple = Math.ceil(selSize / step) * step;
+    const maxMultiple = Math.floor(docSize / step) * step;
+
+    // If no multiple of `step` can both contain the selection and fit inside the document,
+    // fall back to the clamped size so the selection is never cropped.
+    if (minMultiple > maxMultiple) {
+        return clamped;
+    }
+
+    const nearest = Math.round(clamped / step) * step;
+    return Math.min(maxMultiple, Math.max(minMultiple, nearest));
+}
+
 /**
  * Check if there is an active document
  * @returns {boolean}
@@ -367,8 +398,31 @@ async function captureSelectionInModal(executionContext, sourceMode, viaTempDocC
                 width: bestW,
                 height: bestH
             };
+        } else if (bestRatioName === "Padded" && PADDED_CAPTURE_STEP > 0) {
+            // Padded mode: snap each side independently to the nearest valid multiple of PADDED_CAPTURE_STEP
+            const padW = snapPaddedDimension(bestW, selWidth, docWidth, PADDED_CAPTURE_STEP);
+            const padH = snapPaddedDimension(bestH, selHeight, docHeight, PADDED_CAPTURE_STEP);
+
+            let newLeft = Math.round(centerX - (padW / 2));
+            let newRight = newLeft + padW;
+            if (newLeft < 0) { newLeft = 0; newRight = padW; }
+            else if (newRight > docWidth) { newRight = docWidth; newLeft = docWidth - padW; }
+
+            let newTop = Math.round(centerY - (padH / 2));
+            let newBottom = newTop + padH;
+            if (newTop < 0) { newTop = 0; newBottom = padH; }
+            else if (newBottom > docHeight) { newBottom = docHeight; newTop = docHeight - padH; }
+
+            expandedBounds = {
+                left: newLeft,
+                top: newTop,
+                right: newRight,
+                bottom: newBottom,
+                width: newRight - newLeft,
+                height: newBottom - newTop
+            };
         } else {
-            // Padded / Full Doc: center + shift + clamp with targetMinW × targetMinH (no ratio enforced)
+            // Full Doc (or Padded with step disabled): center + shift + clamp with targetMinW × targetMinH (no ratio enforced)
             let newLeft = Math.round(centerX - (bestW / 2));
             let newTop = Math.round(centerY - (bestH / 2));
             let newRight = Math.round(centerX + (bestW / 2));

@@ -12,7 +12,7 @@
  * coordinates the agent sends back are always real document pixels.
  */
 
-const { imaging } = require('photoshop');
+const { imaging, action } = require('photoshop');
 
 // Nothing smaller is worth looking at, and a request for one pixel is a mistake.
 const MIN_TARGET_SIZE = 32;
@@ -231,10 +231,101 @@ async function captureLayerMask({ doc, layerId, maskKind, bounds, maxSize, fullS
 }
 
 /**
+ * Read the outer box of the document's selection.
+ *
+ * @param {object} doc - Document.
+ * @returns {Promise<object|null|undefined>} The box in document pixels, null when the
+ *          document has no selection, undefined when Photoshop did not answer.
+ */
+async function readSelectionBounds(doc) {
+    let result;
+    try {
+        [result] = await action.batchPlay([{
+            _obj: 'get',
+            _target: [{ _property: 'selection' }, { _ref: 'document', _id: doc.id }]
+        }], { synchronousExecution: false });
+    } catch {
+        return undefined;
+    }
+
+    if (!result || String(result._obj).toLowerCase() === 'error') return undefined;
+
+    // A document without a selection answers without the property.
+    const box = result.selection;
+    if (!box || box.left === undefined) return null;
+
+    const pixels = side => Math.round(side && side._value !== undefined ? side._value : side);
+    return {
+        left: pixels(box.left),
+        top: pixels(box.top),
+        right: pixels(box.right),
+        bottom: pixels(box.bottom)
+    };
+}
+
+/**
+ * @param {object} a - Box with left/top/right/bottom.
+ * @param {object} b - Box with left/top/right/bottom.
+ * @returns {boolean} True when the two boxes share at least one pixel.
+ */
+function boxesOverlap(a, b) {
+    return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+/**
+ * Size of the picture the Imaging API would return for this targetSize.
+ *
+ * @param {number} width - Source width.
+ * @param {number} height - Source height.
+ * @param {object|null} targetSize - From computeTargetSize.
+ * @returns {{width: number, height: number}}
+ */
+function scaledSize(width, height, targetSize) {
+    if (!targetSize) return { width, height };
+
+    if (targetSize.width) {
+        return {
+            width: targetSize.width,
+            height: Math.max(1, Math.round(height * targetSize.width / width))
+        };
+    }
+
+    return {
+        width: Math.max(1, Math.round(width * targetSize.height / height)),
+        height: targetSize.height
+    };
+}
+
+/**
+ * An all-black grayscale picture, encoded like any other capture.
+ *
+ * @param {number} width - Width in pixels.
+ * @param {number} height - Height in pixels.
+ * @returns {Promise<{base64: string, mimeType: string, width: number, height: number}>}
+ */
+async function encodeBlack(width, height) {
+    const black = await imaging.createImageDataFromBuffer(new Uint8Array(width * height), {
+        width,
+        height,
+        components: 1,
+        chunky: true,
+        colorSpace: 'Grayscale'
+    });
+
+    try {
+        return await encodeToBase64(black);
+    } finally {
+        dispose(black);
+    }
+}
+
+/**
  * Capture the selection as a grayscale image, the way Quick Mask shows it.
  *
  * @param {object} params - { doc, bounds, maxSize, fullSize }.
- * @returns {Promise<object>} Capture with its caption data.
+ * @returns {Promise<object>} Capture with its caption data. When the region holds no
+ *          selected pixels, an all-black picture with nothingSelected: true and the
+ *          selection's outer box (null when there is no selection).
  */
 async function captureSelection({ doc, bounds, maxSize, fullSize }) {
     const region = normalizeBounds(bounds, doc);
@@ -247,7 +338,38 @@ async function captureSelection({ doc, bounds, maxSize, fullSize }) {
     const targetSize = computeTargetSize(sourceWidth, sourceHeight, maxSize, fullSize);
     if (targetSize) options.targetSize = targetSize;
 
-    const captured = await imaging.getSelection(options);
+    let captured;
+    let failure = null;
+    try {
+        captured = await imaging.getSelection(options);
+    } catch (error) {
+        failure = error;
+    }
+
+    // getSelection trims its result to the selection's outer box, so over a region outside
+    // that box it fails ("Invalid Source Bounds"), and with no selection at all it answers
+    // without pixels. In both cases the honest answer is a black picture; anything else
+    // goes on as it came.
+    if (failure || !captured.imageData) {
+        const selectionBounds = await readSelectionBounds(doc);
+        const nothingHere = selectionBounds === null
+            || (selectionBounds && region && !boxesOverlap(selectionBounds, region));
+        if (!nothingHere) {
+            throw failure || new Error('Photoshop returned no pixels for the selection.');
+        }
+
+        const size = scaledSize(sourceWidth, sourceHeight, targetSize);
+        const encoded = await encodeBlack(size.width, size.height);
+        return {
+            ...encoded,
+            region,
+            sourceWidth,
+            sourceHeight,
+            nothingSelected: true,
+            selectionBounds
+        };
+    }
+
     try {
         const encoded = await encodeToBase64(captured.imageData);
         return { ...encoded, region: captured.sourceBounds || region, sourceWidth, sourceHeight };
@@ -364,6 +486,14 @@ async function captureAlphaChannel({ doc, channelName, bounds, maxSize, fullSize
 }
 
 /**
+ * @param {object} box - Box with left/top/right/bottom in document pixels.
+ * @returns {string} The box as the caption writes regions.
+ */
+function describeBox(box) {
+    return `${box.left},${box.top} to ${box.right},${box.bottom}`;
+}
+
+/**
  * Write the caption that travels with the picture.
  *
  * @param {object} params - Everything the caption mentions.
@@ -431,7 +561,12 @@ async function capture({
         case 'selection': {
             shot = await captureSelection({ doc, bounds, maxSize, fullSize });
             label = 'selection';
-            detail = 'white is selected, black is not, grey is partly selected';
+            detail = shot.nothingSelected
+                ? 'nothing is selected in this region, so it is all black; '
+                    + (shot.selectionBounds
+                        ? `the selection lies within ${describeBox(shot.selectionBounds)}`
+                        : 'the document has no selection')
+                : 'white is selected, black is not, grey is partly selected';
             break;
         }
 
@@ -450,7 +585,12 @@ async function capture({
                     doc, channelName: channel, bounds, maxSize, fullSize, executionContext
                 });
                 label = 'channel';
-                detail = `${channel}, as grey`;
+                detail = shot.nothingSelected
+                    ? `${channel}, as grey; it is black over this whole region, `
+                        + (shot.selectionBounds
+                            ? `and its non-black part lies within ${describeBox(shot.selectionBounds)}`
+                            : 'and loaded as a selection it selects nothing')
+                    : `${channel}, as grey`;
             }
             break;
         }
