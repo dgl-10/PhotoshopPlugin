@@ -26,7 +26,12 @@ async function listClientProviders({ loadProvidersCatalog, findMissingEnvKeys, g
     ));
 
     // The CLI provider is runtime state, not user-editable provider catalog data.
-    const cliImageProvider = await getRuntimeCliImageProvider();
+    let cliImageProvider = null;
+    try {
+        cliImageProvider = await getRuntimeCliImageProvider();
+    } catch (error) {
+        console.warn('[providers-discovery] Runtime CLI provider check failed:', error.message);
+    }
     if (cliImageProvider) availableProviders.push(cliImageProvider);
 
     // 2. Sanitize and elevate properties for the client

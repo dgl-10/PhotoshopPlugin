@@ -17,7 +17,7 @@
  * Electron-specific work (IPC, BrowserWindow) lives in the window modules.
  */
 
-const { spawn, spawnSync } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const os = require('node:os');
@@ -45,39 +45,101 @@ const FETCH_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 // ── Install detection ──────────────────────────────────────────────────────
 
+const INSTALL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const INSTALL_RETRY_TTL_MS = 5 * 1000; // Short retry backoff on timeout or spawn error
+const INSTALL_PROBE_TIMEOUT_MS = 3000; // Per-binary PATH lookup timeout
+let installCache = null; // { value: object, expiresAt: number }
+let installProbePromise = null;
+
 /**
- * Check whether a CLI binary can be found on PATH.
+ * Asynchronously check whether a CLI binary can be found on PATH without blocking the event loop.
  *
- * Uses `where` on Windows, `which` elsewhere.
+ * Uses `where.exe` on Windows, `which` elsewhere.
  *
  * @param {string} cliName - Binary name to look up.
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-function detectInstalled(cliName) {
-    const cmd = process.platform === 'win32' ? 'where' : 'which';
-    try {
-        const result = spawnSync(cmd, [cliName], {
-            windowsHide: true,
-            encoding: 'utf-8',
-            timeout: 3000
-        });
-        return result.status === 0;
-    } catch {
-        return false;
-    }
+async function detectInstalledAsync(cliName) {
+    const { installed } = await probeInstalledAsync(cliName);
+    return installed;
+}
+
+function probeInstalledAsync(cliName) {
+    const cmd = process.platform === 'win32' ? 'where.exe' : 'which';
+    return new Promise((resolve) => {
+        let settled = false;
+        let timer = null;
+        const finish = (installed, reliable) => {
+            if (settled) return;
+            settled = true;
+            if (timer) clearTimeout(timer);
+            resolve({ installed, reliable });
+        };
+
+        let child;
+        try {
+            child = spawn(cmd, [cliName], {
+                cwd: os.tmpdir(),
+                shell: false,
+                stdio: ['ignore', 'ignore', 'ignore'],
+                windowsHide: true
+            });
+        } catch {
+            finish(false, false);
+            return;
+        }
+
+        timer = setTimeout(() => {
+            try { child.kill(); } catch { /* ignore */ }
+            finish(false, false);
+        }, INSTALL_PROBE_TIMEOUT_MS);
+
+        child.on('error', () => finish(false, false));
+        child.on('close', (code) => finish(code === 0, code === 0 || code === 1));
+    });
 }
 
 /**
- * Return an install-status map for all four CLIs.
+ * Return an install-status map for all four CLIs asynchronously.
  *
- * @returns {{ claude: boolean, codex: boolean, grok: boolean, agy: boolean }}
+ * @param {object} [options]
+ * @param {boolean} [options.forceRefresh=false] - When true, bypasses the TTL cache.
+ *   If a probe is already in flight, its result is returned instead of starting a
+ *   new one, even though that probe may have started before this call.
+ * @returns {Promise<{ claude: boolean, codex: boolean, grok: boolean, agy: boolean }>}
  */
-function detectAllInstalled() {
-    const result = {};
-    for (const cli of ALL_CLIS) {
-        result[cli] = detectInstalled(cli);
+async function detectAllInstalled({ forceRefresh = false } = {}) {
+    if (!forceRefresh && installCache && Date.now() < installCache.expiresAt) {
+        return { ...installCache.value };
     }
-    return result;
+    if (installProbePromise) {
+        return installProbePromise;
+    }
+
+    installProbePromise = (async () => {
+        const prev = installCache?.value;
+        let allReliable = true;
+        const entries = await Promise.all(
+            ALL_CLIS.map(async (cli) => {
+                const { installed, reliable } = await probeInstalledAsync(cli);
+                if (!reliable) {
+                    allReliable = false;
+                    return [cli, prev ? Boolean(prev[cli]) : false];
+                }
+                return [cli, installed];
+            })
+        );
+        const value = Object.fromEntries(entries);
+        const ttl = allReliable ? INSTALL_CACHE_TTL_MS : INSTALL_RETRY_TTL_MS;
+        installCache = { value, expiresAt: Date.now() + ttl };
+        return { ...value };
+    })();
+
+    try {
+        return await installProbePromise;
+    } finally {
+        installProbePromise = null;
+    }
 }
 
 // ── Config access ──────────────────────────────────────────────────────────
@@ -88,9 +150,11 @@ function detectAllInstalled() {
  * @returns {Promise<object>} Keys are CLI names; each value is:
  *   { installed, enabled, nativeImageGen, tiers: { light, medium, high } }
  */
-async function getCliConfig() {
+async function getCliConfig(options = {}) {
+    // Probe first: it may take a while, and the settings read afterwards must
+    // include any toggle the user made in the meantime.
+    const installed = await detectAllInstalled(options);
     const settings = await getCliSettings();
-    const installed = detectAllInstalled();
     const result = {};
 
     for (const cli of ALL_CLIS) {
@@ -545,7 +609,7 @@ module.exports = {
     // Config
     ALL_CLIS,
     CLI_LABELS, // Defined in cli-labels.js; re-exported so callers of this service keep one import
-    detectInstalled,
+    detectInstalledAsync, // Exported only for tests; otherwise internal to this module
     detectAllInstalled,
     getCliConfig,
     // Settings passthrough (windows use this so they only import cli-service)

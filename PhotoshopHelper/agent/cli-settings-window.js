@@ -58,8 +58,8 @@ function registerIpc() {
     ipcRegistered = true;
 
     // Return install status + stored settings for all 4 CLIs.
-    ipcMain.handle('cli-settings:get-state', async () => {
-        return getCliConfig();
+    ipcMain.handle('cli-settings:get-state', async (_event, options = {}) => {
+        return getCliConfig({ forceRefresh: options?.forceRefresh ?? true });
     });
 
     // Toggle a CLI's enabled flag.

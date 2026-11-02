@@ -31,7 +31,7 @@ export function loadEnvironmentInfo() {
 }
 
 export function loadProviders() {
-    return fetchJson('/api/webhelper/providers');
+    return fetchJson('/api/webhelper/providers', {}, 8000);
 }
 
 export function pollQueue(threadId) {
