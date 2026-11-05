@@ -1958,4 +1958,9 @@ app.on('before-quit', () => {
     if (wsBridgeServer) {
         wsBridgeServer.close().catch(() => { });
     }
+
+    // Stop skin texture workers and remove their exchange files
+    if (agentService) {
+        agentService.dispose().catch(() => { });
+    }
 });
