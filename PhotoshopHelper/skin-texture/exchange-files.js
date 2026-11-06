@@ -19,7 +19,8 @@ const SkinExchange = require('./exchange.js');
 
 // skin-texture-v1-<job id>-a<attempt>-<output>.sktx, with ".partial" while being written.
 // The job id is "skt-" and 12 hex digits (job-manager.js).
-const OWN_NAME = /^skin-texture-v1-skt-[0-9a-f]{12}-a[0-9]{1,3}-(main|pores|furrows)\.sktx(\.partial)?$/;
+// Output is either standard outputs (main, pores, furrows) or recipe components (formula_1_pores, etc.).
+const OWN_NAME = /^skin-texture-v1-skt-[0-9a-f]{12}-a[0-9]{1,3}-([a-z0-9_-]+)\.sktx(\.partial)?$/;
 
 /**
  * @param {string} jobId - Job id.

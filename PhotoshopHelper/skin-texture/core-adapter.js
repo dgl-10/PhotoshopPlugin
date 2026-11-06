@@ -19,6 +19,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const recipeCatalog = require('./recipe-catalog');
 
 const CORE_FILE = path.join(__dirname, 'skin-core.js');
 
@@ -135,8 +136,8 @@ function checkRectShape(rect) {
  * core's own parameter validation against a document just large enough for the rect. The
  * real document size is checked again by normalizeForDocument once Photoshop has answered.
  *
- * @param {object} args - { rect, px_per_mm, params, outputs } as the agent sent them.
- * @returns {{rect: object, pxPerMm: number, params: object, outputs: string[], key: string}}
+ * @param {object} args - { recipe, rect, px_per_mm, params, outputs } as the agent sent them.
+ * @returns {{recipe?: string, rect: object, pxPerMm: number, params: object, outputs: string[], key: string}}
  * @throws {SkinRequestError}
  */
 function checkRequestShape(args) {
@@ -148,6 +149,53 @@ function checkRequestShape(args) {
             'INVALID_SCALE',
             'px_per_mm is required: a finite positive number, document pixels per millimetre of skin.'
         );
+    }
+
+    if (args.recipe !== undefined) {
+        if (!recipeCatalog.isRecipe(args.recipe)) {
+            throw new SkinRequestError(
+                'INVALID_RECIPE',
+                `Unknown recipe: "${args.recipe}". Supported recipes: ${recipeCatalog.RECIPES.join(', ')}.`
+            );
+        }
+        if (args.outputs !== undefined) {
+            throw new SkinRequestError(
+                'INVALID_OUTPUTS',
+                `outputs cannot be specified in recipe mode (${args.recipe}): the composition is fixed by the recipe.`
+            );
+        }
+        const params = args.params === undefined ? {} : args.params;
+        if (!isPlainObject(params)) {
+            throw new SkinRequestError('INVALID_PARAMS', 'params must be an object of recipe parameters by name.');
+        }
+        const unknown = Object.keys(params).filter(k => !recipeCatalog.ALLOWED_RECIPE_PARAMS.includes(k));
+        if (unknown.length) {
+            throw new SkinRequestError(
+                'INVALID_PARAMS',
+                `Recipe ${args.recipe} only allows parameters: ${recipeCatalog.ALLOWED_RECIPE_PARAMS.join(', ')}. `
+                + `Unknown parameter(s): ${unknown.join(', ')}.`
+            );
+        }
+        if (params.mode !== undefined && params.mode !== 'lines' && params.mode !== 'cells') {
+            throw new SkinRequestError('INVALID_PARAMS', 'params.mode must be "lines" or "cells".');
+        }
+        if (params.seed !== undefined && !Number.isInteger(params.seed)) {
+            throw new SkinRequestError('INVALID_PARAMS', 'params.seed must be an integer.');
+        }
+        if (params.azimuthDeg !== undefined && (!Number.isFinite(params.azimuthDeg))) {
+            throw new SkinRequestError('INVALID_PARAMS', 'params.azimuthDeg must be a finite number.');
+        }
+        if (params.elevationDeg !== undefined && (!Number.isFinite(params.elevationDeg) || params.elevationDeg < 5 || params.elevationDeg > 90)) {
+            throw new SkinRequestError('INVALID_PARAMS', 'params.elevationDeg must be between 5 and 90 degrees.');
+        }
+
+        const components = recipeCatalog.getRecipeComponents(args.recipe);
+        const outputs = components.map(c => c.componentKey);
+
+        const sortedParams = {};
+        for (const key of Object.keys(params).sort()) sortedParams[key] = params[key];
+        const key = JSON.stringify({ recipe: args.recipe, rect, pxPerMm, params: sortedParams });
+        return { recipe: args.recipe, rect, pxPerMm, params: { ...params }, outputs, key };
     }
 
     const params = args.params === undefined ? {} : args.params;
@@ -252,6 +300,37 @@ function normalizeForDocument(request, document) {
             + `document pass { "x": 0, "y": 0, "width": ${document.width}, "height": ${document.height} }.`
         );
     }
+
+    if (request.recipe === 'skin_pair_v1') {
+        const f1Params = recipeCatalog.resolveFormulaParams('formula_1', document, request.rect, request.pxPerMm, request.params);
+        const f2Params = recipeCatalog.resolveFormulaParams('formula_2', document, request.rect, request.pxPerMm, request.params);
+
+        const area1 = workingArea(f1Params);
+        const area2 = workingArea(f2Params);
+        const maxRadius = Math.max(area1.radius, area2.radius);
+        if (maxRadius > MAX_HIGH_PASS_RADIUS) {
+            throw new SkinRequestError('WORK_AREA_TOO_LARGE', 'The neutralising blur radius is too large at this scale; reduce px_per_mm or highPassCells.');
+        }
+        const heightPixels1 = area1.heightRect.width * area1.heightRect.height;
+        const heightPixels2 = area2.heightRect.width * area2.heightRect.height;
+        const maxWorkPixels = Math.max(heightPixels1, heightPixels2);
+        if (maxWorkPixels > MAX_WORK_AREA_PIXELS) {
+            throw new SkinRequestError(
+                'WORK_AREA_TOO_LARGE',
+                `The working area with its margin is ${maxWorkPixels} pixels, above the core's limit of `
+                + `${MAX_WORK_AREA_PIXELS}. Use a smaller rect.`
+            );
+        }
+        const rectPixels = request.rect.width * request.rect.height;
+        const maxShadePixels = Math.max(area1.shadeRect.width * area1.shadeRect.height, area2.shadeRect.width * area2.shadeRect.height);
+        // Working maps of one formula at a time in memory + 4 final encoded/raw outputs
+        const estimatedBytes = maxWorkPixels * 8 + maxShadePixels * 4 + maxShadePixels * 8 + rectPixels * 4 * 2;
+        return {
+            coreParams: { formula_1: f1Params, formula_2: f2Params, common: request.params },
+            work: { radius: maxRadius, heightPixels: maxWorkPixels, shadePixels: maxShadePixels, rectPixels, estimatedBytes }
+        };
+    }
+
     const coreParams = resolveCoreParams(document, request.rect, request.pxPerMm, request.params);
     const area = workingArea(coreParams);
     if (area.radius > MAX_HIGH_PASS_RADIUS) {
@@ -367,6 +446,8 @@ function visibilityNotes(p, stats, outputs) {
 }
 
 module.exports = {
+    RECIPES: recipeCatalog.RECIPES,
+    recipeCatalog,
     OUTPUTS,
     DEFAULT_OUTPUTS,
     PINNED_CORE_SHA256,
@@ -377,6 +458,7 @@ module.exports = {
     SkinRequestError,
     loadCore,
     getCoreIdentity,
+    getFormulasCoreIdentity: recipeCatalog.getFormulasCoreIdentity,
     checkRequestShape,
     normalizeForDocument,
     publicParams,

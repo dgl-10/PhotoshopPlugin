@@ -135,6 +135,13 @@ function createSkinTextureTools({
                         description: 'Other core parameters by name (mode, seed, azimuthDeg, elevationDeg, relief, ...). '
                             + 'Not allowed here: width, height, rect, pxPerMm.'
                     },
+                    recipe: {
+                        type: 'string',
+                        enum: ['skin_pair_v1'],
+                        description: 'Optional recipe. "skin_pair_v1" computes Formula 1 and Formula 2 (pores and microrelief for each) '
+                            + 'and prepares ready Skin group assembly on apply. In this mode outputs is forbidden and params only accepts '
+                            + 'mode, seed, azimuthDeg, elevationDeg. When omitted, standard single-core mode is used.'
+                    },
                     outputs: {
                         type: 'array',
                         items: { type: 'string', enum: OUTPUTS },
@@ -179,12 +186,14 @@ function createSkinTextureTools({
             description:
                 'Write a ready skin texture job into the task\'s document: one ordinary pixel layer per '
                 + 'requested output, blend mode Normal, Opacity and Fill 100%, gray (R = G = B) around 128, '
-                + 'exactly over the job\'s rect and transparent outside it. The layers are named '
-                + '"Skin texture <output> [<job_id>]" and go above the active layer; with several outputs '
-                + 'main is the lowest and furrows the top one. One apply is one History step, so one Undo '
-                + 'removes all its layers. A job is written at most once: calling apply again returns what '
-                + 'happened the first time and never creates the layers again, not even after the person '
-                + 'undid them; for another texture start a new request. If the write takes longer than '
+                + 'exactly over the job\'s rect and transparent outside it. For recipe skin_pair_v1, creates '
+                + 'a group "Skin" (Pass Through, Opacity 100%) with a single common mask from mask_source, containing '
+                + 'visible group "Formula 2" and hidden group "Formula 1", each with "Pores" and "Microrelief" '
+                + '(Linear Light, Opacity 50%, Fill 100%). '
+                + 'The layers are named "Skin texture <output> [<job_id>]" (or recipe structure) and go above the active layer. '
+                + 'One apply is one History step, so one Undo removes all its layers. A job is written at most once: '
+                + 'calling apply again returns what happened the first time and never creates the layers again, not even '
+                + 'after the person undid them; for another texture start a new request. If the write takes longer than '
                 + `about ${budgetSeconds} seconds the answer says "applying" (or "preparing_write" while the `
                 + 'file is still being handed over); then call ps_skin_texture_status. Before writing it checks '
                 + 'that the document still has the same size, depth and colour profile; otherwise nothing is '
@@ -192,14 +201,25 @@ function createSkinTextureTools({
                 + 'and plugin runtime, the line is on and no dialog is open: a cancel, a pause of the line, a '
                 + 'new runtime or the end of the task while the file was being prepared stops the write with '
                 + 'nothing sent; a paused write is never sent by itself later, so call apply again once the '
-                + 'line is back. Blend mode (usually Linear '
-                + 'Light or Soft Light), strength (Fill or Opacity), mask and Blend If are yours to set '
-                + 'afterwards with ps_execute_script — there are no defaults for them.',
+                + 'line is back.',
             inputSchema: {
                 type: 'object',
                 properties: {
                     task_id: { type: 'string' },
-                    job_id: { type: 'string' }
+                    job_id: { type: 'string' },
+                    mask_source: {
+                        type: 'object',
+                        description: 'Source for the single common Skin group mask (required for recipe skin_pair_v1). '
+                            + 'Evaluated in the document at the time ps_skin_texture_apply is called, not at start. Either '
+                            + '{ "kind": "selection" } (active document selection) or { "kind": "layer_mask", "layer_id": <id> } '
+                            + '(existing pixel mask of a layer/group in this document). Not allowed for jobs without a recipe.',
+                        properties: {
+                            kind: { type: 'string', enum: ['selection', 'layer_mask'] },
+                            layer_id: { type: 'integer' }
+                        },
+                        required: ['kind'],
+                        additionalProperties: false
+                    }
                 },
                 required: ['task_id', 'job_id'],
                 additionalProperties: false
@@ -329,9 +349,10 @@ function createSkinTextureTools({
             const newAttempt = !job.apply || job.apply.state === 'not_applied';
             if (newAttempt && job.phase === 'ready' && !isChannelOpen()) return textResult(channelClosedMessage, true);
             if (!job.apply || job.apply.state === 'not_applied') {
-                note(task.id, `skin texture: writing ${job.request.outputs.join(', ')}`, 'ps_skin_texture_apply');
+                const writingDesc = job.request.recipe ? `recipe ${job.request.recipe}` : job.request.outputs.join(', ');
+                note(task.id, `skin texture: writing ${writingDesc}`, 'ps_skin_texture_apply');
             }
-            outcome = await jobs.apply(task, args.job_id, transportFor(task));
+            outcome = await jobs.apply(task, args.job_id, transportFor(task), args.mask_source);
         } catch (error) {
             if (error instanceof SkinRequestError) return refusal(error);
             throw error;

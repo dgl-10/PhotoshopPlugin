@@ -241,4 +241,6 @@ try {
 `;
 }
 
-module.exports = { buildProbeScript, buildApplyScript, getExchangeSource };
+const { buildRecipeApplyScript } = require('./recipe-uxp-builder');
+
+module.exports = { buildProbeScript, buildApplyScript, buildRecipeApplyScript, getExchangeSource };

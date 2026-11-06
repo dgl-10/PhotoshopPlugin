@@ -78,6 +78,7 @@ const { Worker } = require('node:worker_threads');
 const adapter = require('./core-adapter');
 const exchangeFiles = require('./exchange-files');
 const scripts = require('./uxp-scripts');
+const recipeCatalog = require('./recipe-catalog');
 
 const WORKER_FILE = path.join(__dirname, 'worker.js');
 
@@ -164,6 +165,7 @@ function createSkinTextureJobs({
 }) {
     const options = { ...DEFAULT_OPTIONS, ...limits };
     const core = adapter.getCoreIdentity();
+    const formulasCore = recipeCatalog.getFormulasCoreIdentity();
 
     // taskId -> { taskId, jobs: Map<jobId, job>, requests: Map<requestId, ledgerEntry>, closed, closedReason }
     // A ledger entry is { jobId, keyHash, retired }: retired is null while the job record is
@@ -306,6 +308,9 @@ function createSkinTextureJobs({
     }
 
     function historyNameOf(job) {
+        if (job.request && job.request.recipe) {
+            return `skin texture ${job.id}: recipe ${job.request.recipe}`;
+        }
         return `skin texture ${job.id}: ${job.request.outputs.join(', ')}`;
     }
 
@@ -631,17 +636,31 @@ function createSkinTextureJobs({
         job.phase = 'computing';
         job.times.computeStartedAt = now();
         job.progress = { stage: 'starting', at: now() };
+        const isRecipeJob = Boolean(job.request && job.request.recipe);
         const meta = {
             jobId: job.id,
             taskId: job.taskId,
             document: { id: job.document.id, width: job.document.width, height: job.document.height },
             rect: job.request.rect,
-            core: { version: core.version, sha256: core.sha256 }
+            recipe_id: (job.request && job.request.recipe) || null,
+            core: isRecipeJob
+                ? { version: formulasCore.version, sha256: formulasCore.sha256 }
+                : { version: core.version, sha256: core.sha256 }
         };
 
         let worker;
         try {
-            worker = createWorker({ params: job.coreParams, outputs: job.request.outputs, meta });
+            if (isRecipeJob) {
+                worker = createWorker({
+                    recipe: job.request.recipe,
+                    formulaParams: job.coreParams,
+                    params: job.coreParams,
+                    outputs: job.request.outputs,
+                    meta
+                });
+            } else {
+                worker = createWorker({ params: job.coreParams, outputs: job.request.outputs, meta });
+            }
         } catch (error) {
             failJob(job, 'WORKER_FAILED', `The computation could not be started: ${error.message}`);
             return;
@@ -714,6 +733,55 @@ function createSkinTextureJobs({
     }
 
     function buildDiagnostics(job) {
+        if (job.request && job.request.recipe === 'skin_pair_v1') {
+            const stats = job.stats || {};
+            const stats1 = stats.formula_1 || {};
+            const stats2 = stats.formula_2 || {};
+            const layers = {};
+            if (stats1.layers) {
+                for (const [k, v] of Object.entries(stats1.layers)) {
+                    layers[`formula_1_${k}`] = {
+                        min: v.min,
+                        max: v.max,
+                        mean: Math.round(v.mean * 1000) / 1000,
+                        clippedFraction: v.clippedFraction
+                    };
+                }
+            }
+            if (stats2.layers) {
+                for (const [k, v] of Object.entries(stats2.layers)) {
+                    layers[`formula_2_${k}`] = {
+                        min: v.min,
+                        max: v.max,
+                        mean: Math.round(v.mean * 1000) / 1000,
+                        clippedFraction: v.clippedFraction
+                    };
+                }
+            }
+            const f1Notes = (job.coreParams && job.coreParams.formula_1)
+                ? adapter.visibilityNotes(job.coreParams.formula_1, stats1, ['pores', 'furrows'])
+                : [];
+            const f2Notes = (job.coreParams && job.coreParams.formula_2)
+                ? adapter.visibilityNotes(job.coreParams.formula_2, stats2, ['pores', 'furrows'])
+                : [];
+            return {
+                layers,
+                formulas: {
+                    formula_1: {
+                        suppressed: stats1.suppressed || null,
+                        pores: stats1.pores ? { counts: stats1.pores.counts, visible: stats1.pores.visible } : null,
+                        notes: f1Notes
+                    },
+                    formula_2: {
+                        suppressed: stats2.suppressed || null,
+                        pores: stats2.pores ? { counts: stats2.pores.counts, visible: stats2.pores.visible } : null,
+                        notes: f2Notes
+                    }
+                },
+                notes: [...new Set([...f1Notes, ...f2Notes])]
+            };
+        }
+
         const stats = job.stats || {};
         const layers = {};
         for (const output of job.request.outputs) {
@@ -750,15 +818,36 @@ function createSkinTextureJobs({
      * @param {object} transport - See start().
      * @returns {Promise<{job: object, refusal?: object}>}
      */
-    async function apply(task, jobId, transport) {
+    async function apply(task, jobId, transport, maskSource) {
         const startedAt = now();
         const job = findJob(task.id, jobId);
 
+        // If a write is in flight or already finished (applied or terminal/unknown), calling apply again
+        // returns what happened the first time without re-validating arguments.
         if (attemptInFlight(job.apply)) {
             await waitAtMost(job.apply.promise, options.responseBudgetMs - (now() - startedAt));
             return { job };
         }
         if (job.apply && job.apply.state !== 'not_applied') return { job };
+
+        if (job.request && job.request.recipe === 'skin_pair_v1') {
+            if (!maskSource || typeof maskSource !== 'object') {
+                throw new adapter.SkinRequestError(
+                    'MASK_SOURCE_REQUIRED',
+                    'mask_source is required for recipe skin_pair_v1: { kind: "selection" } or { kind: "layer_mask", layer_id: <integer> }.'
+                );
+            }
+            if (maskSource.kind !== 'selection' && maskSource.kind !== 'layer_mask') {
+                throw new adapter.SkinRequestError('INVALID_MASK_SOURCE', 'mask_source.kind must be "selection" or "layer_mask".');
+            }
+            if (maskSource.kind === 'layer_mask' && !Number.isInteger(maskSource.layer_id)) {
+                throw new adapter.SkinRequestError('INVALID_MASK_SOURCE', 'mask_source.layer_id must be an integer layer ID.');
+            }
+        } else {
+            if (maskSource !== undefined) {
+                throw new adapter.SkinRequestError('INVALID_ARGUMENT', 'mask_source is only valid for recipe jobs (e.g. skin_pair_v1).');
+            }
+        }
 
         if (job.phase !== 'ready') {
             return { job, refusal: refusalForPhase(job) };
@@ -787,6 +876,7 @@ function createSkinTextureJobs({
             state: 'preparing',
             startedAt: now(),
             files: [],
+            maskSource: maskSource || null,
             historyName: historyNameOf(job),
             // Set when the task is paused while this attempt is still being prepared.
             interruption: null,
@@ -896,6 +986,93 @@ function createSkinTextureJobs({
     }
 
     async function runApply(job, attempt, transport) {
+        if (job.request && job.request.recipe === 'skin_pair_v1') {
+            const components = recipeCatalog.getRecipeComponents(job.request.recipe);
+            const names = components.map(c => exchangeFiles.fileNameFor(job.id, attempt.number, c.componentKey));
+            attempt.files = names;
+            let t = now();
+            for (let i = 0; i < components.length; i++) {
+                // Stop early between files; the decisive check is the one right before sending.
+                const early = reasonNotToSend(job, attempt, transport);
+                if (early) {
+                    await stopBeforeSending(job, attempt, early);
+                    return;
+                }
+                try {
+                    await exchangeFiles.publish(job.dataFolder, names[i], job.result.files[components[i].componentKey]);
+                } catch (error) {
+                    await exchangeFiles.removeOwn(job.dataFolder, names);
+                    settleApply(job, attempt, {
+                        state: 'not_applied',
+                        retryable: true,
+                        code: 'PUBLISH_FAILED',
+                        message: `The texture could not be handed to Photoshop: ${error.message}. Nothing was changed.`
+                    });
+                    return;
+                }
+            }
+            attempt.publishMs = now() - t;
+
+            const stopped = reasonNotToSend(job, attempt, transport);
+            if (stopped) {
+                await stopBeforeSending(job, attempt, stopped);
+                return;
+            }
+            attempt.deadlineEpochMs = now() + options.applyStartDeadlineMs;
+            const code = scripts.buildRecipeApplyScript({
+                jobId: job.id,
+                taskId: job.taskId,
+                recipe: job.request.recipe,
+                marker: markerOf(job),
+                document: {
+                    id: job.document.id,
+                    width: job.document.width,
+                    height: job.document.height,
+                    bitsPerChannel: job.document.bitsPerChannel,
+                    profileType: job.document.profileType,
+                    profileName: job.document.profileName
+                },
+                rect: job.request.rect,
+                maskSource: attempt.maskSource,
+                components: components.map((c, i) => ({
+                    ...c,
+                    file: names[i],
+                    recipeId: job.request.recipe,
+                    coreVersion: formulasCore.version,
+                    coreSha256: formulasCore.sha256
+                })),
+                dataFolder: job.dataFolderNative,
+                deadlineEpochMs: attempt.deadlineEpochMs
+            });
+            attempt.state = 'sending';
+            attempt.sentAt = now();
+            job.phase = 'applying';
+
+            let answer;
+            t = now();
+            try {
+                answer = await transport.run(code, attempt.historyName, options.applyTransportTimeoutMs);
+            } catch (error) {
+                attempt.waitMs = now() - t;
+                const failure = classifyTransportError(error, transport);
+                if (failure.documentClosed && typeof transport.onDocumentClosed === 'function') transport.onDocumentClosed();
+                if (failure.definite) {
+                    settleApply(job, attempt, {
+                        state: 'not_applied',
+                        retryable: failure.retryable,
+                        code: failure.code,
+                        message: `${failure.message} Nothing was changed by this write.`
+                    });
+                } else {
+                    settleApply(job, attempt, { state: 'unknown', code: failure.code, message: failure.message });
+                }
+                return;
+            }
+            attempt.waitMs = now() - t;
+            settleApply(job, attempt, interpretApplyAnswer(job, answer));
+            return;
+        }
+
         const outputs = job.request.outputs;
         const names = outputs.map(output => exchangeFiles.fileNameFor(job.id, attempt.number, output));
         attempt.files = names;
@@ -984,6 +1161,20 @@ function createSkinTextureJobs({
         }
         const rect = job.request.rect;
         if (r.ok === true) {
+            if (job.request && job.request.recipe) {
+                const structure = r.structure;
+                const layers = Array.isArray(r.layers) ? r.layers : [];
+                const consistent = structure && structure.mainGroup && structure.mainGroup.hasUserMask
+                    && Array.isArray(structure.subgroups) && structure.subgroups.length === 2
+                    && layers.length === 4
+                    && layers.every(layer => Number.isInteger(layer.id) && layer.bounds
+                        && layer.bounds.left === rect.x && layer.bounds.top === rect.y
+                        && layer.bounds.right === rect.x + rect.width && layer.bounds.bottom === rect.y + rect.height);
+                if (!consistent) {
+                    return { state: 'unknown', code: 'ANSWER_INCONSISTENT', message: 'Photoshop reported a recipe write whose structure does not match the request.', structure, layers };
+                }
+                return { state: 'applied', code: 'APPLIED', layers, structure, scriptTimings: r.timings || null, historyStep };
+            }
             const layers = Array.isArray(r.layers) ? r.layers : [];
             const consistent = layers.length === job.request.outputs.length
                 && layers.every((layer, i) => layer && layer.output === job.request.outputs[i] && Number.isInteger(layer.id)
@@ -1005,7 +1196,18 @@ function createSkinTextureJobs({
             if (r.code === 'APPLY_EXPIRED') {
                 return { state: 'not_applied', retryable: true, code: r.code, message };
             }
-            return { state: 'not_applied', retryable: false, code: r.code || 'WRITE_REFUSED', message };
+            const retryable = [
+                'NO_SELECTION',
+                'SELECTION_READ_FAILED',
+                'LAYER_NOT_FOUND',
+                'NO_LAYER_MASK',
+                'LAYER_MASK_READ_FAILED',
+                'INVALID_MASK_SOURCE',
+                'MASK_NOT_FOUND',
+                'UNSUPPORTED_MASK',
+                'UNSUPPORTED_MASK_PROPERTIES'
+            ].includes(r.code);
+            return { state: 'not_applied', retryable, code: r.code || 'WRITE_REFUSED', message };
         }
         if (r.changed === 'rolled_back') {
             return { state: 'not_applied', retryable: false, code: r.code || 'WRITE_FAILED',
@@ -1317,6 +1519,9 @@ function createSkinTextureJobs({
             case 'computing':
                 return 'Computing. Call ps_skin_texture_status again in 5-10 seconds; large areas can take a minute or more. Nothing is written until you call ps_skin_texture_apply.';
             case 'ready':
+                if (job.request && job.request.recipe) {
+                    return `Call ps_skin_texture_apply with job_id "${job.id}" and mask_source ({ kind: "selection" } or { kind: "layer_mask", layer_id: <id> }) to write the Skin group. The result is kept until ${iso(job.times.expiresAt)}.`;
+                }
                 return `Call ps_skin_texture_apply with job_id "${job.id}" to write the layers. The result is kept until ${iso(job.times.expiresAt)}.`;
             case 'preparing_write':
                 return 'Helper is handing the texture file over; the write has NOT been sent to Photoshop yet. '
@@ -1325,6 +1530,9 @@ function createSkinTextureJobs({
             case 'applying':
                 return 'The write was sent to Photoshop. Call ps_skin_texture_status in a few seconds. Calling apply again does not write a second time.';
             case 'applied':
+                if (job.request && job.request.recipe) {
+                    return 'Skin texture recipe applied. The Skin group has been assembled with Formula 2 (active) and Formula 1 (hidden), 50% Linear Light component layers, and a common user mask on the Skin group. Written to the document as a single Photoshop History step; undo removes it completely. Calling ps_skin_texture_apply again will not write a second time. Adjust visibility, layer opacities, or mask as needed using the returned layer IDs.';
+                }
                 return 'Written. Set the blend mode (usually Linear Light or Soft Light), the strength (Fill or Opacity), '
                     + 'the mask and Blend If yourself with ps_execute_script; there are no defaults for them. One Undo '
                     + 'removes the whole write; calling apply again never writes it again.';
@@ -1382,9 +1590,39 @@ function createSkinTextureJobs({
         out.rect = job.request.rect;
         out.px_per_mm = job.request.pxPerMm;
         out.outputs = job.request.outputs;
-        out.layer_names = job.request.outputs.map(output => layerNameOf(job, output));
-        if (withParams && job.coreParams) out.params = adapter.publicParams(job.coreParams);
-        out.core = { version: core.version, sha256: core.sha256, matches_pinned: core.matchesPinned };
+
+        if (job.request && job.request.recipe) {
+            out.recipe_id = job.request.recipe;
+            out.core = {
+                version: formulasCore.version,
+                sha256: formulasCore.sha256,
+                matches_pinned: formulasCore.matchesPinned
+            };
+            out.formulas = {
+                formula_1: {
+                    formula_id: 'formula_1',
+                    formula_version: 1,
+                    name: 'Formula 1',
+                    visible: false,
+                    outputs: ['pores', 'furrows'],
+                    params: withParams && job.coreParams && job.coreParams.formula_1 ? adapter.publicParams(job.coreParams.formula_1) : undefined
+                },
+                formula_2: {
+                    formula_id: 'formula_2',
+                    formula_version: 1,
+                    name: 'Formula 2',
+                    visible: true,
+                    outputs: ['pores', 'furrows'],
+                    params: withParams && job.coreParams && job.coreParams.formula_2 ? adapter.publicParams(job.coreParams.formula_2) : undefined
+                }
+            };
+            if (job.request.params) out.recipe_params = job.request.params;
+        } else {
+            out.layer_names = job.request.outputs.map(output => layerNameOf(job, output));
+            if (withParams && job.coreParams) out.params = adapter.publicParams(job.coreParams);
+            out.core = { version: core.version, sha256: core.sha256, matches_pinned: core.matchesPinned };
+        }
+
         if (job.phase === 'computing' && job.progress) {
             out.progress = { stage: job.progress.stage, elapsed_ms: now() - job.times.computeStartedAt };
         }
@@ -1413,6 +1651,9 @@ function createSkinTextureJobs({
             };
             if (a.code) applyView.code = a.code;
             if (a.message) applyView.message = a.message;
+            if (typeof a.retryable === 'boolean') applyView.retryable = a.retryable;
+            if (a.structure) applyView.structure = a.structure;
+            if (a.maskSource) applyView.mask_source = a.maskSource;
             if (a.layers) applyView.layers = a.layers.map(layer => ({ output: layer.output, id: layer.id, name: layer.name, bounds: layer.bounds, parent: layer.parent || null }));
             if (a.existingLayers) applyView.existing_layers = a.existingLayers;
             if (a.leftover) applyView.leftover_layer_ids = a.leftover;

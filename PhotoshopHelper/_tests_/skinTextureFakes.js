@@ -26,7 +26,9 @@ const CONSTANTS = Object.freeze({
     BitsPerChannelType: { EIGHT: 'bitDepth8', SIXTEEN: 'bitDepth16', THIRTYTWO: 'bitDepth32' },
     ColorProfileType: { NONE: 'none', WORKING: 'working', CUSTOM: 'custom' },
     DocumentMode: { RGB: 'RGBColorMode', CMYK: 'CMYKColorMode', GRAYSCALE: 'grayscaleMode' },
-    BlendMode: { NORMAL: 'normal', LINEARLIGHT: 'linearLight' }
+    BlendMode: { NORMAL: 'normal', LINEARLIGHT: 'linearLight', PASSTHROUGH: 'passThrough' },
+    LayerKind: { NORMAL: 'pixel', GROUP: 'group' },
+    ElementPlacement: { PLACEINSIDE: 'placeInside', PLACEBEFORE: 'placeBefore', PLACEAFTER: 'placeAfter' }
 });
 
 const BITS = { 8: CONSTANTS.BitsPerChannelType.EIGHT, 16: CONSTANTS.BitsPerChannelType.SIXTEEN, 32: CONSTANTS.BitsPerChannelType.THIRTYTWO };
@@ -60,24 +62,62 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
         afterScript: null
     };
 
-    function makeLayer(doc, name) {
+    function findLayerById(id, list = doc.layers) {
+        for (const l of list) {
+            if (l.id === id) return l;
+            if (l.layers) {
+                const found = findLayerById(id, l.layers);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    function makeLayer(doc, name, kind = 'pixel', props = {}) {
         const layer = {
             id: nextLayerId++,
             name,
-            blendMode: CONSTANTS.BlendMode.NORMAL,
+            kind,
+            blendMode: kind === 'group' ? CONSTANTS.BlendMode.PASSTHROUGH : CONSTANTS.BlendMode.NORMAL,
             opacity: 100,
             fillOpacity: 100,
             visible: true,
             parent: null,
             pixels: null,
+            mask: props.mask ? {
+                width: props.mask.width || 100,
+                height: props.mask.height || 100,
+                data: props.mask.data || null,
+                bounds: props.mask.bounds || { left: 0, top: 0, right: 100, bottom: 100 }
+            } : null,
+            _userMaskEnabled: props.userMaskEnabled !== undefined ? props.userMaskEnabled : (props._userMaskEnabled !== undefined ? props._userMaskEnabled : true),
+            layerMaskDensity: props.layerMaskDensity !== undefined ? props.layerMaskDensity : 100,
+            layerMaskFeather: props.layerMaskFeather !== undefined ? props.layerMaskFeather : 0,
+            layers: kind === 'group' ? [] : undefined,
             get bounds() {
+                if (kind === 'group') {
+                    if (!this.layers || !this.layers.length) return { left: 0, top: 0, right: 0, bottom: 0 };
+                    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+                    for (const child of this.layers) {
+                        const b = child.bounds;
+                        if (b.left < left) left = b.left;
+                        if (b.top < top) top = b.top;
+                        if (b.right > right) right = b.right;
+                        if (b.bottom > bottom) bottom = b.bottom;
+                    }
+                    return { left: isFinite(left) ? left : 0, top: isFinite(top) ? top : 0, right: isFinite(right) ? right : 0, bottom: isFinite(bottom) ? bottom : 0 };
+                }
                 if (!this.pixels) return { left: 0, top: 0, right: 0, bottom: 0 };
                 const p = this.pixels;
                 return { left: p.left, top: p.top, right: p.left + p.width, bottom: p.top + p.height };
             },
             async delete() {
                 if (state.failAllDeletes || state.failDeleteIds.has(layer.id)) throw new Error('The layer could not be deleted');
-                doc.layers = doc.layers.filter(other => other !== layer);
+                if (layer.parent && Array.isArray(layer.parent.layers)) {
+                    layer.parent.layers = layer.parent.layers.filter(other => other !== layer);
+                } else {
+                    doc.layers = doc.layers.filter(other => other !== layer);
+                }
                 doc.changedInScript = true;
             }
         };
@@ -96,13 +136,37 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             bitsPerChannel: BITS[bits],
             colorProfileType: CONSTANTS.ColorProfileType[profileType.toUpperCase()],
             colorProfileName: profileType === 'none' ? 'None' : (spec.profileName || 'sRGB IEC61966-2.1'),
+            hasSelection: spec.hasSelection !== undefined ? spec.hasSelection : Boolean(spec.selection),
+            selection: spec.selection || null,
             layers: [],
             changedInScript: false,
             async createPixelLayer({ name }) {
-                const layer = makeLayer(doc, name);
+                const layer = makeLayer(doc, name, 'pixel');
                 doc.layers.unshift(layer);
                 doc.changedInScript = true;
                 return layer;
+            },
+            async createLayerGroup({ name, opacity = 100, blendMode = CONSTANTS.BlendMode.PASSTHROUGH, fromLayers } = {}) {
+                const group = makeLayer(doc, name, 'group');
+                group.blendMode = blendMode;
+                group.opacity = opacity;
+                if (state.unexpectedChildMaskOnGroupName === name || (state.unexpectedChildMask && name === 'Formula 1')) {
+                    group.mask = { width: 10, height: 10, bounds: { left: 0, top: 0, right: 10, bottom: 10 } };
+                }
+                if (Array.isArray(fromLayers)) {
+                    for (const l of fromLayers) {
+                        if (l.parent && Array.isArray(l.parent.layers)) {
+                            l.parent.layers = l.parent.layers.filter(other => other !== l);
+                        } else {
+                            doc.layers = doc.layers.filter(other => other !== l);
+                        }
+                        l.parent = group;
+                        group.layers.push(l);
+                    }
+                }
+                doc.layers.unshift(group);
+                doc.changedInScript = true;
+                return group;
             }
         };
         const background = makeLayer(doc, 'Background');
@@ -115,6 +179,122 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
     const app = { documents: [doc, other], activeDocument: other };
 
     const imaging = {
+        async getSelection(options) {
+            state.getSelectionCalls = (state.getSelectionCalls || 0) + 1;
+            if (!doc.hasSelection || !doc.selection) return null;
+            const s = doc.selection;
+            const w = s.width || doc.width;
+            const h = s.height || doc.height;
+            return {
+                imageData: {
+                    width: w,
+                    height: h,
+                    components: 1,
+                    data: s.data || new Uint8Array(w * h).fill(255),
+                    dispose() { state.imageDataDisposed += 1; }
+                },
+                sourceBounds: {
+                    left: s.left !== undefined ? s.left : (s.x || 0),
+                    top: s.top !== undefined ? s.top : (s.y || 0),
+                    right: (s.left !== undefined ? s.left : (s.x || 0)) + w,
+                    bottom: (s.top !== undefined ? s.top : (s.y || 0)) + h
+                }
+            };
+        },
+        async getLayerMask({ documentID, layerID, kind, sourceBounds }) {
+            state.getLayerMaskCalls = (state.getLayerMaskCalls || 0) + 1;
+            const layer = findLayerById(layerID);
+            if (!layer || !layer.mask) return null;
+            if (state.corruptVerifiedMaskOnLayerId === layerID) {
+                return {
+                    imageData: null,
+                    sourceBounds: { left: 0, top: 0, right: 0, bottom: 0 }
+                };
+            }
+            if (state.corruptVerifiedMaskBounds || state.corruptVerifiedMaskBoundsOnLayerId === layerID) {
+                return {
+                    imageData: {
+                        width: 1,
+                        height: 1,
+                        components: 1,
+                        data: new Uint8Array(1),
+                        getData: async () => new Uint8Array(1),
+                        dispose() { state.imageDataDisposed += 1; }
+                    },
+                    sourceBounds: { left: 9999, top: 9999, right: 10000, bottom: 10000 }
+                };
+            }
+            const m = layer.mask;
+            // In real Photoshop, getLayerMask with sourceBounds extracts that ROI. Without sourceBounds, it returns the whole document canvas.
+            let returnedBounds;
+            let width;
+            let height;
+            let maskData;
+
+            if (sourceBounds) {
+                returnedBounds = { left: sourceBounds.left, top: sourceBounds.top, right: sourceBounds.right, bottom: sourceBounds.bottom };
+                width = sourceBounds.right - sourceBounds.left;
+                height = sourceBounds.bottom - sourceBounds.top;
+            } else {
+                returnedBounds = { left: 0, top: 0, right: doc.width, bottom: doc.height };
+                width = doc.width;
+                height = doc.height;
+            }
+
+            if (state.corruptVerifiedMaskEmptyData) {
+                maskData = new Uint8Array(0);
+            } else if (state.corruptVerifiedMaskData || state.corruptVerifiedMaskDataOnLayerId === layerID) {
+                maskData = new Uint8Array(width * height).fill(42);
+            } else {
+                // Sample the mask like a canvas: the written patch inside m.bounds, m.outside elsewhere
+                // (255 by default: Photoshop leaves a new mask white outside a putLayerMask patch, live-11).
+                maskData = new Uint8Array(width * height);
+                const b = m.bounds;
+                for (let i = 0; i < maskData.length; i++) {
+                    const x = returnedBounds.left + (i % width);
+                    const y = returnedBounds.top + Math.floor(i / width);
+                    const inPatch = b && x >= b.left && x < b.right && y >= b.top && y < b.bottom;
+                    maskData[i] = inPatch ? (m.data ? m.data[(y - b.top) * (b.right - b.left) + (x - b.left)] : 255) : (m.outside === undefined ? 255 : m.outside);
+                }
+            }
+
+            return {
+                imageData: {
+                    width,
+                    height,
+                    components: 1,
+                    data: maskData,
+                    getData: async () => maskData,
+                    dispose() { state.imageDataDisposed += 1; }
+                },
+                sourceBounds: returnedBounds
+            };
+        },
+        async putLayerMask({ documentID, layerID, kind = 'user', imageData, replace = true, targetBounds }) {
+            state.putLayerMaskCalls = (state.putLayerMaskCalls || 0) + 1;
+            if (state.silentFailPutLayerMask) return;
+            if (state.failPutLayerMask) throw new Error('putLayerMask simulated failure');
+            const layer = findLayerById(layerID);
+            if (!layer) throw new Error('Layer not found: ' + layerID);
+            layer.layerMaskDensity = 100;
+            layer.layerMaskFeather = 0;
+            layer._userMaskEnabled = true;
+            let maskBytes = null;
+            if (imageData.data) {
+                maskBytes = imageData.data.slice();
+            } else if (typeof imageData.getData === 'function') {
+                maskBytes = await imageData.getData();
+            }
+            layer.mask = {
+                width: imageData.width,
+                height: imageData.height,
+                // replace: false writes into the existing mask, so its colour outside the patch stays.
+                outside: replace === false && layer.mask ? layer.mask.outside : 255,
+                data: maskBytes ? maskBytes.slice() : null,
+                bounds: targetBounds ? { ...targetBounds, right: targetBounds.left + imageData.width, bottom: targetBounds.top + imageData.height } : { left: 0, top: 0, right: imageData.width, bottom: imageData.height }
+            };
+            doc.changedInScript = true;
+        },
         async createImageDataFromBuffer(data, options) {
             state.imageDataCreated += 1;
             if (state.failCreateImageDataOnCall === state.imageDataCreated) throw new Error('createImageDataFromBuffer failed');
@@ -137,7 +317,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             state.putPixelsCalls += 1;
             if (state.failPutPixelsOnCall === state.putPixelsCalls) throw new Error('putPixels failed');
             const target = app.documents.find(d => d.id === documentID);
-            const layer = target && target.layers.find(l => l.id === layerID);
+            const layer = findLayerById(layerID, target ? target.layers : doc.layers);
             if (!layer) throw new Error('no such layer');
             layer.pixels = {
                 left: targetBounds.left,
@@ -177,7 +357,39 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             throw new Error('A nested executeAsModal is not expected inside agent_execute_script');
         }
     };
-    const action = { batchPlay: async () => [] };
+    const action = {
+        batchPlay: async (commands) => {
+            if (!Array.isArray(commands)) return [];
+            return commands.map(cmd => {
+                if (cmd && cmd._obj === 'select' && Array.isArray(cmd._target) && cmd._target[0] && cmd._target[0]._ref === 'layer') {
+                    state.selectedLayerId = cmd._target[0]._id;
+                    return {};
+                }
+                if (cmd && cmd._obj === 'make' && cmd.using && cmd.using._enum === 'userMaskEnabled') {
+                    // Real batchPlay reports a failed command as an error entry, without throwing.
+                    if (state.failMaskInit) return { _obj: 'error', message: 'make mask failed', result: -25922 };
+                    const target = findLayerById(state.selectedLayerId);
+                    if (target && !state.skipMaskInit) target.mask = { bounds: null, data: null, outside: cmd.using._value === 'hideAll' ? 0 : 255 };
+                    return {};
+                }
+                if (cmd && cmd._obj === 'get' && Array.isArray(cmd._target)) {
+                    const layerRef = cmd._target.find(t => t._ref === 'layer');
+                    if (layerRef && layerRef._id !== undefined) {
+                        const l = findLayerById(layerRef._id, doc.layers);
+                        if (l) {
+                            return {
+                                hasUserMask: Boolean(l.mask),
+                                userMaskEnabled: l._userMaskEnabled !== false,
+                                userMaskDensity: l.layerMaskDensity !== undefined ? l.layerMaskDensity : 100,
+                                userMaskFeather: l.layerMaskFeather !== undefined ? l.layerMaskFeather : 0
+                            };
+                        }
+                    }
+                }
+                return {};
+            });
+        }
+    };
     const requireInScript = id => {
         if (id === 'uxp') return uxp;
         if (id === 'photoshop') return { app, action, core, imaging, constants: CONSTANTS };
@@ -232,7 +444,8 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             }
             if (action === 'agent_finish_task') return {};
             if (action !== 'agent_execute_script') throw new Error(`no fake answer for ${action}`);
-            const record = { payload, timeoutMs, kind: payload.code.includes('Skin texture: write job') ? 'apply' : 'probe' };
+            const isApply = payload.code.includes('Skin texture: write job') || payload.code.includes('Skin texture: write recipe');
+            const record = { payload, timeoutMs, kind: isApply ? 'apply' : 'probe' };
             state.scripts.push(record);
             if (state.beforeScript) await state.beforeScript(payload, record);
             const answer = await agentExecuteScript(payload);
@@ -252,7 +465,8 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
         return out;
     }
 
-    return { state, doc, other, app, bridge, grayOf, constants: CONSTANTS };
+    // findLayerById is exported on fake for test inspection of nested layer hierarchy
+    return { state, doc, other, app, bridge, grayOf, findLayerById, constants: CONSTANTS };
 }
 
 const silent = { info() {}, warn() {}, error() {} };
