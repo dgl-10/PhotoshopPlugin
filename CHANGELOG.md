@@ -2,7 +2,13 @@
 
 All notable changes to **FromPS / ToPS** and **PhotoshopHelper** are documented in this file.
 
+## [1.3.6]
+
+### 🛠️ Improvements & Maintenance
+- **Photoshop Plugin**: Bugfix in this plugin.
+
 ## [1.3.5]
+
 ### 🤖 Model Context Protocol (MCP) & AI Agent Integration
 - **MCP Improvements**: Improvements in MCP operation.
 

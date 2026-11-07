@@ -254,11 +254,12 @@ async function captureSelectionInModal(executionContext, sourceMode, viaTempDocC
         // 1. Set minimum padding
         const MIN_PADDING = padding;
 
-        // Original selection dimensions
-        const selLeft = Math.round(bounds.left);
-        const selTop = Math.round(bounds.top);
-        const selRight = Math.round(bounds.right);
-        const selBottom = Math.round(bounds.bottom);
+        // Original selection dimensions, clipped to the canvas: Photoshop keeps the part of a
+        // selection drawn past the canvas edge, and a box that must contain it never fits any ratio
+        const selLeft = Math.max(0, Math.round(bounds.left));
+        const selTop = Math.max(0, Math.round(bounds.top));
+        const selRight = Math.min(docWidth, Math.round(bounds.right));
+        const selBottom = Math.min(docHeight, Math.round(bounds.bottom));
         const selWidth = (selRight - selLeft) || 1; // protection against zero width
         const selHeight = (selBottom - selTop) || 1;
 
