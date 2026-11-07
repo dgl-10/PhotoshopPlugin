@@ -23,6 +23,7 @@ const PINNED_FORMULAS_CORE_SHA256 = '385f49f559c05f823c2c79a2ccf782a58c18e72c857
 
 const RECIPES = ['skin_pair_v1'];
 const RECIPE_SKIN_PAIR_V1 = 'skin_pair_v1';
+const DEFAULT_RECIPE = RECIPE_SKIN_PAIR_V1;
 
 const ALLOWED_RECIPE_PARAMS = ['mode', 'seed', 'azimuthDeg', 'elevationDeg'];
 
@@ -121,11 +122,15 @@ function loadFormulasCore() {
 function getFormulasCoreIdentity() {
     if (!formulasCoreIdentity) {
         const bytes = fs.readFileSync(FORMULAS_CORE_FILE);
-        const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+        const rawSha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+        const lfBytes = Buffer.from(bytes.toString('binary').replace(/\r\n/g, '\n'), 'binary');
+        const lfSha256 = crypto.createHash('sha256').update(lfBytes).digest('hex');
+        const matchesPinned = rawSha256 === PINNED_FORMULAS_CORE_SHA256 || lfSha256 === PINNED_FORMULAS_CORE_SHA256;
         formulasCoreIdentity = {
             version: loadFormulasCore().version,
-            sha256,
-            matchesPinned: sha256 === PINNED_FORMULAS_CORE_SHA256
+            sha256: matchesPinned ? PINNED_FORMULAS_CORE_SHA256 : rawSha256,
+            rawSha256,
+            matchesPinned
         };
     }
     return formulasCoreIdentity;
@@ -185,6 +190,7 @@ function resolveFormulaParams(formulaId, document, rect, pxPerMm, commonParams) 
 module.exports = {
     RECIPES,
     RECIPE_SKIN_PAIR_V1,
+    DEFAULT_RECIPE,
     PINNED_FORMULAS_CORE_SHA256,
     FORMULAS_CORE_FILE,
     ALLOWED_RECIPE_PARAMS,

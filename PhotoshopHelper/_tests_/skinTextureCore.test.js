@@ -1,9 +1,8 @@
 'use strict';
 
 /**
- * The pinned core, the worker that runs it, the exchange format and the request checks.
- * The worker must give exactly the bytes the core gives on its own: the integration moves the
- * computation, it does not change it.
+ * Historical benchmark verification, active worker computation, exchange format,
+ * and adapter request checks for the standard skin texture recipe (task07).
  */
 
 const assert = require('node:assert/strict');
@@ -13,27 +12,35 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 
-const SkinTexture = require('../skin-texture/skin-core.js');
 const SkinExchange = require('../skin-texture/exchange.js');
 const adapter = require('../skin-texture/core-adapter');
+const recipeCatalog = require('../skin-texture/recipe-catalog');
 const { WORKER_FILE } = require('../skin-texture/job-manager');
 
-const META = { jobId: 'skt-0123456789ab', taskId: 'task-abc123', core: { version: 'test' } };
+const PINNED_TASK01_SHA256 = '5d0c9d54678cd4d60205c1913aa031e68f193657e951b92fd3c401606f616f8d';
+const META = { jobId: 'skt-0123456789ab', taskId: 'task-abc123', core: { version: 'task04-1' } };
 
 /**
- * Run the real worker once.
+ * Run the real worker once for a recipe request.
  *
- * @param {object} params - Resolved core parameters.
- * @param {string[]} outputs - Outputs.
+ * @param {object} formulaParams - Resolved formula parameters { formula_1, formula_2, common }.
+ * @param {string[]} outputs - Output keys.
+ * @param {object} rect - Document rectangle.
+ * @param {string} [recipe] - Recipe name.
  * @returns {Promise<object>} The result message.
  */
-function runWorker(params, outputs) {
+function runRecipeWorker(formulaParams, outputs, rect, recipe = 'skin_pair_v1') {
+    const doc = formulaParams && formulaParams.formula_1
+        ? { id: 1, width: formulaParams.formula_1.width, height: formulaParams.formula_1.height }
+        : { id: 1, width: 400, height: 400 };
     return new Promise((resolve, reject) => {
         const worker = new Worker(WORKER_FILE, {
             workerData: {
-                params,
+                recipe,
+                formulaParams,
+                params: formulaParams,
                 outputs,
-                meta: { ...META, document: { id: 1, width: params.width, height: params.height }, rect: params.rect }
+                meta: { ...META, document: doc, rect }
             }
         });
         worker.on('message', message => {
@@ -54,59 +61,123 @@ function grayFrom(message, output, rect) {
     return SkinExchange.decode(message.files[output], { jobId: META.jobId, output, rect }).payload;
 }
 
-test('the product copy of the core is the accepted one, byte for byte', () => {
-    const bytes = fs.readFileSync(path.join(__dirname, '..', 'skin-texture', 'skin-core.js'));
+test('historical task01 benchmark fixture is preserved byte for byte and runtime has no legacy core', () => {
+    // 1. Fixture exists and matches historical task01 SHA-256
+    const fixturePath = path.join(__dirname, 'fixtures', 'skin-core-task01.js');
+    assert.ok(fs.existsSync(fixturePath), 'fixtures/skin-core-task01.js must exist');
+    const bytes = fs.readFileSync(fixturePath);
     const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-    assert.equal(sha256, '5d0c9d54678cd4d60205c1913aa031e68f193657e951b92fd3c401606f616f8d');
-    assert.equal(adapter.PINNED_CORE_SHA256, sha256);
-    assert.equal(adapter.getCoreIdentity().matchesPinned, true);
-    // Line-ending conversion on checkout would change the bytes; git is told to leave them.
-    const attributes = fs.readFileSync(path.join(__dirname, '..', 'skin-texture', '.gitattributes'), 'utf8');
-    assert.match(attributes, /^skin-core\.js -text$/m);
+    assert.equal(sha256, PINNED_TASK01_SHA256);
+
+    // 2. Fixture gitattributes ensures -text
+    const fixtureAttr = fs.readFileSync(path.join(__dirname, 'fixtures', '.gitattributes'), 'utf8');
+    assert.match(fixtureAttr, /^skin-core-task01\.js -text$/m);
+
+    // 3. Runtime skin-texture directory must NOT contain skin-core.js
+    const runtimeCorePath = path.join(__dirname, '..', 'skin-texture', 'skin-core.js');
+    assert.equal(fs.existsSync(runtimeCorePath), false, 'Runtime skin-core.js must be removed');
+
+    // 4. Adapter reports new formula core identity
+    const identity = adapter.getCoreIdentity();
+    assert.equal(identity.version, 'task04-1');
+    assert.equal(identity.matchesPinned, true);
 });
 
-for (const mode of ['lines', 'cells']) {
-    test(`the worker gives the core's own bytes in ${mode} mode, for every output`, async () => {
-        const params = SkinTexture.resolveParams({ width: 260, height: 190, rect: { x: 37, y: 21, width: 120, height: 90 },
-            pxPerMm: 7, seed: 3, mode });
-        const direct = SkinTexture.render(params);
-        const message = await runWorker(params, ['main', 'pores', 'furrows']);
-        for (const output of ['main', 'pores', 'furrows']) {
-            const gray = grayFrom(message, output, params.rect);
-            assert.deepEqual(Buffer.from(gray), Buffer.from(direct.layers[output]), `${mode} ${output}`);
-            assert.deepEqual(message.checksums[output], SkinExchange.checksums(direct.layers[output]));
-        }
-        assert.equal(message.stats.nonFiniteReplacements, 0);
-    });
-}
+test('real worker computes all 4 outputs for default recipe and matches explicit recipe on small ROI', async () => {
+    const rect = { x: 20, y: 20, width: 32, height: 32 };
+    const doc = { width: 300, height: 300 };
+    const pxPerMm = 4.49;
+    const params = { mode: 'lines', seed: 1, azimuthDeg: 315, elevationDeg: 45 };
 
-test('a subset of outputs gives the same bytes as the full render', async () => {
-    const params = SkinTexture.resolveParams({ width: 200, height: 160, rect: { x: 10, y: 15, width: 80, height: 70 }, pxPerMm: 6, mode: 'cells' });
-    const direct = SkinTexture.render(params);
-    const message = await runWorker(params, ['furrows']);
-    assert.deepEqual(Object.keys(message.files), ['furrows']);
-    assert.deepEqual(Buffer.from(grayFrom(message, 'furrows', params.rect)), Buffer.from(direct.layers.furrows));
-});
+    const reqDefault = adapter.checkRequestShape({ rect, px_per_mm: pxPerMm, params });
+    const reqExplicit = adapter.checkRequestShape({ recipe: 'skin_pair_v1', rect, px_per_mm: pxPerMm, params });
 
-test('a rect gives exactly the same pixels as that area of the whole document', async () => {
-    const whole = SkinTexture.resolveParams({ width: 170, height: 130, pxPerMm: 6, seed: 2 });
-    const rect = { x: 41, y: 33, width: 57, height: 46 };
-    const part = SkinTexture.resolveParams({ width: 170, height: 130, rect, pxPerMm: 6, seed: 2 });
-    const [wholeMessage, partMessage] = await Promise.all([runWorker(whole, ['main']), runWorker(part, ['main'])]);
-    const wholeGray = grayFrom(wholeMessage, 'main', whole.rect);
-    const partGray = grayFrom(partMessage, 'main', rect);
-    for (let y = 0; y < rect.height; y++) {
-        const row = wholeGray.subarray((rect.y + y) * 170 + rect.x, (rect.y + y) * 170 + rect.x + rect.width);
-        assert.deepEqual(Buffer.from(partGray.subarray(y * rect.width, (y + 1) * rect.width)), Buffer.from(row), `row ${y}`);
+    assert.equal(reqDefault.recipe, 'skin_pair_v1');
+    assert.equal(reqDefault.key, reqExplicit.key);
+
+    const normDefault = adapter.normalizeForDocument(reqDefault, doc);
+    const normExplicit = adapter.normalizeForDocument(reqExplicit, doc);
+
+    const resultDefault = await runRecipeWorker(normDefault.coreParams, reqDefault.outputs, rect);
+    const resultExplicit = await runRecipeWorker(normExplicit.coreParams, reqExplicit.outputs, rect);
+
+    assert.equal(resultDefault.recipe, 'skin_pair_v1');
+    assert.deepEqual(Object.keys(resultDefault.files).sort(), [
+        'formula_1_furrows', 'formula_1_pores', 'formula_2_furrows', 'formula_2_pores'
+    ].sort());
+
+    for (const key of reqDefault.outputs) {
+        const grayDef = grayFrom(resultDefault, key, rect);
+        const grayExp = grayFrom(resultExplicit, key, rect);
+        assert.deepEqual(Buffer.from(grayDef), Buffer.from(grayExp), `Component ${key} matches between default and explicit`);
+        assert.equal(grayDef.length, rect.width * rect.height);
+        assert.deepEqual(resultDefault.checksums[key], resultExplicit.checksums[key]);
     }
+});
+
+test('a rect gives exactly the same pixels as that area of the whole document (seamless tiling)', async () => {
+    // Both formulas and both modes (lines, cells) must guarantee seamless tiling:
+    // rendering an ROI produces the identical pixel slice of the whole document rendering.
+    const doc = { width: 170, height: 130 };
+    const rect = { x: 41, y: 33, width: 57, height: 46 };
+    const pxPerMm = 6;
+    const seed = 2;
+
+    for (const mode of ['lines', 'cells']) {
+        const wholeParams = {
+            formula_1: recipeCatalog.resolveFormulaParams('formula_1', doc, { x: 0, y: 0, width: doc.width, height: doc.height }, pxPerMm, { mode, seed }),
+            formula_2: recipeCatalog.resolveFormulaParams('formula_2', doc, { x: 0, y: 0, width: doc.width, height: doc.height }, pxPerMm, { mode, seed })
+        };
+        const partParams = {
+            formula_1: recipeCatalog.resolveFormulaParams('formula_1', doc, rect, pxPerMm, { mode, seed }),
+            formula_2: recipeCatalog.resolveFormulaParams('formula_2', doc, rect, pxPerMm, { mode, seed })
+        };
+
+        const outputs = ['formula_1_pores', 'formula_1_furrows', 'formula_2_pores', 'formula_2_furrows'];
+        const [wholeResult, partResult] = await Promise.all([
+            runRecipeWorker(wholeParams, outputs, { x: 0, y: 0, width: doc.width, height: doc.height }),
+            runRecipeWorker(partParams, outputs, rect)
+        ]);
+
+        for (const output of outputs) {
+            const wholeGray = grayFrom(wholeResult, output, { x: 0, y: 0, width: doc.width, height: doc.height });
+            const partGray = grayFrom(partResult, output, rect);
+            for (let y = 0; y < rect.height; y++) {
+                const wholeRow = wholeGray.subarray((rect.y + y) * doc.width + rect.x, (rect.y + y) * doc.width + rect.x + rect.width);
+                const partRow = partGray.subarray(y * rect.width, (y + 1) * rect.width);
+                assert.deepEqual(Buffer.from(partRow), Buffer.from(wholeRow), `mode ${mode}, output ${output}, row ${y}`);
+            }
+        }
+    }
+});
+
+test('worker rejects invalid workerData and does not fall back to task01', async () => {
+    await assert.rejects(
+        () => new Promise((resolve, reject) => {
+            const worker = new Worker(WORKER_FILE, {
+                workerData: {
+                    recipe: 'unsupported_recipe',
+                    params: {},
+                    outputs: ['main'],
+                    meta: META
+                }
+            });
+            worker.on('message', m => {
+                if (m.type === 'error') reject(new Error(m.message));
+                else resolve(m);
+            });
+            worker.on('error', reject);
+        }),
+        /Worker only supports recipe "skin_pair_v1"/
+    );
 });
 
 test('the exchange file round-trips and refuses every kind of damage', () => {
     const rect = { x: 3, y: 4, width: 20, height: 10 };
     const gray = new Uint8Array(200).map((_, i) => (i * 37) & 255);
-    const meta = { jobId: 'skt-0123456789ab', taskId: 'task-1', output: 'main', document: { id: 5, width: 50, height: 40 }, rect };
+    const meta = { jobId: 'skt-0123456789ab', taskId: 'task-1', output: 'formula_2_pores', document: { id: 5, width: 50, height: 40 }, rect };
     const bytes = SkinExchange.encode(meta, gray);
-    const expect = { jobId: meta.jobId, taskId: 'task-1', output: 'main', documentId: 5, document: { width: 50, height: 40 }, rect };
+    const expect = { jobId: meta.jobId, taskId: 'task-1', output: 'formula_2_pores', documentId: 5, document: { width: 50, height: 40 }, rect };
     assert.deepEqual(Buffer.from(SkinExchange.decode(bytes, expect).payload), Buffer.from(gray));
 
     const cases = {
@@ -119,7 +190,6 @@ test('the exchange file round-trips and refuses every kind of damage', () => {
     for (const [code, damaged] of Object.entries(cases)) {
         assert.throws(() => SkinExchange.decode(damaged, expect), new RegExp(`^Error: ${code}`), code);
     }
-    // A changed header byte is caught by the header checksum (or makes the JSON invalid).
     const headerChanged = bytes.slice();
     headerChanged[20] = headerChanged[20] === 0x31 ? 0x32 : 0x31;
     assert.throws(() => SkinExchange.decode(headerChanged, expect), /EXCHANGE_(HEADER_CRC|BAD_HEADER|LENGTH|HEADER_FIELD|WRONG|PAYLOAD)/);
@@ -127,14 +197,13 @@ test('the exchange file round-trips and refuses every kind of damage', () => {
     for (const [key, value, code] of [
         ['jobId', 'skt-ffffffffffff', 'EXCHANGE_WRONG_JOB'],
         ['taskId', 'task-2', 'EXCHANGE_WRONG_JOB'],
-        ['output', 'pores', 'EXCHANGE_WRONG_JOB'],
+        ['output', 'formula_1_pores', 'EXCHANGE_WRONG_JOB'],
         ['documentId', 6, 'EXCHANGE_WRONG_DOCUMENT'],
         ['document', { width: 51, height: 40 }, 'EXCHANGE_WRONG_DOCUMENT'],
         ['rect', { ...rect, x: 4 }, 'EXCHANGE_WRONG_RECT']
     ]) {
         assert.throws(() => SkinExchange.decode(bytes, { ...expect, [key]: value }), new RegExp(code), key);
     }
-    // The source runs inside Photoshop, which has no TextDecoder: it stays plain ASCII.
     const source = fs.readFileSync(path.join(__dirname, '..', 'skin-texture', 'exchange.js'), 'utf8');
     assert.ok([...source].every(char => char.charCodeAt(0) < 128));
 });
@@ -152,9 +221,12 @@ test('gray maps to RGBA 8 and to the verified 16-bit range for every value', () 
     assert.equal(SkinExchange.to16(128), 16448, 'the value task02 read back from 16-bit documents');
 });
 
-test('requests are checked against the core before anything starts', () => {
+test('requests are checked and normalized: default recipe skin_pair_v1, outputs and old params refused', () => {
     const good = { rect: { x: 0, y: 0, width: 100, height: 80 }, px_per_mm: 5 };
-    assert.equal(adapter.checkRequestShape(good).outputs[0], 'main');
+    const checked = adapter.checkRequestShape(good);
+    assert.equal(checked.recipe, 'skin_pair_v1');
+    assert.equal(checked.outputs.length, 4);
+
     const refused = [
         [{ ...good, rect: undefined }, 'INVALID_RECT'],
         [{ ...good, rect: { x: 0, y: 0, width: 10.5, height: 10 } }, 'INVALID_RECT'],
@@ -165,6 +237,12 @@ test('requests are checked against the core before anything starts', () => {
         [{ ...good, px_per_mm: 0 }, 'INVALID_SCALE'],
         [{ ...good, px_per_mm: Infinity }, 'INVALID_SCALE'],
         [{ ...good, px_per_mm: Number.NaN }, 'INVALID_SCALE'],
+        [{ ...good, recipe: 'skin_task01' }, 'INVALID_RECIPE'],
+        [{ ...good, outputs: ['main'] }, 'INVALID_OUTPUTS'],
+        [{ ...good, outputs: [] }, 'INVALID_OUTPUTS'],
+        [{ ...good, params: { relief: 2.5 } }, 'INVALID_PARAMS'],
+        [{ ...good, params: { pores: true } }, 'INVALID_PARAMS'],
+        [{ ...good, params: { furrows: false } }, 'INVALID_PARAMS'],
         [{ ...good, params: { width: 4000 } }, 'INVALID_PARAMS'],
         [{ ...good, params: { rect: { x: 0 } } }, 'INVALID_PARAMS'],
         [{ ...good, params: { pxPerMm: 9 } }, 'INVALID_PARAMS'],
@@ -173,12 +251,7 @@ test('requests are checked against the core before anything starts', () => {
         [{ ...good, params: { elevationDeg: 2 } }, 'INVALID_PARAMS'],
         [{ ...good, params: { mode: 'hexagons' } }, 'INVALID_PARAMS'],
         [{ ...good, params: { seed: 1.5 } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { poresTypo: 1 } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { pores: 'yes' } }, 'INVALID_PARAMS'],
-        [{ ...good, params: [] }, 'INVALID_PARAMS'],
-        [{ ...good, outputs: [] }, 'INVALID_OUTPUTS'],
-        [{ ...good, outputs: ['height'] }, 'INVALID_OUTPUTS'],
-        [{ ...good, outputs: ['main', 'main'] }, 'INVALID_OUTPUTS']
+        [{ ...good, params: [] }, 'INVALID_PARAMS']
     ];
     for (const [args, code] of refused) {
         assert.throws(() => adapter.checkRequestShape(args), error => error.code === code, JSON.stringify(args));
@@ -189,8 +262,9 @@ test('the document size is checked once Photoshop has reported it', () => {
     const request = adapter.checkRequestShape({ rect: { x: 50, y: 50, width: 100, height: 100 }, px_per_mm: 6 });
     assert.throws(() => adapter.normalizeForDocument(request, { width: 120, height: 400 }), error => error.code === 'RECT_OUTSIDE_DOCUMENT');
     const ok = adapter.normalizeForDocument(request, { width: 400, height: 400 });
-    assert.equal(ok.coreParams.width, 400);
-    assert.deepEqual(ok.coreParams.rect, request.rect);
+    assert.equal(ok.coreParams.formula_1.width, 400);
+    assert.equal(ok.coreParams.formula_2.width, 400);
+    assert.deepEqual(ok.coreParams.formula_1.rect, request.rect);
 
     // At an extreme scale the neutralising blur needs a margin the core would refuse.
     const huge = adapter.checkRequestShape({ rect: { x: 0, y: 0, width: 4096, height: 4096 }, px_per_mm: 1000 });
@@ -198,9 +272,13 @@ test('the document size is checked once Photoshop has reported it', () => {
 });
 
 test('the visibility notes say what a small scale suppressed', () => {
-    const params = SkinTexture.resolveParams({ width: 120, height: 120, pxPerMm: 2.5 });
-    const rendered = SkinTexture.render(params);
-    const notes = adapter.visibilityNotes(params, rendered.stats, ['main']);
+    const p = recipeCatalog.resolveFormulaParams('formula_1', { width: 120, height: 120 }, { x: 0, y: 0, width: 120, height: 120 }, 2.5, {});
+    const stats = {
+        suppressed: { primary: 0, secondary: 0, roughness: [0, 0, 0] },
+        pores: { counts: [10, 20], visible: [5, 10] },
+        layers: { pores: { min: 120, max: 136 }, furrows: { min: 127, max: 129 } }
+    };
+    const notes = adapter.visibilityNotes(p, stats, ['pores', 'furrows']);
     assert.ok(notes.some(line => /primary furrows.*not drawn/.test(line)), notes.join('\n'));
     assert.ok(notes.some(line => /px_per_mm/.test(line)));
 });

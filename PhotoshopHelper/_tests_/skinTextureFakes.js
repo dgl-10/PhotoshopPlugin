@@ -136,8 +136,8 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             bitsPerChannel: BITS[bits],
             colorProfileType: CONSTANTS.ColorProfileType[profileType.toUpperCase()],
             colorProfileName: profileType === 'none' ? 'None' : (spec.profileName || 'sRGB IEC61966-2.1'),
-            hasSelection: spec.hasSelection !== undefined ? spec.hasSelection : Boolean(spec.selection),
-            selection: spec.selection || null,
+            hasSelection: spec.hasSelection !== undefined ? spec.hasSelection : true,
+            selection: spec.selection !== undefined ? spec.selection : { x: 0, y: 0, width: spec.width || 600, height: spec.height || 400 },
             layers: [],
             changedInScript: false,
             async createPixelLayer({ name }) {
@@ -185,6 +185,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             const s = doc.selection;
             const w = s.width || doc.width;
             const h = s.height || doc.height;
+            state.imageDataCreated += 1;
             return {
                 imageData: {
                     width: w,
@@ -212,6 +213,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
                 };
             }
             if (state.corruptVerifiedMaskBounds || state.corruptVerifiedMaskBoundsOnLayerId === layerID) {
+                state.imageDataCreated += 1;
                 return {
                     imageData: {
                         width: 1,
@@ -258,6 +260,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
                 }
             }
 
+            state.imageDataCreated += 1;
             return {
                 imageData: {
                     width,
@@ -296,8 +299,9 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             doc.changedInScript = true;
         },
         async createImageDataFromBuffer(data, options) {
+            state.createImageDataCalls = (state.createImageDataCalls || 0) + 1;
             state.imageDataCreated += 1;
-            if (state.failCreateImageDataOnCall === state.imageDataCreated) throw new Error('createImageDataFromBuffer failed');
+            if (state.failCreateImageDataOnCall === state.createImageDataCalls) throw new Error('createImageDataFromBuffer failed');
             const components = options.components;
             if (data.length !== options.width * options.height * components) throw new Error('wrong buffer length');
             const sixteen = data instanceof Uint16Array;

@@ -11,87 +11,46 @@
  * top of job-manager.js.
  *
  * This file may use Node only: no Electron API is reachable or needed here. It computes the
- * requested outputs with the unchanged core, packs each into the exchange format (so the
+ * requested outputs with the unchanged formulas core, packs each into the exchange format (so the
  * checksums are computed here too, off the main thread) and transfers the bytes back. It
  * owns no files and no Photoshop state, so being terminated at any moment leaves nothing to
  * clean up; the job manager in the main thread owns everything else.
  *
- * workerData: { params, outputs, meta }
- *   params  - the core's resolved parameters (document size, rect, scale, ...)
- *   outputs - subset of ['main', 'pores', 'furrows'], in that order
- *   meta    - the exchange header fields shared by all outputs
+ * Under task07, this worker executes exclusively the standard recipe ("skin_pair_v1") via
+ * computeSkinPairV1 (recipe-worker-engine.js). Any invalid or legacy workerData that does
+ * not specify recipe "skin_pair_v1" is rejected immediately with an error.
+ *
+ * workerData: { recipe: 'skin_pair_v1', formulaParams, params, outputs, meta }
  * Messages to the parent:
  *   { type: 'progress', stage, at }
- *   { type: 'result', files: { [output]: Uint8Array }, checksums, stats, timings }
+ *   { type: 'result', files: { [output]: Uint8Array }, checksums, stats, timings, recipe }
  *   { type: 'error', message }
  */
 
 const { parentPort, workerData } = require('node:worker_threads');
-
-const SkinTexture = require('./skin-core.js');
-const SkinExchange = require('./exchange.js');
 const { computeSkinPairV1 } = require('./recipe-worker-engine.js');
 
-const now = () => performance.now();
-const round = value => Math.round(value * 1000) / 1000;
-
-/**
- * @param {string} stage - What the worker is doing now.
- */
 function progress(stage) {
     parentPort.postMessage({ type: 'progress', stage, at: Date.now() });
 }
 
 try {
-    if (workerData && workerData.recipe === 'skin_pair_v1') {
-        const result = computeSkinPairV1(workerData, progress);
-        parentPort.postMessage(
-            {
-                type: 'result',
-                files: result.files,
-                checksums: result.checksums,
-                stats: result.stats,
-                timings: result.timings,
-                recipe: 'skin_pair_v1'
-            },
-            result.transfer
-        );
-    } else {
-        const { params, outputs, meta } = workerData;
-        const timings = {};
-
-        progress('prepare');
-        let t = now();
-        const state = SkinTexture.prepare(params);
-        timings.prepareMs = round(now() - t);
-
-        progress('heights');
-        t = now();
-        SkinTexture.buildHeights(state);
-        timings.heightsMs = round(now() - t);
-
-        // shade() and finish() overwrite the shared buffers completely for each layer, so any
-        // subset of outputs, in any order, gives the same bytes as the core's own render().
-        const files = {};
-        const checksums = {};
-        const transfer = [];
-        for (const output of outputs) {
-            progress(`shade ${output}`);
-            t = now();
-            SkinTexture.shade(state, output);
-            const gray = SkinTexture.finish(state, output);
-            timings[`${output}Ms`] = round(now() - t);
-
-            t = now();
-            const bytes = SkinExchange.encode({ ...meta, output }, gray);
-            timings[`${output}EncodeMs`] = round(now() - t);
-            files[output] = bytes;
-            checksums[output] = SkinExchange.checksums(gray);
-            transfer.push(bytes.buffer);
-        }
-
-        parentPort.postMessage({ type: 'result', files, checksums, stats: state.stats, timings }, transfer);
+    if (!workerData || workerData.recipe !== 'skin_pair_v1') {
+        const received = workerData ? workerData.recipe : 'none';
+        throw new Error(`Worker only supports recipe "skin_pair_v1", received: ${received}`);
     }
+    const result = computeSkinPairV1(workerData, progress);
+    parentPort.postMessage(
+        {
+            type: 'result',
+            files: result.files,
+            checksums: result.checksums,
+            stats: result.stats,
+            timings: result.timings,
+            recipe: 'skin_pair_v1'
+        },
+        result.transfer
+    );
 } catch (error) {
     parentPort.postMessage({ type: 'error', message: String((error && error.message) || error) });
 }

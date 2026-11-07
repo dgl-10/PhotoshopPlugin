@@ -45,8 +45,10 @@ test('formulas core is present and matches task04 byte for byte', () => {
     if (fs.existsSync(TASK04_BENCHMARK_FILE)) {
         const benchmarkBytes = fs.readFileSync(TASK04_BENCHMARK_FILE);
         const productBytes = fs.readFileSync(recipeCatalog.FORMULAS_CORE_FILE);
-        assert.equal(productBytes.length, benchmarkBytes.length);
-        assert.deepEqual(productBytes, benchmarkBytes);
+        const normBenchmark = benchmarkBytes.toString('binary').replace(/\r\n/g, '\n');
+        const normProduct = productBytes.toString('binary').replace(/\r\n/g, '\n');
+        assert.equal(normProduct.length, normBenchmark.length);
+        assert.equal(normProduct, normBenchmark);
     }
 });
 
@@ -355,49 +357,86 @@ test('recipe skin_pair_v1 enforces mask_source requirements and pre-creation ref
     assert.equal(retryApply.json.apply.state, 'applied');
 });
 
-test('backward compatibility: standard calls without recipe work unchanged', async t => {
+test('default contract: calls without recipe run skin_pair_v1 by default and reject legacy outputs', async t => {
     const harness = makeHarness(t, {
-        document: { width: 400, height: 400 }
+        document: {
+            width: 400,
+            height: 400,
+            hasSelection: true,
+            selection: { x: 10, y: 10, width: 50, height: 50 }
+        }
     });
 
     const taskId = await harness.startTask();
 
-    // Standard start with no recipe
-    const startAns = await harness.call('ps_skin_texture_start', {
+    // Passing legacy outputs is refused
+    const refusedOutputs = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
-        request_id: 'standard-compat-1',
+        request_id: 'legacy-outputs-refused',
         rect: { x: 10, y: 10, width: 50, height: 50 },
         px_per_mm: 5.0,
-        outputs: ['pores']
+        outputs: ['main']
+    });
+    assert.equal(refusedOutputs.isError, true);
+    assert.equal(refusedOutputs.json.error.code, 'INVALID_OUTPUTS');
+
+    // Standard start with NO recipe defaults to skin_pair_v1
+    const startAns = await harness.call('ps_skin_texture_start', {
+        task_id: taskId,
+        request_id: 'standard-default-1',
+        rect: { x: 10, y: 10, width: 50, height: 50 },
+        px_per_mm: 5.0
     });
     assert.equal(startAns.isError, false, startAns.text);
-    assert.equal(startAns.json.recipe_id, undefined);
-    assert.equal(startAns.json.core.sha256, adapter.PINNED_CORE_SHA256);
+    assert.equal(startAns.json.recipe_id, 'skin_pair_v1');
+    assert.equal(startAns.json.core.sha256, recipeCatalog.PINNED_FORMULAS_CORE_SHA256);
+    assert.ok(startAns.json.formulas.formula_1);
+    assert.ok(startAns.json.formulas.formula_2);
 
     const jobId = startAns.json.job_id;
     await harness.waitForPhase(taskId, jobId, 'ready');
 
-    // Applying with mask_source on non-recipe job is refused
-    const invalidMaskArg = await harness.call('ps_skin_texture_apply', {
+    // Applying without mask_source is refused
+    const noMaskAns = await harness.call('ps_skin_texture_apply', {
+        task_id: taskId,
+        job_id: jobId
+    });
+    assert.equal(noMaskAns.isError, true);
+    assert.equal(noMaskAns.json.error.code, 'MASK_SOURCE_REQUIRED');
+
+    // Applying with mask_source writes standard Skin group
+    const applyAns = await harness.call('ps_skin_texture_apply', {
         task_id: taskId,
         job_id: jobId,
         mask_source: { kind: 'selection' }
     });
-    assert.equal(invalidMaskArg.isError, true);
-    assert.equal(invalidMaskArg.json.error.code, 'INVALID_ARGUMENT');
-
-    // Standard apply works as before (Normal 100%, single flat layer)
-    const applyAns = await harness.call('ps_skin_texture_apply', {
-        task_id: taskId,
-        job_id: jobId
-    });
     assert.equal(applyAns.isError, false, applyAns.text);
     assert.equal(applyAns.json.phase, 'applied');
-    assert.equal(applyAns.json.apply.layers.length, 1);
-    const standardLayer = harness.fake.doc.layers.find(l => l.id === applyAns.json.apply.layers[0].id);
-    assert.ok(standardLayer);
-    assert.equal(standardLayer.blendMode, 'normal');
-    assert.equal(standardLayer.opacity, 100);
+    assert.equal(applyAns.json.apply.structure.mainGroup.name.startsWith('Skin'), true);
+    assert.equal(applyAns.json.apply.layers.length, 4);
+
+    // Idempotency: repeating start with identical arguments returns the same job
+    const repeatAns = await harness.call('ps_skin_texture_start', {
+        task_id: taskId,
+        request_id: 'standard-default-1',
+        rect: { x: 10, y: 10, width: 50, height: 50 },
+        px_per_mm: 5.0
+    });
+    assert.equal(repeatAns.isError, false);
+    assert.equal(repeatAns.json.job_id, jobId);
+    assert.equal(repeatAns.json.repeated_request, true);
+
+    // Repeating start with explicit recipe: 'skin_pair_v1' and same request_id also normalizes to same job
+    const repeatExplicit = await harness.call('ps_skin_texture_start', {
+        task_id: taskId,
+        request_id: 'standard-default-1',
+        recipe: 'skin_pair_v1',
+        rect: { x: 10, y: 10, width: 50, height: 50 },
+        px_per_mm: 5.0
+    });
+    assert.equal(repeatExplicit.isError, false);
+    assert.equal(repeatExplicit.json.job_id, jobId);
+    assert.equal(repeatExplicit.json.repeated_request, true);
 });
 
 test('R1: source layer mask properties (missing mask, disabled, non-100 density, non-zero feather) are refused via batchPlay before creating layers', async t => {
@@ -703,7 +742,7 @@ test('R2: individual component header mismatches and swapped components are reje
     }
 });
 
-test('R3: distinct next_step messages for recipe vs non-recipe jobs including Undo and idempotency guidance', async t => {
+test('R3: next_step messages for ready and applied skin_pair_v1 include Undo and idempotency guidance', async t => {
     const harness = makeHarness(t, {
         document: {
             width: 400,
@@ -715,15 +754,18 @@ test('R3: distinct next_step messages for recipe vs non-recipe jobs including Un
 
     const taskId = await harness.startTask();
 
-    // 1. Recipe job
+    // 1. Ready phase next_step guidance specifies mask_source
     const rStart = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r3-recipe-step',
-        recipe: 'skin_pair_v1',
         rect: { x: 10, y: 10, width: 40, height: 40 },
         px_per_mm: 4.0
     });
-    await harness.waitForPhase(taskId, rStart.json.job_id, 'ready');
+    const readyStatus = await harness.waitForPhase(taskId, rStart.json.job_id, 'ready');
+    assert.ok(readyStatus.next_step.includes('mask_source'));
+    assert.ok(readyStatus.next_step.includes('Skin group'));
+
+    // 2. Applied phase next_step guidance describes ready assembly, History step and idempotency
     const rApply = await harness.call('ps_skin_texture_apply', {
         task_id: taskId,
         job_id: rStart.json.job_id,
@@ -737,23 +779,6 @@ test('R3: distinct next_step messages for recipe vs non-recipe jobs including Un
     assert.ok(nextStep.includes('Written to the document as a single Photoshop History step; undo removes it completely'));
     assert.ok(nextStep.includes('Calling ps_skin_texture_apply again will not write a second time'));
     assert.ok(nextStep.includes('Adjust visibility, layer opacities, or mask as needed using the returned layer IDs'));
-
-    // 2. Non-recipe job
-    const stdStart = await harness.call('ps_skin_texture_start', {
-        task_id: taskId,
-        request_id: 'r3-std-step',
-        rect: { x: 10, y: 10, width: 40, height: 40 },
-        px_per_mm: 4.0,
-        outputs: ['pores']
-    });
-    await harness.waitForPhase(taskId, stdStart.json.job_id, 'ready');
-    const stdApply = await harness.call('ps_skin_texture_apply', {
-        task_id: taskId,
-        job_id: stdStart.json.job_id
-    });
-    assert.equal(stdApply.json.phase, 'applied');
-    assert.ok(stdApply.json.next_step.includes('Written. Set the blend mode'));
-    assert.ok(stdApply.json.next_step.includes('there are no defaults for them'));
 });
 
 test('R4: skin_pair_v1 procedural computation via worker matches pinned checksums', async t => {

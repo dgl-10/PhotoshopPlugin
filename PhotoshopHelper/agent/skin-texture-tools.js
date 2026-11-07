@@ -17,7 +17,7 @@
  * pixels or base64 in them.
  */
 
-const { SkinRequestError, OUTPUTS, MAX_RECT_PIXELS } = require('../skin-texture/core-adapter');
+const { SkinRequestError, MAX_RECT_PIXELS } = require('../skin-texture/core-adapter');
 
 /**
  * @param {string} text - Text for the agent.
@@ -70,12 +70,14 @@ function createSkinTextureTools({
         {
             name: 'ps_skin_texture_start',
             description:
-                'Start computing a procedural skin micro-relief (pores, fine furrows and roughness) for '
+                'Start computing a procedural skin micro-relief (Formula 1 and Formula 2, pores and microrelief) for '
                 + 'a rectangle of the task\'s document. Helper computes it in the background and this '
                 + `answers within ${budgetSeconds} seconds with a job_id; it writes nothing to the `
                 + 'document. Then call ps_skin_texture_status until phase is "ready", and write the result '
-                + 'with ps_skin_texture_apply. The result is a gray layer around 128 (neutral) meant for '
-                + 'Linear Light or Soft Light; you set that afterwards. '
+                + 'with ps_skin_texture_apply and mask_source ({ kind: "selection" } or { kind: "layer_mask", layer_id: <id> }). '
+                + 'The result is a group "Skin" (Pass Through, Opacity 100%) with a single common mask from mask_source, containing '
+                + 'visible group "Formula 2" and hidden group "Formula 1", each with "Pores" and "Microrelief" (Linear Light, Opacity 50%, Fill 100%). '
+                + 'A single procedural model is applied to the chosen skin area without anatomical zone division, while preserving separate formula components for user adjustment. '
                 + 'rect: integers in real document pixels, x and y from the top-left corner, inside the '
                 + 'document; the texture is made for exactly that area at the document\'s own pixel scale, '
                 + 'never resized. There is no default area: for the whole document pass { x: 0, y: 0, '
@@ -86,15 +88,12 @@ function createSkinTextureTools({
                 + 'so at a small px_per_mm the layer can be almost flat; status.diagnostics.notes say which '
                 + 'details were suppressed. Do not raise px_per_mm only to make the texture show more, unless '
                 + 'the person wants that look. '
-                + 'params (optional): other core parameters by their exact names, for example mode ("lines" '
-                + 'or "cells": two ways of drawing the furrow network), seed (an integer: another variant of '
-                + 'the same skin), azimuthDeg (light direction in degrees, default 225), elevationDeg (light '
-                + 'height above the skin, 5-90, default 45; lower is stronger relief), relief (strength of '
-                + 'the relief before lighting), pores/furrows/roughness (true/false). Unknown names and '
-                + 'out-of-range values are refused; status shows every parameter as used. '
-                + `outputs (optional): any of ${OUTPUTS.join(', ')}; default ["main"]. "main" is the full `
-                + 'relief; "pores" and "furrows" are the same light on the pores alone or on the furrows with '
-                + 'the fine roughness alone, for separate control. '
+                + 'params (optional): recipe parameters by their exact names: mode ("lines" or "cells", default "lines"), '
+                + 'seed (integer, default 1), azimuthDeg (light direction in degrees, default 315), elevationDeg (light '
+                + 'height above skin, 5-90, default 45). Unknown names and old task01 parameters (relief, pores, furrows) '
+                + 'are refused; status shows every parameter as used. '
+                + 'recipe (optional): "skin_pair_v1" (default). Omit this argument or pass "skin_pair_v1" explicitly. '
+                + 'Any other value is refused. '
                 + 'request_id (required): your own key for this request, unique in the task. Calling start '
                 + 'again with the same request_id and the same arguments returns the same job instead of '
                 + 'computing again; the same request_id with different arguments is refused. A request_id '
@@ -132,20 +131,14 @@ function createSkinTextureTools({
                     },
                     params: {
                         type: 'object',
-                        description: 'Other core parameters by name (mode, seed, azimuthDeg, elevationDeg, relief, ...). '
+                        description: 'Recipe parameters by name (mode, seed, azimuthDeg, elevationDeg). '
                             + 'Not allowed here: width, height, rect, pxPerMm.'
                     },
                     recipe: {
                         type: 'string',
                         enum: ['skin_pair_v1'],
-                        description: 'Optional recipe. "skin_pair_v1" computes Formula 1 and Formula 2 (pores and microrelief for each) '
-                            + 'and prepares ready Skin group assembly on apply. In this mode outputs is forbidden and params only accepts '
-                            + 'mode, seed, azimuthDeg, elevationDeg. When omitted, standard single-core mode is used.'
-                    },
-                    outputs: {
-                        type: 'array',
-                        items: { type: 'string', enum: OUTPUTS },
-                        description: 'Which layers to make. Default ["main"].'
+                        description: 'Optional recipe. Default "skin_pair_v1" (computes Formula 1 and Formula 2 with Pores and Microrelief, '
+                            + 'and prepares ready Skin group assembly on apply).'
                     }
                 },
                 required: ['task_id', 'request_id', 'rect', 'px_per_mm'],
@@ -184,16 +177,12 @@ function createSkinTextureTools({
         {
             name: 'ps_skin_texture_apply',
             description:
-                'Write a ready skin texture job into the task\'s document: one ordinary pixel layer per '
-                + 'requested output, blend mode Normal, Opacity and Fill 100%, gray (R = G = B) around 128, '
-                + 'exactly over the job\'s rect and transparent outside it. For recipe skin_pair_v1, creates '
-                + 'a group "Skin" (Pass Through, Opacity 100%) with a single common mask from mask_source, containing '
-                + 'visible group "Formula 2" and hidden group "Formula 1", each with "Pores" and "Microrelief" '
-                + '(Linear Light, Opacity 50%, Fill 100%). '
-                + 'The layers are named "Skin texture <output> [<job_id>]" (or recipe structure) and go above the active layer. '
+                'Write a ready skin texture job into the task\'s document: creates group "Skin" (Pass Through, Opacity 100%) '
+                + 'with a single common mask from mask_source, containing visible group "Formula 2" and hidden group "Formula 1", '
+                + 'each with "Pores" and "Microrelief" (Linear Light, Opacity 50%, Fill 100%). '
                 + 'One apply is one History step, so one Undo removes all its layers. A job is written at most once: '
                 + 'calling apply again returns what happened the first time and never creates the layers again, not even '
-                + 'after the person undid them; for another texture start a new request. If the write takes longer than '
+                + 'after the person undid them; repeating an already applied job does not require mask_source. For another texture start a new request. If the write takes longer than '
                 + `about ${budgetSeconds} seconds the answer says "applying" (or "preparing_write" while the `
                 + 'file is still being handed over); then call ps_skin_texture_status. Before writing it checks '
                 + 'that the document still has the same size, depth and colour profile; otherwise nothing is '
@@ -209,10 +198,10 @@ function createSkinTextureTools({
                     job_id: { type: 'string' },
                     mask_source: {
                         type: 'object',
-                        description: 'Source for the single common Skin group mask (required for recipe skin_pair_v1). '
+                        description: 'Source for the single common Skin group mask (required for the first apply of a job). '
                             + 'Evaluated in the document at the time ps_skin_texture_apply is called, not at start. Either '
                             + '{ "kind": "selection" } (active document selection) or { "kind": "layer_mask", "layer_id": <id> } '
-                            + '(existing pixel mask of a layer/group in this document). Not allowed for jobs without a recipe.',
+                            + '(existing pixel mask of a layer/group in this document).',
                         properties: {
                             kind: { type: 'string', enum: ['selection', 'layer_mask'] },
                             layer_id: { type: 'integer' }
@@ -349,7 +338,7 @@ function createSkinTextureTools({
             const newAttempt = !job.apply || job.apply.state === 'not_applied';
             if (newAttempt && job.phase === 'ready' && !isChannelOpen()) return textResult(channelClosedMessage, true);
             if (!job.apply || job.apply.state === 'not_applied') {
-                const writingDesc = job.request.recipe ? `recipe ${job.request.recipe}` : job.request.outputs.join(', ');
+                const writingDesc = 'recipe skin_pair_v1';
                 note(task.id, `skin texture: writing ${writingDesc}`, 'ps_skin_texture_apply');
             }
             outcome = await jobs.apply(task, args.job_id, transportFor(task), args.mask_source);

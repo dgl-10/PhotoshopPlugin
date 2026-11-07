@@ -1,55 +1,27 @@
 'use strict';
 
 /**
- * Everything Helper needs to know about the relief core (skin-core.js), in one place.
+ * Everything Helper needs to know about skin texture request validation and normalization.
  *
- * The core is pinned for the first MCP integration: skin-core.js is the accepted task01
- * prototype copied byte for byte. Its pixels are known to look like "black blackhead dots"
- * rather than convincing pores; improving the mathematics is a separate later stage. This
- * file is the seam for that stage: a new core that keeps the staged API (resolveParams,
- * prepare, buildHeights, shade, finish) and the gray Uint8Array output only needs the
- * constants below updated (pin, outputs); the MCP life cycle, the worker, the exchange file
- * and the apply script stay as they are. The core is also free to grow raised details or a
- * direction field later: nothing here assumes that relief is only sunken pores.
- *
- * This module runs in Helper's main thread. It only validates and describes; nothing heavy
- * happens here. The computation runs in worker.js.
+ * Under task07, the standard recipe "skin_pair_v1" is the default and only MCP path.
+ * Computing old single-core task01 "main" layers is removed from runtime.
+ * Requests without recipe automatically normalize to "skin_pair_v1".
+ * Legacy outputs and old parameters (relief, pores, furrows) are rejected with clear errors.
  */
 
-const crypto = require('node:crypto');
-const fs = require('node:fs');
-const path = require('node:path');
 const recipeCatalog = require('./recipe-catalog');
-
-const CORE_FILE = path.join(__dirname, 'skin-core.js');
-
-// SHA-256 of the accepted task01 core. The integration does not change the core's bytes; the
-// hash is reported in every status so a later core update is visible, and tests hold it.
-// It is not enforced at run time: a checkout that converted line endings would change the
-// bytes but not the arithmetic, and refusing to work for that would help nobody.
-const PINNED_CORE_SHA256 = '5d0c9d54678cd4d60205c1913aa031e68f193657e951b92fd3c401606f616f8d';
-
-// Gray layers the core can produce. "main" is the full relief; "pores" and "furrows" (with
-// the fine roughness) are the same light on one component each. The core's height preview is
-// a diagnostic and is deliberately not offered as an output layer.
-const OUTPUTS = ['main', 'pores', 'furrows'];
-const DEFAULT_OUTPUTS = ['main'];
-
-// Arguments the tool sets itself. The document size always comes from Photoshop and the rect
-// and scale are separate tool arguments, so params cannot override them.
-const RESERVED_PARAMS = ['width', 'height', 'rect', 'pxPerMm'];
 
 // Size limits of one request. Areas up to 4096 x 4096 were measured in task02 (Node 36-54 s,
 // about 0.5-0.7 GB peak). The working-area limit and the high-pass radius limit mirror the
-// checks inside the core's prepare(), so a request the core would refuse is refused here,
+// checks inside the formulas core's prepare(), so a request the core would refuse is refused here,
 // before a worker allocates anything.
 const MAX_RECT_PIXELS = 4096 * 4096;
 const MAX_RECT_SIDE = 8192;
 const MAX_WORK_AREA_PIXELS = 25_000_000;
 const MAX_HIGH_PASS_RADIUS = 4096;
 
-let coreModule = null;
-let coreIdentity = null;
+// Components produced by the standard recipe (Formula 2 first, then Formula 1)
+const OUTPUTS = recipeCatalog.RECIPE_COMPONENTS_SKIN_PAIR_V1.map(c => c.componentKey);
 
 /**
  * Error for a request the tool refuses. The code is stable; the message is for the agent.
@@ -64,27 +36,6 @@ class SkinRequestError extends Error {
         this.name = 'SkinRequestError';
         this.code = code;
     }
-}
-
-/**
- * @returns {object} The core module (loaded once; loading defines functions only).
- */
-function loadCore() {
-    if (!coreModule) coreModule = require('./skin-core.js');
-    return coreModule;
-}
-
-/**
- * @returns {{version: string, sha256: string, matchesPinned: boolean}} Identity of the core
- *   that the worker runs.
- */
-function getCoreIdentity() {
-    if (!coreIdentity) {
-        const bytes = fs.readFileSync(CORE_FILE);
-        const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-        coreIdentity = { version: loadCore().version, sha256, matchesPinned: sha256 === PINNED_CORE_SHA256 };
-    }
-    return coreIdentity;
 }
 
 /**
@@ -132,12 +83,12 @@ function checkRectShape(rect) {
 }
 
 /**
- * Check everything about a start request that does not depend on the document, and run the
- * core's own parameter validation against a document just large enough for the rect. The
- * real document size is checked again by normalizeForDocument once Photoshop has answered.
+ * Check everything about a start request that does not depend on the document.
+ * Recipe defaults to 'skin_pair_v1'; omitted recipe and explicit 'skin_pair_v1' produce
+ * the identical normalized request and key.
  *
  * @param {object} args - { recipe, rect, px_per_mm, params, outputs } as the agent sent them.
- * @returns {{recipe?: string, rect: object, pxPerMm: number, params: object, outputs: string[], key: string}}
+ * @returns {{recipe: string, rect: object, pxPerMm: number, params: object, outputs: string[], key: string}}
  * @throws {SkinRequestError}
  */
 function checkRequestShape(args) {
@@ -151,113 +102,55 @@ function checkRequestShape(args) {
         );
     }
 
-    if (args.recipe !== undefined) {
-        if (!recipeCatalog.isRecipe(args.recipe)) {
-            throw new SkinRequestError(
-                'INVALID_RECIPE',
-                `Unknown recipe: "${args.recipe}". Supported recipes: ${recipeCatalog.RECIPES.join(', ')}.`
-            );
-        }
-        if (args.outputs !== undefined) {
-            throw new SkinRequestError(
-                'INVALID_OUTPUTS',
-                `outputs cannot be specified in recipe mode (${args.recipe}): the composition is fixed by the recipe.`
-            );
-        }
-        const params = args.params === undefined ? {} : args.params;
-        if (!isPlainObject(params)) {
-            throw new SkinRequestError('INVALID_PARAMS', 'params must be an object of recipe parameters by name.');
-        }
-        const unknown = Object.keys(params).filter(k => !recipeCatalog.ALLOWED_RECIPE_PARAMS.includes(k));
-        if (unknown.length) {
-            throw new SkinRequestError(
-                'INVALID_PARAMS',
-                `Recipe ${args.recipe} only allows parameters: ${recipeCatalog.ALLOWED_RECIPE_PARAMS.join(', ')}. `
-                + `Unknown parameter(s): ${unknown.join(', ')}.`
-            );
-        }
-        if (params.mode !== undefined && params.mode !== 'lines' && params.mode !== 'cells') {
-            throw new SkinRequestError('INVALID_PARAMS', 'params.mode must be "lines" or "cells".');
-        }
-        if (params.seed !== undefined && !Number.isInteger(params.seed)) {
-            throw new SkinRequestError('INVALID_PARAMS', 'params.seed must be an integer.');
-        }
-        if (params.azimuthDeg !== undefined && (!Number.isFinite(params.azimuthDeg))) {
-            throw new SkinRequestError('INVALID_PARAMS', 'params.azimuthDeg must be a finite number.');
-        }
-        if (params.elevationDeg !== undefined && (!Number.isFinite(params.elevationDeg) || params.elevationDeg < 5 || params.elevationDeg > 90)) {
-            throw new SkinRequestError('INVALID_PARAMS', 'params.elevationDeg must be between 5 and 90 degrees.');
-        }
+    if (args.outputs !== undefined) {
+        throw new SkinRequestError(
+            'INVALID_OUTPUTS',
+            'outputs is no longer supported: separate old "main" layer is removed. '
+            + 'Omit outputs to compute the standard Skin structure (Formula 1 and Formula 2), '
+            + 'then apply it with mask_source.'
+        );
+    }
 
-        const components = recipeCatalog.getRecipeComponents(args.recipe);
-        const outputs = components.map(c => c.componentKey);
-
-        const sortedParams = {};
-        for (const key of Object.keys(params).sort()) sortedParams[key] = params[key];
-        const key = JSON.stringify({ recipe: args.recipe, rect, pxPerMm, params: sortedParams });
-        return { recipe: args.recipe, rect, pxPerMm, params: { ...params }, outputs, key };
+    const recipe = args.recipe === undefined ? recipeCatalog.DEFAULT_RECIPE : args.recipe;
+    if (recipe !== recipeCatalog.DEFAULT_RECIPE) {
+        throw new SkinRequestError(
+            'INVALID_RECIPE',
+            `Unknown recipe: "${recipe}". Supported recipe: ${recipeCatalog.RECIPES.join(', ')}.`
+        );
     }
 
     const params = args.params === undefined ? {} : args.params;
     if (!isPlainObject(params)) {
-        throw new SkinRequestError('INVALID_PARAMS', 'params must be an object of core parameters by name.');
+        throw new SkinRequestError('INVALID_PARAMS', 'params must be an object of recipe parameters by name.');
     }
-    const reserved = Object.keys(params).filter(key => RESERVED_PARAMS.includes(key));
-    if (reserved.length) {
+    const unknown = Object.keys(params).filter(k => !recipeCatalog.ALLOWED_RECIPE_PARAMS.includes(k));
+    if (unknown.length) {
         throw new SkinRequestError(
             'INVALID_PARAMS',
-            `params may not contain ${reserved.join(', ')}: the document size comes from Photoshop, `
-            + 'and rect and px_per_mm are separate arguments.'
+            `Recipe ${recipe} only allows parameters: ${recipeCatalog.ALLOWED_RECIPE_PARAMS.join(', ')}. `
+            + `Unknown parameter(s): ${unknown.join(', ')}.`
         );
     }
-    for (const [key, value] of Object.entries(params)) {
-        const plain = typeof value === 'boolean' || typeof value === 'string'
-            || (typeof value === 'number' && Number.isFinite(value));
-        if (!plain) {
-            throw new SkinRequestError('INVALID_PARAMS', `params.${key} must be a finite number, a boolean or a string.`);
-        }
+    if (params.mode !== undefined && params.mode !== 'lines' && params.mode !== 'cells') {
+        throw new SkinRequestError('INVALID_PARAMS', 'params.mode must be "lines" or "cells".');
+    }
+    if (params.seed !== undefined && !Number.isInteger(params.seed)) {
+        throw new SkinRequestError('INVALID_PARAMS', 'params.seed must be an integer.');
+    }
+    if (params.azimuthDeg !== undefined && !Number.isFinite(params.azimuthDeg)) {
+        throw new SkinRequestError('INVALID_PARAMS', 'params.azimuthDeg must be a finite number.');
+    }
+    if (params.elevationDeg !== undefined && (!Number.isFinite(params.elevationDeg) || params.elevationDeg < 5 || params.elevationDeg > 90)) {
+        throw new SkinRequestError('INVALID_PARAMS', 'params.elevationDeg must be between 5 and 90 degrees.');
     }
 
-    let outputs = args.outputs === undefined ? DEFAULT_OUTPUTS.slice() : args.outputs;
-    if (!Array.isArray(outputs) || outputs.length === 0 || outputs.some(name => !OUTPUTS.includes(name))) {
-        throw new SkinRequestError('INVALID_OUTPUTS', `outputs must be a non-empty list of: ${OUTPUTS.join(', ')}.`);
-    }
-    if (new Set(outputs).size !== outputs.length) {
-        throw new SkinRequestError('INVALID_OUTPUTS', 'outputs lists the same layer twice.');
-    }
-    // A fixed order: the layers are always written main, pores, furrows.
-    outputs = OUTPUTS.filter(name => outputs.includes(name));
-
-    // The core is the authority on its own parameters: unknown names, ranges, non-finite
-    // values. A document that just contains the rect lets it check everything else now.
-    resolveCoreParams({ width: rect.x + rect.width, height: rect.y + rect.height }, rect, pxPerMm, params);
+    const components = recipeCatalog.getRecipeComponents(recipe);
+    const outputs = components.map(c => c.componentKey);
 
     const sortedParams = {};
     for (const key of Object.keys(params).sort()) sortedParams[key] = params[key];
-    const key = JSON.stringify({ rect, pxPerMm, params: sortedParams, outputs });
-    return { rect, pxPerMm, params: { ...params }, outputs, key };
-}
-
-/**
- * @param {{width: number, height: number}} document - Document size in pixels.
- * @param {object} rect - Rect in document pixels.
- * @param {number} pxPerMm - Scale.
- * @param {object} params - Other core parameters.
- * @returns {object} The core's fully resolved parameters.
- * @throws {SkinRequestError}
- */
-function resolveCoreParams(document, rect, pxPerMm, params) {
-    try {
-        return loadCore().resolveParams({
-            ...params,
-            width: document.width,
-            height: document.height,
-            rect: { ...rect },
-            pxPerMm
-        });
-    } catch (error) {
-        throw new SkinRequestError('INVALID_PARAMS', `The texture core refused the parameters: ${error.message}`);
-    }
+    const key = JSON.stringify({ recipe, rect, pxPerMm, params: sortedParams });
+    return { recipe, rect, pxPerMm, params: { ...params }, outputs, key };
 }
 
 /**
@@ -301,58 +194,32 @@ function normalizeForDocument(request, document) {
         );
     }
 
-    if (request.recipe === 'skin_pair_v1') {
-        const f1Params = recipeCatalog.resolveFormulaParams('formula_1', document, request.rect, request.pxPerMm, request.params);
-        const f2Params = recipeCatalog.resolveFormulaParams('formula_2', document, request.rect, request.pxPerMm, request.params);
+    const f1Params = recipeCatalog.resolveFormulaParams('formula_1', document, request.rect, request.pxPerMm, request.params);
+    const f2Params = recipeCatalog.resolveFormulaParams('formula_2', document, request.rect, request.pxPerMm, request.params);
 
-        const area1 = workingArea(f1Params);
-        const area2 = workingArea(f2Params);
-        const maxRadius = Math.max(area1.radius, area2.radius);
-        if (maxRadius > MAX_HIGH_PASS_RADIUS) {
-            throw new SkinRequestError('WORK_AREA_TOO_LARGE', 'The neutralising blur radius is too large at this scale; reduce px_per_mm or highPassCells.');
-        }
-        const heightPixels1 = area1.heightRect.width * area1.heightRect.height;
-        const heightPixels2 = area2.heightRect.width * area2.heightRect.height;
-        const maxWorkPixels = Math.max(heightPixels1, heightPixels2);
-        if (maxWorkPixels > MAX_WORK_AREA_PIXELS) {
-            throw new SkinRequestError(
-                'WORK_AREA_TOO_LARGE',
-                `The working area with its margin is ${maxWorkPixels} pixels, above the core's limit of `
-                + `${MAX_WORK_AREA_PIXELS}. Use a smaller rect.`
-            );
-        }
-        const rectPixels = request.rect.width * request.rect.height;
-        const maxShadePixels = Math.max(area1.shadeRect.width * area1.shadeRect.height, area2.shadeRect.width * area2.shadeRect.height);
-        // Working maps of one formula at a time in memory + 4 final encoded/raw outputs
-        const estimatedBytes = maxWorkPixels * 8 + maxShadePixels * 4 + maxShadePixels * 8 + rectPixels * 4 * 2;
-        return {
-            coreParams: { formula_1: f1Params, formula_2: f2Params, common: request.params },
-            work: { radius: maxRadius, heightPixels: maxWorkPixels, shadePixels: maxShadePixels, rectPixels, estimatedBytes }
-        };
-    }
-
-    const coreParams = resolveCoreParams(document, request.rect, request.pxPerMm, request.params);
-    const area = workingArea(coreParams);
-    if (area.radius > MAX_HIGH_PASS_RADIUS) {
+    const area1 = workingArea(f1Params);
+    const area2 = workingArea(f2Params);
+    const maxRadius = Math.max(area1.radius, area2.radius);
+    if (maxRadius > MAX_HIGH_PASS_RADIUS) {
         throw new SkinRequestError('WORK_AREA_TOO_LARGE', 'The neutralising blur radius is too large at this scale; reduce px_per_mm or highPassCells.');
     }
-    const heightPixels = area.heightRect.width * area.heightRect.height;
-    if (heightPixels > MAX_WORK_AREA_PIXELS) {
+    const heightPixels1 = area1.heightRect.width * area1.heightRect.height;
+    const heightPixels2 = area2.heightRect.width * area2.heightRect.height;
+    const maxWorkPixels = Math.max(heightPixels1, heightPixels2);
+    if (maxWorkPixels > MAX_WORK_AREA_PIXELS) {
         throw new SkinRequestError(
             'WORK_AREA_TOO_LARGE',
-            `The working area with its margin is ${heightPixels} pixels, above the core's limit of `
+            `The working area with its margin is ${maxWorkPixels} pixels, above the core's limit of `
             + `${MAX_WORK_AREA_PIXELS}. Use a smaller rect.`
         );
     }
-    // Float32 base + pores heights, Int32 illumination, Float64 horizontal sums, one byte per
-    // output pixel, plus the encoded copies. An estimate, reported in status.
     const rectPixels = request.rect.width * request.rect.height;
-    const shadePixels = area.shadeRect.width * area.shadeRect.height;
-    const estimatedBytes = heightPixels * 8 + shadePixels * 4 + area.shadeRect.height * request.rect.width * 8
-        + rectPixels * request.outputs.length * 2;
+    const maxShadePixels = Math.max(area1.shadeRect.width * area1.shadeRect.height, area2.shadeRect.width * area2.shadeRect.height);
+    // Working maps of one formula at a time in memory + 4 final encoded/raw outputs
+    const estimatedBytes = maxWorkPixels * 8 + maxShadePixels * 4 + maxShadePixels * 8 + rectPixels * 4 * 2;
     return {
-        coreParams,
-        work: { radius: area.radius, heightPixels, shadePixels, rectPixels, estimatedBytes }
+        coreParams: { formula_1: f1Params, formula_2: f2Params, common: request.params },
+        work: { radius: maxRadius, heightPixels: maxWorkPixels, shadePixels: maxShadePixels, rectPixels, estimatedBytes }
     };
 }
 
@@ -447,17 +314,14 @@ function visibilityNotes(p, stats, outputs) {
 
 module.exports = {
     RECIPES: recipeCatalog.RECIPES,
+    DEFAULT_RECIPE: recipeCatalog.DEFAULT_RECIPE,
     recipeCatalog,
     OUTPUTS,
-    DEFAULT_OUTPUTS,
-    PINNED_CORE_SHA256,
     MAX_RECT_PIXELS,
     MAX_RECT_SIDE,
     MAX_WORK_AREA_PIXELS,
-    CORE_FILE,
     SkinRequestError,
-    loadCore,
-    getCoreIdentity,
+    getCoreIdentity: recipeCatalog.getFormulasCoreIdentity,
     getFormulasCoreIdentity: recipeCatalog.getFormulasCoreIdentity,
     checkRequestShape,
     normalizeForDocument,

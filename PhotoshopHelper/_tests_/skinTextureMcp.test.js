@@ -84,6 +84,12 @@ test('tools/list publishes the four skin texture tools next to the existing ones
     assert.match(start.description, /px_per_mm/);
     assert.match(start.description, /63 mm/);
     assert.deepEqual(start.inputSchema.required, ['task_id', 'request_id', 'rect', 'px_per_mm']);
+    assert.equal('outputs' in start.inputSchema.properties, false, 'outputs must not be in published start schema');
+    assert.ok('recipe' in start.inputSchema.properties, 'recipe is in start schema');
+
+    const apply = tools.find(t => t.name === 'ps_skin_texture_apply');
+    assert.ok('mask_source' in apply.inputSchema.properties, 'mask_source is in apply schema');
+    assert.deepEqual(apply.inputSchema.required, ['task_id', 'job_id'], 'mask_source is not unconditionally required for repeats');
 });
 
 test('start, status and apply work end to end through the MCP router', async context => {
@@ -104,9 +110,32 @@ test('start, status and apply work end to end through the MCP router', async con
     }
     assert.equal(status.json.phase, 'ready', status.text);
 
-    const applied = await callTool('ps_skin_texture_apply', { task_id: taskId, job_id: job.json.job_id });
+    // Applying without mask_source on first write is refused
+    const noMask = await callTool('ps_skin_texture_apply', { task_id: taskId, job_id: job.json.job_id });
+    assert.equal(noMask.result.isError, true);
+    assert.equal(noMask.json.error.code, 'MASK_SOURCE_REQUIRED');
+
+    // Applying with selection mask_source writes Skin group with 4 components
+    const applied = await callTool('ps_skin_texture_apply', {
+        task_id: taskId,
+        job_id: job.json.job_id,
+        mask_source: { kind: 'selection' }
+    });
     assert.equal(applied.json.phase, 'applied', applied.text);
-    assert.equal(fake.doc.layers.filter(layer => layer.name.startsWith('Skin texture main')).length, 1);
+    assert.equal(applied.json.recipe_id, 'skin_pair_v1');
+    assert.ok(fake.doc.layers.some(layer => layer.name.startsWith('Skin')));
+    assert.equal(applied.json.apply.layers.length, 4);
+
+    // Legacy outputs are refused before computing
+    const legacyStart = await callTool('ps_skin_texture_start', {
+        task_id: taskId,
+        request_id: 'legacy-outputs',
+        rect: { x: 12, y: 8, width: 40, height: 30 },
+        px_per_mm: 5,
+        outputs: ['main']
+    });
+    assert.equal(legacyStart.result.isError, true);
+    assert.equal(legacyStart.json.error.code, 'INVALID_OUTPUTS');
 
     // The existing tools behave as before around them.
     const refused = await callTool('ps_skin_texture_status', { task_id: 'task-000000', job_id: job.json.job_id });
