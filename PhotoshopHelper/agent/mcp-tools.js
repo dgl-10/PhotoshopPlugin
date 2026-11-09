@@ -26,6 +26,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { TaskError } = require('./task-session');
 const { createImageReducer } = require('./reduce-image');
+const { createSkinTextureTools } = require('./skin-texture-tools');
 
 // The plugin answers fast for reads, slowly for anything that touches pixels. A heavy
 // filter was measured at up to 12 seconds during the stage 1 channel tests, and a script
@@ -426,6 +427,8 @@ function explainRejectedCommandsInError(error, options = {}) {
  *   reduce-image.js. Defaults to the Electron one; tests pass their own.
  * @param {string} [options.captureDir] - Folder from_ps_get_capture saves captures into.
  *   Defaults to DEFAULT_CAPTURE_DIR; tests pass a temporary one.
+ * @param {object|null} [options.skinTextureJobs] - Job manager from skin-texture/job-manager.js.
+ *   When given, the ps_skin_texture_ tools are published too; null keeps the list as before.
  * @returns {object} { list, call, ASSISTANT_CLOSED_MESSAGE }
  */
 function createAgentTools({
@@ -437,7 +440,8 @@ function createAgentTools({
     dialogWaitMs = DIALOG_WAIT_MS,
     reduceImage = createImageReducer(),
     captureDir = DEFAULT_CAPTURE_DIR,
-    trackUsage = () => {}
+    trackUsage = () => {},
+    skinTextureJobs = null
 }) {
     // Seconds, for the tool descriptions and answers.
     const dialogWaitSeconds = Math.max(1, Math.round(dialogWaitMs / 1000));
@@ -2203,6 +2207,27 @@ function createAgentTools({
         ps_kb_mark_helped: kbMarkHelped,
         ps_kb_mark_failed: kbMarkFailed
     };
+
+    // The skin texture tools (agent/skin-texture-tools.js) are published only when the
+    // service hands over its job manager. They get the same task, dialog and transport
+    // checks as the tools above and still run through call() below.
+    if (skinTextureJobs) {
+        const skinTexture = createSkinTextureTools({
+            jobs: skinTextureJobs,
+            tasks,
+            callPlugin,
+            isChannelOpen: () => {
+                const bridge = getBridge();
+                return Boolean(bridge) && bridge.getConnectedClients() > 0;
+            },
+            channelClosedMessage: ASSISTANT_CLOSED_MESSAGE,
+            note,
+            refuseWhileDialogPending,
+            markers: { documentClosed: DOCUMENT_CLOSED_MARKER, photoshopBusy: PHOTOSHOP_BUSY_MARKER }
+        });
+        TOOLS.push(...skinTexture.definitions);
+        Object.assign(HANDLERS, skinTexture.handlers);
+    }
 
     /**
      * @returns {object[]} Tool definitions for tools/list.

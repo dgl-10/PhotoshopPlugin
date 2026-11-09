@@ -1,0 +1,590 @@
+{
+  "lines_1.62": {
+    "config": {
+      "id": "lines_1.62",
+      "mode": "lines",
+      "pxPerMm": 1.62,
+      "seed": 1,
+      "azimuthDeg": 315,
+      "elevationDeg": 45,
+      "doc": {
+        "width": 250,
+        "height": 200
+      },
+      "rect": {
+        "x": 10,
+        "y": 20,
+        "width": 64,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      },
+      "formula_1_furrows": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      },
+      "formula_2_pores": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      },
+      "formula_2_furrows": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      }
+    }
+  },
+  "lines_3.0": {
+    "config": {
+      "id": "lines_3.0",
+      "mode": "lines",
+      "pxPerMm": 3,
+      "seed": 42,
+      "azimuthDeg": 225,
+      "elevationDeg": 60,
+      "doc": {
+        "width": 300,
+        "height": 300
+      },
+      "rect": {
+        "x": 30,
+        "y": 40,
+        "width": 48,
+        "height": 64
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 3072,
+        "crc32": "a54c4106",
+        "fnv1a": "9c7a4b39"
+      },
+      "formula_1_furrows": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      },
+      "formula_2_pores": {
+        "length": 3072,
+        "crc32": "dae89929",
+        "fnv1a": "6043a890"
+      },
+      "formula_2_furrows": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      }
+    }
+  },
+  "lines_4.49": {
+    "config": {
+      "id": "lines_4.49",
+      "mode": "lines",
+      "pxPerMm": 4.49,
+      "seed": 12345,
+      "azimuthDeg": 90,
+      "elevationDeg": 30,
+      "doc": {
+        "width": 400,
+        "height": 350
+      },
+      "rect": {
+        "x": 50,
+        "y": 60,
+        "width": 64,
+        "height": 64
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 4096,
+        "crc32": "bb7d319b",
+        "fnv1a": "5d93b6bc"
+      },
+      "formula_1_furrows": {
+        "length": 4096,
+        "crc32": "9492a69c",
+        "fnv1a": "9dafddc5"
+      },
+      "formula_2_pores": {
+        "length": 4096,
+        "crc32": "74cf8135",
+        "fnv1a": "c6b189bd"
+      },
+      "formula_2_furrows": {
+        "length": 4096,
+        "crc32": "e87e96d5",
+        "fnv1a": "ec009b24"
+      }
+    }
+  },
+  "lines_6.0": {
+    "config": {
+      "id": "lines_6.0",
+      "mode": "lines",
+      "pxPerMm": 6,
+      "seed": 1,
+      "azimuthDeg": 315,
+      "elevationDeg": 45,
+      "doc": {
+        "width": 500,
+        "height": 400
+      },
+      "rect": {
+        "x": 15,
+        "y": 25,
+        "width": 64,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 3072,
+        "crc32": "9f746de4",
+        "fnv1a": "0dedfae6"
+      },
+      "formula_1_furrows": {
+        "length": 3072,
+        "crc32": "bb232813",
+        "fnv1a": "8bdab734"
+      },
+      "formula_2_pores": {
+        "length": 3072,
+        "crc32": "3068a354",
+        "fnv1a": "8fe67815"
+      },
+      "formula_2_furrows": {
+        "length": 3072,
+        "crc32": "0acf19c4",
+        "fnv1a": "f08bb5fd"
+      }
+    }
+  },
+  "lines_8.0": {
+    "config": {
+      "id": "lines_8.0",
+      "mode": "lines",
+      "pxPerMm": 8,
+      "seed": 42,
+      "azimuthDeg": 180,
+      "elevationDeg": 45,
+      "doc": {
+        "width": 450,
+        "height": 450
+      },
+      "rect": {
+        "x": 40,
+        "y": 50,
+        "width": 48,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 2304,
+        "crc32": "36b1107f",
+        "fnv1a": "7e584fb2"
+      },
+      "formula_1_furrows": {
+        "length": 2304,
+        "crc32": "0f568078",
+        "fnv1a": "5cc90a96"
+      },
+      "formula_2_pores": {
+        "length": 2304,
+        "crc32": "48dbe7b9",
+        "fnv1a": "bece5a42"
+      },
+      "formula_2_furrows": {
+        "length": 2304,
+        "crc32": "bfafd7d9",
+        "fnv1a": "f061ba9d"
+      }
+    }
+  },
+  "lines_12.0": {
+    "config": {
+      "id": "lines_12.0",
+      "mode": "lines",
+      "pxPerMm": 12,
+      "seed": 999,
+      "azimuthDeg": 270,
+      "elevationDeg": 60,
+      "doc": {
+        "width": 600,
+        "height": 500
+      },
+      "rect": {
+        "x": 80,
+        "y": 90,
+        "width": 64,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 3072,
+        "crc32": "a2d8398a",
+        "fnv1a": "00dfa826"
+      },
+      "formula_1_furrows": {
+        "length": 3072,
+        "crc32": "d1308cef",
+        "fnv1a": "3ea93a63"
+      },
+      "formula_2_pores": {
+        "length": 3072,
+        "crc32": "3e0f3d0d",
+        "fnv1a": "dee57a75"
+      },
+      "formula_2_furrows": {
+        "length": 3072,
+        "crc32": "a5736966",
+        "fnv1a": "39082591"
+      }
+    }
+  },
+  "lines_16.0": {
+    "config": {
+      "id": "lines_16.0",
+      "mode": "lines",
+      "pxPerMm": 16,
+      "seed": 1,
+      "azimuthDeg": 315,
+      "elevationDeg": 45,
+      "doc": {
+        "width": 500,
+        "height": 500
+      },
+      "rect": {
+        "x": 20,
+        "y": 30,
+        "width": 48,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 2304,
+        "crc32": "bde4f3cd",
+        "fnv1a": "289d6524"
+      },
+      "formula_1_furrows": {
+        "length": 2304,
+        "crc32": "581bd4f7",
+        "fnv1a": "e01b492a"
+      },
+      "formula_2_pores": {
+        "length": 2304,
+        "crc32": "dadb264d",
+        "fnv1a": "4c0ab79f"
+      },
+      "formula_2_furrows": {
+        "length": 2304,
+        "crc32": "06d3a18d",
+        "fnv1a": "18b2899b"
+      }
+    }
+  },
+  "cells_1.62": {
+    "config": {
+      "id": "cells_1.62",
+      "mode": "cells",
+      "pxPerMm": 1.62,
+      "seed": 42,
+      "azimuthDeg": 225,
+      "elevationDeg": 60,
+      "doc": {
+        "width": 250,
+        "height": 200
+      },
+      "rect": {
+        "x": 10,
+        "y": 20,
+        "width": 64,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      },
+      "formula_1_furrows": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      },
+      "formula_2_pores": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      },
+      "formula_2_furrows": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      }
+    }
+  },
+  "cells_3.0": {
+    "config": {
+      "id": "cells_3.0",
+      "mode": "cells",
+      "pxPerMm": 3,
+      "seed": 1,
+      "azimuthDeg": 315,
+      "elevationDeg": 45,
+      "doc": {
+        "width": 300,
+        "height": 300
+      },
+      "rect": {
+        "x": 30,
+        "y": 40,
+        "width": 48,
+        "height": 64
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 3072,
+        "crc32": "68c77fea",
+        "fnv1a": "0452f59f"
+      },
+      "formula_1_furrows": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      },
+      "formula_2_pores": {
+        "length": 3072,
+        "crc32": "42212060",
+        "fnv1a": "05700539"
+      },
+      "formula_2_furrows": {
+        "length": 3072,
+        "crc32": "ce1cc816",
+        "fnv1a": "770b0dc5"
+      }
+    }
+  },
+  "cells_4.49": {
+    "config": {
+      "id": "cells_4.49",
+      "mode": "cells",
+      "pxPerMm": 4.49,
+      "seed": 12345,
+      "azimuthDeg": 90,
+      "elevationDeg": 30,
+      "doc": {
+        "width": 400,
+        "height": 350
+      },
+      "rect": {
+        "x": 50,
+        "y": 60,
+        "width": 64,
+        "height": 64
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 4096,
+        "crc32": "6da9377b",
+        "fnv1a": "47ca6e9f"
+      },
+      "formula_1_furrows": {
+        "length": 4096,
+        "crc32": "9492a69c",
+        "fnv1a": "9dafddc5"
+      },
+      "formula_2_pores": {
+        "length": 4096,
+        "crc32": "ac2d1b23",
+        "fnv1a": "79e1012c"
+      },
+      "formula_2_furrows": {
+        "length": 4096,
+        "crc32": "acbaa2c4",
+        "fnv1a": "1b92cfe8"
+      }
+    }
+  },
+  "cells_6.0": {
+    "config": {
+      "id": "cells_6.0",
+      "mode": "cells",
+      "pxPerMm": 6,
+      "seed": 42,
+      "azimuthDeg": 315,
+      "elevationDeg": 45,
+      "doc": {
+        "width": 500,
+        "height": 400
+      },
+      "rect": {
+        "x": 15,
+        "y": 25,
+        "width": 64,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 3072,
+        "crc32": "6bfa35d8",
+        "fnv1a": "f4e0726d"
+      },
+      "formula_1_furrows": {
+        "length": 3072,
+        "crc32": "c7858078",
+        "fnv1a": "f0624c99"
+      },
+      "formula_2_pores": {
+        "length": 3072,
+        "crc32": "66564290",
+        "fnv1a": "47578155"
+      },
+      "formula_2_furrows": {
+        "length": 3072,
+        "crc32": "4b9f14ea",
+        "fnv1a": "89e720d8"
+      }
+    }
+  },
+  "cells_8.0": {
+    "config": {
+      "id": "cells_8.0",
+      "mode": "cells",
+      "pxPerMm": 8,
+      "seed": 1,
+      "azimuthDeg": 180,
+      "elevationDeg": 45,
+      "doc": {
+        "width": 450,
+        "height": 450
+      },
+      "rect": {
+        "x": 40,
+        "y": 50,
+        "width": 48,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 2304,
+        "crc32": "b0680242",
+        "fnv1a": "8f3ef42b"
+      },
+      "formula_1_furrows": {
+        "length": 2304,
+        "crc32": "b77b4c31",
+        "fnv1a": "c55a0af0"
+      },
+      "formula_2_pores": {
+        "length": 2304,
+        "crc32": "c112dfa2",
+        "fnv1a": "33d8ed7a"
+      },
+      "formula_2_furrows": {
+        "length": 2304,
+        "crc32": "b2720630",
+        "fnv1a": "c4367c3b"
+      }
+    }
+  },
+  "cells_12.0": {
+    "config": {
+      "id": "cells_12.0",
+      "mode": "cells",
+      "pxPerMm": 12,
+      "seed": 777,
+      "azimuthDeg": 270,
+      "elevationDeg": 60,
+      "doc": {
+        "width": 600,
+        "height": 500
+      },
+      "rect": {
+        "x": 80,
+        "y": 90,
+        "width": 64,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 3072,
+        "crc32": "4655ba7a",
+        "fnv1a": "96bc56f2"
+      },
+      "formula_1_furrows": {
+        "length": 3072,
+        "crc32": "d07db0b0",
+        "fnv1a": "3bfb896d"
+      },
+      "formula_2_pores": {
+        "length": 3072,
+        "crc32": "ad7c2a27",
+        "fnv1a": "ea484a67"
+      },
+      "formula_2_furrows": {
+        "length": 3072,
+        "crc32": "3ee8ddc7",
+        "fnv1a": "aba634ac"
+      }
+    }
+  },
+  "cells_16.0": {
+    "config": {
+      "id": "cells_16.0",
+      "mode": "cells",
+      "pxPerMm": 16,
+      "seed": 42,
+      "azimuthDeg": 315,
+      "elevationDeg": 45,
+      "doc": {
+        "width": 500,
+        "height": 500
+      },
+      "rect": {
+        "x": 20,
+        "y": 30,
+        "width": 48,
+        "height": 48
+      }
+    },
+    "checksums": {
+      "formula_1_pores": {
+        "length": 2304,
+        "crc32": "c2c89537",
+        "fnv1a": "e4bd25e0"
+      },
+      "formula_1_furrows": {
+        "length": 2304,
+        "crc32": "c61d11ca",
+        "fnv1a": "a33c1839"
+      },
+      "formula_2_pores": {
+        "length": 2304,
+        "crc32": "8133dc1e",
+        "fnv1a": "e850cab5"
+      },
+      "formula_2_furrows": {
+        "length": 2304,
+        "crc32": "9125da32",
+        "fnv1a": "9ba9dcab"
+      }
+    }
+  }
+}

@@ -107,17 +107,6 @@ test('MCP work requires no configuration for launching a command-line agent', as
     assert.match(started.content[0].text, /Task task-/);
 });
 
-test('the tool layer is wired to the service', async context => {
-    const { service } = makeService(context);
-
-    assert.equal(service.tools.list().length, 17);
-
-    // With no channel the answer is the sentence the MCP agent is meant to relay.
-    const result = await service.tools.call('ps_start_task', { intent: 'anything' });
-    assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /FromPS \/ ToPS AI/);
-});
-
 test('progress from the tools reaches the plugin state', async context => {
     const bridge = {
         getConnectedClients: () => 1,

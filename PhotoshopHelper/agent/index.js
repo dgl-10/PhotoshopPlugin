@@ -15,6 +15,7 @@ const { createTaskSession } = require('./task-session');
 const { createKnowledgeBase } = require('./knowledge-base');
 const { createJournal } = require('./journal');
 const { createAgentTools } = require('./mcp-tools');
+const { createSkinTextureJobsForHelper } = require('../skin-texture/availability');
 
 // Why a task ended when the person pressed Abort task. The agent reads it in the refusal
 // of its next call; the plugin's line (modules/agent-line.js) compares against this exact
@@ -51,6 +52,10 @@ const CHANNEL_CLOSE_REASON_TEXT = {
  *   connected without a task before it closes itself. Reported to the plugin so it can run
  *   its own countdown; Helper never closes the channel itself.
  * @param {Console} [options.logger] - Destination for diagnostics.
+ * @param {object|false} [options.skinTexture] - Options for the skin texture job manager
+ *   (skin-texture/job-manager.js), whose ps_skin_texture_ tools are published with the others.
+ *   false leaves the tools out. inDevelopment: true keeps the tools published but makes every
+ *   call answer that the feature is in development (skin-texture/availability.js).
  * @returns {object} The document-agent service.
  */
 function createAgentService({
@@ -62,9 +67,14 @@ function createAgentService({
     idleWithoutTaskMs = DEFAULT_IDLE_WITHOUT_TASK_MS,
     helperVersion,
     logger = console,
-    trackUsage = () => {}
+    trackUsage = () => {},
+    skinTexture = {}
 }) {
     const tasks = createTaskSession();
+    // Bound to the task registry: a task that ends takes its unwritten textures with it.
+    const skinTextureJobs = skinTexture === false
+        ? null
+        : createSkinTextureJobsForHelper({ tasks, getBridge, logger, ...skinTexture });
     const knowledgeBase = createKnowledgeBase({
         authorDir: paths.authorKnowledgeDir,
         userDir: paths.userKnowledgeDir,
@@ -138,7 +148,8 @@ function createAgentService({
         knowledgeBase,
         journal,
         progress,
-        trackUsage
+        trackUsage,
+        skinTextureJobs
     });
 
     /**
@@ -264,6 +275,15 @@ function createAgentService({
         if (aborted) logger.info(`[agent] Task ${aborted.id} closed: ${reason}`);
     }
 
+    /**
+     * Release what the service holds while Helper quits: skin texture workers and files.
+     *
+     * @returns {Promise<void>}
+     */
+    function dispose() {
+        return skinTextureJobs ? skinTextureJobs.dispose() : Promise.resolve();
+    }
+
     return {
         tools,
         tasks,
@@ -272,7 +292,8 @@ function createAgentService({
         getState,
         stop,
         handlePluginConnectionChange,
-        abortCurrentTask
+        abortCurrentTask,
+        dispose
     };
 }
 

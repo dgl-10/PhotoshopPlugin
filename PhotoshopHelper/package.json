@@ -55,6 +55,7 @@
             "!**/*.md",
             "!node_modules/.cache/**",
             "!**/*.map",
+            "!skin-texture/*.wasm",
             "!webhelper/v0/**"
         ],
         "extraResources": [

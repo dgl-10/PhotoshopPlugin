@@ -251,7 +251,10 @@ function initAgentService() {
         idleWithoutTaskMs: resolveAgentLineIdleTimeoutMs(),
         helperVersion: VERSION,
         logger: log,
-        trackUsage
+        trackUsage,
+        // The installed Helper ships without formulas.wasm: the skin texture tools stay
+        // published but answer that the feature is in development.
+        skinTexture: { inDevelopment: app.isPackaged }
     });
 
     initAssistWindow({ agentService, port: PORT });
@@ -1957,5 +1960,10 @@ app.on('before-quit', () => {
     // Close WebSocket bridge server
     if (wsBridgeServer) {
         wsBridgeServer.close().catch(() => { });
+    }
+
+    // Stop skin texture workers and remove their exchange files
+    if (agentService) {
+        agentService.dispose().catch(() => { });
     }
 });
