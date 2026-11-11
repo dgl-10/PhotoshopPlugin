@@ -23,3 +23,11 @@ The sky itself is `file: { _kind: "local", _path: … }` pointing to a JPEG in t
 `Sky_Presets` folder of this machine's Photoshop settings, plus its `ID` (the same GUID as
 the file name) and `name`. That path differs on every machine — take it from a recording
 made here, never from somewhere else. Photoshop refuses when it detects no sky in the image.
+
+**Plain Edit → Fill → Content-Aware.** A shorter way to fill the current selection on a
+pixel layer, in place:
+`{ _obj: "fill", using: { _enum: "fillContents", _value: "contentAware" }, opacity: { _unit: "percentUnit", _value: 100 }, mode: { _enum: "blendMode", _value: "normal" } }`.
+In an agent run on Photoshop 27.10.1 (task-7d7667) `cafWorkspace` with
+`cafOutput: { _enum: "cafOutput", _value: "cafOutputToCurrentLayer" }` failed with -1715 and
+this `fill` worked. On 25.3.1 both worked, and so did `cafOutputToNewLayer` (rechecked
+2026-11-11, by pixels). If `cafWorkspace` is refused, use the `fill`.

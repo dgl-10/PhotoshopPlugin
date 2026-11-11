@@ -1,7 +1,7 @@
 ---
 id: layer-blend-mode-and-opacity
 title: Set a layer's blend mode, opacity and channel restrictions from a script
-problem: setting a layer's blend mode, opacity or the R/G/B channel checkboxes of Blending Options from a script — the batchPlay shape, a case where combining them with a rename silently dropped two of the three, and channelRestrictions holding the enabled channels
+problem: setting a layer's blend mode, opacity or the R/G/B channel checkboxes of Blending Options from a script — the batchPlay shape, a case where combining them with a rename silently dropped two of the three, and channelRestrictions holding the enabled channels; a hidden layer's opacity cannot be changed
 confidence: author-verified
 task: verified by the author in Photoshop — recorded with Actions → Copy As JavaScript
 photoshop: 25.3.1
@@ -38,3 +38,11 @@ with `get` (`read-layer-settings`) and check `channelRestrictions`.
 
 One use: lateral chromatic aberration — two duplicates of a smart object above the
 original, one restricted to red and scaled 100.08 %, the other to blue at 99.92 %.
+
+## Opacity of a hidden layer
+
+A hidden layer's opacity cannot be changed. DOM `layer.opacity = 30` on a layer with
+`visible === false` is ignored without an error, and a batchPlay `set` of `opacity` on it
+comes back as `{ _obj: "error" }` with -25920 ("The command “Set” is not currently
+available"). On a visible layer both work. Show the layer, set the opacity, hide it again,
+and read the value back (task-1b57ac; rechecked in Photoshop 25.3.1, 2026-11-11).

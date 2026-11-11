@@ -40,12 +40,18 @@ Useful keys in what comes back:
 | `adjustment` | the settings of an adjustment layer, for example the curve of a Curves layer |
 | `layerEffects` | layer styles |
 | `hasUserMask`, `hasVectorMask`, `hasFilterMask` | which masks exist |
+| `userMaskEnabled` | whether the user mask is on; missing when the layer has no mask, so read it together with `hasUserMask` |
 | `bounds`, `boundsNoEffects` | with and without effects |
 | `mode`, `opacity`, `fillOpacity` | blending |
 | `channelRestrictions` | which of R/G/B are enabled in Blending Options (`layer-blend-mode-and-opacity`) |
 
 `ps_get_layer` already does this call for you and returns the interesting parts. Use
 `ps_execute_script` with the snippet above when you need a key it does not return.
+
+The DOM `Layer` has no `hasUserMask` or `userMaskEnabled` (both `undefined`), and
+`layer.layerMaskDensity` / `layer.layerMaskFeather` return 100 / 0 on a layer without a
+mask instead of throwing, so ask the descriptor whether a mask exists (checked in
+Photoshop 25.3.1, 2026-11-11). Turning a mask off and on is in `mask-write-pixels`.
 
 ## Reading the same thing for the active layer
 

@@ -1,7 +1,7 @@
 ---
 id: mask-write-pixels
 title: Write your own pixels into a layer mask — a new mask, or one the layer already has
-problem: writing your own grayscale data into a layer mask from a script — a new mask, or one the layer already has (every new adjustment layer comes with a white mask), where imaging.putLayerMask lands the data but the image may not update
+problem: writing your own grayscale data into a layer mask from a script — a new mask, or one the layer already has (every new adjustment layer comes with a white mask), where imaging.putLayerMask lands the data but the image may not update; also turning an existing mask off and on
 confidence: author-verified
 task: verified in Photoshop 25.3.1 — reproduction of the existing-mask trap, the standard selection/fill workaround, and layerMaskFeather
 photoshop: 24.0 and later; the existing-mask trap verified on 25.3.1
@@ -130,3 +130,22 @@ panel:
 ```js
 layer.layerMaskFeather = radiusInPixels;
 ```
+
+## Turning a mask off and on
+
+Disable Layer Mask is a `set` on the layer itself, not on its mask channel:
+
+```js
+await action.batchPlay([{
+    _obj: 'set',
+    _target: [{ _ref: 'layer', _id: layerId }],
+    to: { _obj: 'layer', userMaskEnabled: false } // true turns it back on
+}], {});
+```
+
+Read the state back with `get` (`read-layer-settings`): `hasUserMask`, and `userMaskEnabled`,
+which is missing when there is no mask. Two forms aimed at the mask channel came back as
+`{ _obj: "error" }` with -25920 ("not currently available") instead of throwing:
+`{ _obj: 'disable', _target: [{ _ref: 'channel', _enum: 'channel', _value: 'mask' }] }` and a
+`set` on that channel with `to: { _obj: 'userMask', userMaskEnabled: false }` (task-c5fd75;
+all of this rechecked in Photoshop 25.3.1, 2026-11-11).
