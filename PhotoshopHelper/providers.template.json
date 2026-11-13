@@ -2299,6 +2299,15 @@
                 "field_name": "images"
             },
             "remarks": "<b>Pricing:</b> Fixed per image by resolution tier.<br><table style='width:100%; font-size: 0.85em; border-top: 1px solid #555; margin-top: 4px;'><tr><td><b>Tier</b></td><td><b>FLUX 3 Image</b></td><td><b>FLUX 3 Klein</b></td></tr><tr><td>768sq</td><td>$0.041</td><td>$0.008</td></tr><tr><td>1k (~1 MP)</td><td>$0.048</td><td>$0.009</td></tr><tr><td>1.5k (~2 MP)</td><td>$0.070</td><td>$0.011</td></tr><tr><td>2k (~4 MP)</td><td>$0.100</td><td>$0.014</td></tr><tr><td>4k (~16 MP)</td><td>$0.607</td><td>$0.036</td></tr></table><br>Supports up to 10 reference images (or 1 mask + up to 9 references).",
+            "preprocessor": [
+                {
+                    "name": "image_optimizer_by_min_size",
+                    "args": {
+                        "min_size": 256,
+                        "uscale_2_min": "{{allow_uscale_2_min}}"
+                    }
+                }
+            ],
             "request_config": {
                 "single_image_per_request": true,
                 "endpoint_url": "https://api.bfl.ai/v1/flux-3-{{model_flux3}}",
@@ -2344,7 +2353,7 @@
                             "label": "FLUX 3 Image - from $0.041 (Flagship Quality)"
                         }
                     ],
-                    "default": "image-klein"
+                    "default": "image"
                 },
                 {
                     "name": "resolution",
@@ -2373,6 +2382,13 @@
                         }
                     ],
                     "default": "1k"
+                },
+                {
+                    "name": "allow_uscale_2_min",
+                    "alias": "allow_uscale_2_min",
+                    "type": "boolean",
+                    "label": "Allow upscale to minimum size (256px)",
+                    "default": false
                 },
                 {
                     "name": "grounding",
