@@ -17,7 +17,8 @@
  * pixels or base64 in them.
  */
 
-const { SkinRequestError, MAX_RECT_PIXELS } = require('../skin-texture/core-adapter');
+const { SkinRequestError } = require('../skin-texture/core-adapter');
+const { buildToolDescriptions, buildFaceFieldsSchema } = require('../skin-texture/recipe-tool-contract');
 
 /**
  * @param {string} text - Text for the agent.
@@ -64,47 +65,12 @@ function createSkinTextureTools({
     refuseWhileDialogPending,
     markers
 }) {
-    const budgetSeconds = Math.max(1, Math.round(jobs.options.responseBudgetMs / 1000));
+    const descriptions = buildToolDescriptions(jobs.options);
 
     const definitions = [
         {
             name: 'ps_skin_texture_start',
-            description:
-                'Start computing a procedural skin micro-relief (Formula 1 and Formula 2, pores and microrelief) for '
-                + 'a rectangle of the task\'s document. Helper computes it in the background and this '
-                + `answers within ${budgetSeconds} seconds with a job_id; it writes nothing to the `
-                + 'document. Then call ps_skin_texture_status until phase is "ready", and write the result '
-                + 'with ps_skin_texture_apply and mask_source ({ kind: "selection" } or { kind: "layer_mask", layer_id: <id> }). '
-                + 'The result is a group "Skin" (Pass Through, Opacity 100%) with a single common mask from mask_source, containing '
-                + 'visible group "Formula 2" and hidden group "Formula 1", each with "Pores" and "Microrelief" (Linear Light, Opacity 50%, Fill 100%). '
-                + 'A single procedural model is applied to the chosen skin area without anatomical zone division, while preserving separate formula components for user adjustment. '
-                + 'rect: integers in real document pixels, x and y from the top-left corner, inside the '
-                + 'document; the texture is made for exactly that area at the document\'s own pixel scale, '
-                + 'never resized. There is no default area: for the whole document pass { x: 0, y: 0, '
-                + `width, height } of the document explicitly. At most ${MAX_RECT_PIXELS} pixels (4096 x 4096). `
-                + 'px_per_mm (required): how many document pixels one millimetre of skin covers. For a face, '
-                + 'estimate it as the distance between the pupils in pixels divided by about 63 mm (an adult '
-                + 'average, an approximation). Details that come out smaller than about 2 px are not drawn, '
-                + 'so at a small px_per_mm the layer can be almost flat; status.diagnostics.notes say which '
-                + 'details were suppressed. Do not raise px_per_mm only to make the texture show more, unless '
-                + 'the person wants that look. '
-                + 'params (optional): recipe parameters by their exact names: mode ("lines" or "cells", default "lines"), '
-                + 'seed (integer, default 1), azimuthDeg (light direction in degrees, default 315), elevationDeg (light '
-                + 'height above skin, 5-90, default 45). Unknown names and old task01 parameters (relief, pores, furrows) '
-                + 'are refused; status shows every parameter as used. '
-                + 'recipe (optional): "skin_pair_v1" (default). Omit this argument or pass "skin_pair_v1" explicitly. '
-                + 'Any other value is refused. '
-                + 'request_id (required): your own key for this request, unique in the task. Calling start '
-                + 'again with the same request_id and the same arguments returns the same job instead of '
-                + 'computing again; the same request_id with different arguments is refused. A request_id '
-                + `stays used for the whole task: a task keeps its last ${jobs.options.maxJobsPerTask} job records, `
-                + 'and once an old record is dropped, repeating its request_id is refused '
-                + '("REQUEST_ALREADY_USED", with the old job_id and how it ended) and is never computed or '
-                + `written again. One task accepts at most ${jobs.options.maxRequestsPerTask} different `
-                + 'request_ids; after that start refuses ("REQUEST_LIMIT_REACHED"): finish the task and '
-                + 'start a new one. '
-                + 'One computation runs per task at a time. Supported: RGB documents, 8 or 16 bits per '
-                + 'channel (16-bit only with a colour profile).',
+            description: descriptions.start,
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -119,27 +85,28 @@ function createSkinTextureTools({
                         properties: {
                             x: { type: 'integer', minimum: 0 },
                             y: { type: 'integer', minimum: 0 },
-                            width: { type: 'integer', minimum: 1 },
-                            height: { type: 'integer', minimum: 1 }
+                            width: { type: 'integer', minimum: 1, maximum: 8192 },
+                            height: { type: 'integer', minimum: 1, maximum: 8192 }
                         },
                         required: ['x', 'y', 'width', 'height'],
                         additionalProperties: false
                     },
                     px_per_mm: {
                         type: 'number',
+                        minimum: 0.25,
+                        maximum: 400,
                         description: 'Document pixels per millimetre of skin, for example pupil distance in px / 63.'
                     },
                     params: {
-                        type: 'object',
-                        description: 'Recipe parameters by name (mode, seed, azimuthDeg, elevationDeg). '
-                            + 'Not allowed here: width, height, rect, pxPerMm.'
+                        type: 'object', description: descriptions.params,
+                        properties: {
+                            seed: { type: 'integer', minimum: 0, maximum: 4294967295 },
+                            azimuthDeg: { type: 'number' },
+                            elevationDeg: { type: 'number', minimum: 5, maximum: 90 }
+                        }, additionalProperties: false
                     },
-                    recipe: {
-                        type: 'string',
-                        enum: ['skin_pair_v1'],
-                        description: 'Optional recipe. Default "skin_pair_v1" (computes Formula 1 and Formula 2 with Pores and Microrelief, '
-                            + 'and prepares ready Skin group assembly on apply).'
-                    }
+                    fields: buildFaceFieldsSchema(descriptions),
+                    recipe: { type: 'string', enum: ['skin_three_v2'], description: descriptions.recipe }
                 },
                 required: ['task_id', 'request_id', 'rect', 'px_per_mm'],
                 additionalProperties: false
@@ -147,23 +114,7 @@ function createSkinTextureTools({
         },
         {
             name: 'ps_skin_texture_status',
-            description:
-                'Report a skin texture job. Answers at once and never waits for the computation. It gives '
-                + 'the phase, the next allowed step, the parameters as used, timings, diagnostics and, after '
-                + 'a write, the ids of the layers it created. Phases: "checking_document" and "computing", '
-                + 'then "ready" (call ps_skin_texture_apply), "preparing_write" (apply is handing the file '
-                + 'over; nothing has been sent to Photoshop yet, cancel still stops it), "applying" (the write '
-                + 'was sent), "applied"; can_cancel_without_change says whether cancel can still stop the job '
-                + 'with the document guaranteed unchanged. '
-                + 'Also "cancelled", "failed" (see error), "invalidated" (the document or the plugin changed '
-                + 'since start, so the result is no longer written), "discarded" (the task ended, the result '
-                + 'expired, or a newer one replaced it) and "apply_unknown" (a write was sent but its outcome '
-                + 'could not be established: look at the document before anything else). '
-                + 'diagnostics.notes explain in words which details were too small to draw at this '
-                + 'px_per_mm and whether a layer came out nearly flat 128; diagnostics.layers give min, max '
-                + 'and mean of each layer and diagnostics.suppressed the fade factors (0 = not drawn, 1 = '
-                + 'full strength). It also works while the Photoshop connection is paused and for the task '
-                + 'that just ended.',
+            description: descriptions.status,
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -176,21 +127,7 @@ function createSkinTextureTools({
         },
         {
             name: 'ps_skin_texture_apply',
-            description:
-                'Write a ready skin texture job into the task\'s document: creates group "Skin" (Pass Through, Opacity 100%) '
-                + 'with a single common mask from mask_source, containing visible group "Formula 2" and hidden group "Formula 1", '
-                + 'each with "Pores" and "Microrelief" (Linear Light, Opacity 50%, Fill 100%). '
-                + 'One apply is one History step, so one Undo removes all its layers. A job is written at most once: '
-                + 'calling apply again returns what happened the first time and never creates the layers again, not even '
-                + 'after the person undid them; repeating an already applied job does not require mask_source. For another texture start a new request. If the write takes longer than '
-                + `about ${budgetSeconds} seconds the answer says "applying" (or "preparing_write" while the `
-                + 'file is still being handed over); then call ps_skin_texture_status. Before writing it checks '
-                + 'that the document still has the same size, depth and colour profile; otherwise nothing is '
-                + 'written. Right before sending it checks again that the task still runs on the same document '
-                + 'and plugin runtime, the line is on and no dialog is open: a cancel, a pause of the line, a '
-                + 'new runtime or the end of the task while the file was being prepared stops the write with '
-                + 'nothing sent; a paused write is never sent by itself later, so call apply again once the '
-                + 'line is back.',
+            description: descriptions.apply,
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -338,7 +275,7 @@ function createSkinTextureTools({
             const newAttempt = !job.apply || job.apply.state === 'not_applied';
             if (newAttempt && job.phase === 'ready' && !isChannelOpen()) return textResult(channelClosedMessage, true);
             if (!job.apply || job.apply.state === 'not_applied') {
-                const writingDesc = 'recipe skin_pair_v1';
+                const writingDesc = 'recipe skin_three_v2';
                 note(task.id, `skin texture: writing ${writingDesc}`, 'ps_skin_texture_apply');
             }
             outcome = await jobs.apply(task, args.job_id, transportFor(task), args.mask_source);

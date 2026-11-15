@@ -4,10 +4,10 @@
  * The skin texture tools when this Helper run must not compute textures
  * (skin-texture/availability.js):
  * - the installed build (inDevelopment): the tools stay published exactly as they are, every
- *   call answers that the feature is in development, formulas.wasm is never looked for;
- * - a development run without a usable formulas.wasm: Helper starts, logs the reason, and
+ *   call answers that the feature is in development, private formula binaries are never looked for;
+ * - a development run without a usable private formula binaries: Helper starts, logs the reason, and
  *   the tools answer with it.
- * None of this needs formulas.wasm, so these tests also run in a fresh checkout.
+ * None of this needs private formula binaries, so these tests also run in a fresh checkout.
  */
 
 const assert = require('node:assert/strict');
@@ -21,7 +21,10 @@ const { createFakePhotoshop } = require('./skinTextureFakes');
 const { IN_DEVELOPMENT_CODE, CORE_UNAVAILABLE_CODE } = require('../skin-texture/availability');
 
 const SKIN_TOOLS = ['ps_skin_texture_start', 'ps_skin_texture_status', 'ps_skin_texture_apply', 'ps_skin_texture_cancel'];
-const isWasmFile = file => String(file).endsWith('formulas.wasm');
+// Match every private asset so installed-build tests catch even an unexpected lookup.
+const isWasmFile = file => String(file).endsWith('.wasm');
+const formulas = require('./skinTextureEquivalenceCases').FORMULAS;
+const missingReason = require('./skinTextureTestSupport').missingBinaryReason();
 
 /**
  * @param {import('node:test').TestContext} context - Test context (clean-up).
@@ -88,7 +91,7 @@ async function callAllSkinTools(call, taskId) {
     ];
 }
 
-test('installed build: the four tools are published exactly as in a development run and formulas.wasm is never looked for', context => {
+test('installed build: the four tools are published exactly as in a development run and private formula binaries are never looked for', context => {
     const wasmLookups = [];
     patchFs(context, {
         existsSync: original => (file, ...rest) => {
@@ -101,7 +104,7 @@ test('installed build: the four tools are published exactly as in a development 
         }
     });
     const installed = makeService(context, { inDevelopment: true }).service.tools.list();
-    assert.deepEqual(wasmLookups, [], 'the installed build must not look for formulas.wasm');
+    assert.deepEqual(wasmLookups, [], 'the installed build must not look for private formula binaries');
 
     const development = makeService(context, {}).service.tools.list();
     for (const name of SKIN_TOOLS) {
@@ -129,38 +132,44 @@ test('installed build: every skin texture call answers "in development" and the 
     assert.equal(fake.doc.layers.length, layersBefore, 'no layer was created');
 });
 
-test('development run without formulas.wasm: Helper starts, logs the reason and the tools refuse with it', async context => {
-    patchFs(context, {
-        existsSync: original => (file, ...rest) => (isWasmFile(file) ? false : original.call(fs, file, ...rest))
+// Exercise each filename separately; the other files remain genuine pinned assets.
+for (const formula of formulas) {
+    test(`development run missing ${formula.fileName}: starts, logs filename and refuses tools`, { skip: missingReason }, async context => {
+        const target = file => path.basename(String(file)) === formula.fileName;
+        patchFs(context, {
+            existsSync: original => (file, ...rest) => target(file) ? false : original.call(fs, file, ...rest),
+            // Model a real missing read, independently of whether the loader probes first.
+            readFileSync: original => (file, ...rest) => {
+                if (target(file)) throw Object.assign(new Error('private binary missing'), { code: 'ENOENT' });
+                return original.call(fs, file, ...rest);
+            }
+        });
+        const errors = [];
+        const { service, call } = makeService(context, {}, { info() {}, warn() {}, error(text) { errors.push(text); } });
+        assert.equal(errors.length, 1, 'one startup error');
+        assert.ok(errors[0].includes(formula.fileName), errors[0]);
+        assert.match(errors[0], /not kept in git/);
+        for (const name of SKIN_TOOLS) assert.ok(service.tools.list().some(tool => tool.name === name));
+        const started = await call('ps_start_task', { intent: 'add skin texture' });
+        const taskId = started.text.match(/(task-[a-f0-9]+)/)[1];
+        for (const answer of await callAllSkinTools(call, taskId)) {
+            assert.equal(answer.isError, true, answer.text);
+            assert.equal(answer.json.error.code, CORE_UNAVAILABLE_CODE);
+            assert.ok(answer.json.error.message.includes(formula.fileName), answer.text);
+        }
     });
-    const errors = [];
-    const { service, call } = makeService(context, {}, { info() {}, warn() {}, error(text) { errors.push(text); } });
 
-    assert.equal(errors.length, 1, 'one error at start');
-    assert.match(errors[0], /Skin texture core not found: .*formulas\.wasm/);
-    assert.match(errors[0], /not kept in git/);
-    const names = service.tools.list().map(tool => tool.name);
-    for (const name of SKIN_TOOLS) assert.ok(names.includes(name), `${name} is still published`);
-
-    const started = await call('ps_start_task', { intent: 'add skin texture' });
-    const taskId = started.text.match(/(task-[a-f0-9]+)/)[1];
-    for (const answer of await callAllSkinTools(call, taskId)) {
-        assert.equal(answer.isError, true, answer.text);
-        assert.equal(answer.json.error.code, CORE_UNAVAILABLE_CODE);
-        assert.match(answer.json.error.message, /Skin texture core not found/);
-    }
-});
-
-test('development run with another formulas.wasm build: the log names both hashes', context => {
-    patchFs(context, {
-        existsSync: original => (file, ...rest) => (isWasmFile(file) ? true : original.call(fs, file, ...rest)),
-        readFileSync: original => (file, ...rest) => (isWasmFile(file)
-            ? Buffer.from('not the pinned build')
-            : original.call(fs, file, ...rest))
+    test(`development run corrupt ${formula.fileName}: reports actual and pinned hashes`, { skip: missingReason }, context => {
+        const target = file => path.basename(String(file)) === formula.fileName;
+        patchFs(context, {
+            existsSync: original => (file, ...rest) => target(file) ? true : original.call(fs, file, ...rest),
+            readFileSync: original => (file, ...rest) => target(file) ? Buffer.from('altered private build') : original.call(fs, file, ...rest)
+        });
+        const errors = [];
+        makeService(context, {}, { info() {}, warn() {}, error(text) { errors.push(text); } });
+        assert.equal(errors.length, 1);
+        assert.ok(errors[0].includes(formula.fileName), errors[0]);
+        assert.ok(errors[0].includes(formula.sha256), errors[0]);
+        assert.match(errors[0], /SHA-256 [0-9a-f]{64}/);
     });
-    const errors = [];
-    makeService(context, {}, { info() {}, warn() {}, error(text) { errors.push(text); } });
-
-    assert.equal(errors.length, 1, 'one error at start');
-    assert.match(errors[0], /is not the expected build: SHA-256 [0-9a-f]{64}, expected [0-9a-f]{64}/);
-});
+}

@@ -6,9 +6,9 @@
  * The ps_skin_texture_ tools are always published with the same descriptions and schemas.
  * What answers them is either the real job manager (job-manager.js) or a stand-in that
  * refuses every call:
- * - in the installed Helper the feature is still in development and formulas.wasm is not
+ * - in the installed Helper the feature is still in development and private Wasm binaries are not
  *   shipped, so the tools answer that the feature is not available yet;
- * - in a development run without a usable formulas.wasm (missing, or not the pinned build)
+ * - in a development run without all usable private Wasm binaries (missing, or not pinned)
  *   Helper still starts, writes the reason to its log, and the tools answer with it.
  *
  * The stand-in computes nothing, writes no files and never touches the document.
@@ -55,7 +55,7 @@ function createRefusingJobs({ code, message, limits = {} }) {
  *
  * @param {object} options - Everything createSkinTextureJobs takes, plus:
  * @param {boolean} [options.inDevelopment] - true in the installed Helper: the tools refuse
- *   with "in development" and formulas.wasm is never looked for.
+ *   with "in development" and private Wasm binaries is never looked for.
  * @param {Console} [options.logger] - Destination for diagnostics.
  * @returns {object} The real job manager, or a refusing stand-in.
  */

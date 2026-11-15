@@ -5,10 +5,11 @@
  * Helper builds, the way the plugin's agentExecuteScript runs them, and a harness that wires
  * the real task registry, tool layer and job manager to it.
  *
- * The fake models only what the scripts touch: one task document with layers, the Imaging
- * API calls (createImageDataFromBuffer, putPixels), createPixelLayer, layer.delete, and the
- * plugin's data folder (a real temporary folder on disk). It is not evidence about Photoshop
- * itself; the real reads are in the task03 practical check.
+ * The fake models the layer-tree behavior that the scripts depend on: context-sensitive
+ * native creation, active-layer selection, explicit Layer.move placement, Photoshop history
+ * restoration, the Imaging API calls, and the plugin's data folder. It is a regression model
+ * for script logic, not evidence about Photoshop itself; the real reads are in the task03
+ * practical check.
  *
  * Not a test file itself (no .test.js suffix), so `npm test` does not run it on its own.
  */
@@ -41,6 +42,8 @@ const BITS = { 8: CONSTANTS.BitsPerChannelType.EIGHT, 16: CONSTANTS.BitsPerChann
  */
 function createFakePhotoshop({ dataFolder, document = {} }) {
     let nextLayerId = 100;
+    // Set after the primary fake document has been constructed; helper closures use it later.
+    let doc = null;
     const state = {
         connected: true,
         runtimeId: 'uxp-runtime-1',
@@ -48,6 +51,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
         busy: false,
         scripts: [],
         historySteps: [],
+        lastScriptValue: null,
         imageDataCreated: 0,
         imageDataDisposed: 0,
         putPixelsCalls: 0,
@@ -55,6 +59,8 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
         failCreateImageDataOnCall: null,
         failDeleteIds: new Set(),
         failAllDeletes: false,
+        // Optional one-shot host side effect used to test the original-scene mutation guard.
+        mutateExistingLayerOnMaskRead: null,
         nestedModalCalls: 0,
         // (payload) => Promise|void, before the script runs: delay, tamper with files, throw.
         beforeScript: null,
@@ -71,6 +77,190 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             }
         }
         return null;
+    }
+
+    /**
+     * Find a layer by its display name in a nested Layers panel tree.
+     *
+     * @param {string} name - The exact layer name to find.
+     * @param {object[]} [list] - The current sibling list to search.
+     * @returns {object|null} The matching fake layer, if present.
+     */
+    function findLayerByName(name, list = doc.layers) {
+        for (const layer of list) {
+            if (layer.name === name) return layer;
+            if (layer.layers) {
+                const found = findLayerByName(name, layer.layers);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Return the live sibling array that owns a layer, preserving Photoshop's nested tree.
+     *
+     * @param {object} layer - The layer whose containing list is needed.
+     * @returns {object[]} The parent group's children or the document's root layers.
+     */
+    function siblingListFor(layer) {
+        return layer.parent && Array.isArray(layer.parent.layers) ? layer.parent.layers : doc.layers;
+    }
+
+    /**
+     * Remove a layer from its current parent without changing any other layer properties.
+     *
+     * @param {object} layer - The layer to detach from its current list.
+     */
+    function detachLayer(layer) {
+        const siblings = siblingListFor(layer);
+        const index = siblings.indexOf(layer);
+        if (index >= 0) siblings.splice(index, 1);
+        layer.parent = null;
+    }
+
+    /**
+     * Insert a newly created Photoshop layer at the current active layer context.
+     *
+     * A selected group receives new content inside itself. A selected pixel layer receives
+     * new content as a sibling in the same parent, directly above that selected layer.
+     * This context-sensitive default is the behavior the recipe script must not rely on.
+     *
+     * @param {object} layer - The new layer to insert.
+     */
+    function insertAtActiveContext(layer) {
+        const active = doc.activeLayers && doc.activeLayers[0];
+        let parent = null;
+        let siblings = doc.layers;
+        let index = 0;
+
+        if (active && active.kind === 'group') {
+            parent = active;
+            siblings = active.layers;
+            index = 0;
+        } else if (active) {
+            parent = active.parent || null;
+            siblings = siblingListFor(active);
+            const activeIndex = siblings.indexOf(active);
+            index = activeIndex < 0 ? 0 : activeIndex;
+        }
+
+        siblings.splice(index, 0, layer);
+        layer.parent = parent;
+        doc.activeLayers = [layer];
+        doc.changedInScript = true;
+    }
+
+    /**
+     * Copy the state needed to emulate one native Photoshop history checkpoint.
+     *
+     * @returns {object} A plain snapshot that does not retain mutable layer properties.
+     */
+    function captureHistoryState(targetDoc = doc) {
+        function captureLayer(layer) {
+            return {
+                id: layer.id,
+                name: layer.name,
+                kind: layer.kind,
+                visible: layer.visible,
+                opacity: layer.opacity,
+                fillOpacity: layer.fillOpacity,
+                blendMode: layer.blendMode,
+                mask: layer.mask ? {
+                    width: layer.mask.width,
+                    height: layer.mask.height,
+                    data: layer.mask.data ? layer.mask.data.slice() : null,
+                    outside: layer.mask.outside,
+                    bounds: layer.mask.bounds ? { ...layer.mask.bounds } : null
+                } : null,
+                pixels: layer.pixels ? {
+                    ...layer.pixels,
+                    data: layer.pixels.data ? layer.pixels.data.slice() : null
+                } : null,
+                userMaskEnabled: layer._userMaskEnabled,
+                layerMaskDensity: layer.layerMaskDensity,
+                layerMaskFeather: layer.layerMaskFeather,
+                children: layer.layers ? layer.layers.map(captureLayer) : null
+            };
+        }
+
+        return {
+            __fakePhotoshopHistoryState: true,
+            layers: targetDoc.layers.map(captureLayer),
+            activeLayerIds: (targetDoc.activeLayers || []).map(layer => layer.id)
+        };
+    }
+
+    /**
+     * Restore a history snapshot while preserving object identity for layers that existed
+     * before the script. This makes tests able to detect if rollback deleted an old object.
+     *
+     * @param {object} snapshot - A value returned by captureHistoryState().
+     */
+    function restoreHistoryState(snapshot, targetDoc = doc) {
+        const existing = new Map();
+        function indexExisting(layers) {
+            for (const layer of layers) {
+                existing.set(layer.id, layer);
+                if (layer.layers) indexExisting(layer.layers);
+            }
+        }
+        indexExisting(skinAllLayers(targetDoc));
+
+        function restoreLayer(saved, parent) {
+            const layer = existing.get(saved.id) || makeLayer(targetDoc, saved.name, saved.kind);
+            layer.name = saved.name;
+            layer.kind = saved.kind;
+            layer.visible = saved.visible;
+            layer.opacity = saved.opacity;
+            layer.fillOpacity = saved.fillOpacity;
+            layer.blendMode = saved.blendMode;
+            layer.parent = parent;
+            layer.mask = saved.mask ? {
+                width: saved.mask.width,
+                height: saved.mask.height,
+                data: saved.mask.data ? saved.mask.data.slice() : null,
+                outside: saved.mask.outside,
+                bounds: saved.mask.bounds ? { ...saved.mask.bounds } : null
+            } : null;
+            layer.pixels = saved.pixels ? {
+                ...saved.pixels,
+                data: saved.pixels.data ? saved.pixels.data.slice() : null
+            } : null;
+            layer._userMaskEnabled = saved.userMaskEnabled;
+            layer.layerMaskDensity = saved.layerMaskDensity;
+            layer.layerMaskFeather = saved.layerMaskFeather;
+            if (saved.children) layer.layers = saved.children.map(child => restoreLayer(child, layer));
+            return layer;
+        }
+
+        targetDoc.layers = snapshot.layers.map(layer => restoreLayer(layer, null));
+        function findInRestoredTree(id, layers) {
+            for (const layer of layers) {
+                if (layer.id === id) return layer;
+                if (layer.layers) {
+                    const found = findInRestoredTree(id, layer.layers);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+        targetDoc.activeLayers = snapshot.activeLayerIds
+            .map(id => findInRestoredTree(id, targetDoc.layers))
+            .filter(Boolean);
+        targetDoc.changedInScript = false;
+    }
+
+    // A one-shot hook models host side effects that happen during mask readback, such as
+    // an indirect native visibility change. The real apply script must catch this by comparing
+    // the original scene and restore its starting Photoshop history state.
+    function applyMaskReadSideEffect() {
+        const effect = state.mutateExistingLayerOnMaskRead;
+        if (!effect || effect.applied) return;
+        const layer = findLayerById(effect.layerId);
+        if (!layer) return;
+        layer[effect.property] = effect.value;
+        effect.applied = true;
     }
 
     function makeLayer(doc, name, kind = 'pixel', props = {}) {
@@ -119,6 +309,37 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
                     doc.layers = doc.layers.filter(other => other !== layer);
                 }
                 doc.changedInScript = true;
+            },
+            async move(relativeObject, placement) {
+                if (!relativeObject || relativeObject.id === layer.id) {
+                    throw new Error('Layer.move requires a different relative layer');
+                }
+
+                if (placement === CONSTANTS.ElementPlacement.PLACEINSIDE) {
+                    if (relativeObject.kind !== 'group' || !Array.isArray(relativeObject.layers)) {
+                        throw new Error('PLACEINSIDE requires a group layer');
+                    }
+                    for (let ancestor = relativeObject; ancestor; ancestor = ancestor.parent) {
+                        if (ancestor === layer) throw new Error('A group cannot be moved inside itself');
+                    }
+                    detachLayer(layer);
+                    // PLACEINSIDE inserts at the top of the target group's child stack.
+                    relativeObject.layers.unshift(layer);
+                    layer.parent = relativeObject;
+                } else if (placement === CONSTANTS.ElementPlacement.PLACEBEFORE
+                    || placement === CONSTANTS.ElementPlacement.PLACEAFTER) {
+                    detachLayer(layer);
+                    const siblings = siblingListFor(relativeObject);
+                    const targetIndex = siblings.indexOf(relativeObject);
+                    if (targetIndex < 0) throw new Error('Relative layer is not in its parent list');
+                    const offset = placement === CONSTANTS.ElementPlacement.PLACEAFTER ? 1 : 0;
+                    siblings.splice(targetIndex + offset, 0, layer);
+                    layer.parent = relativeObject.parent || null;
+                } else {
+                    throw new Error('Unsupported ElementPlacement value: ' + placement);
+                }
+
+                doc.changedInScript = true;
             }
         };
         return layer;
@@ -139,11 +360,11 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             hasSelection: spec.hasSelection !== undefined ? spec.hasSelection : true,
             selection: spec.selection !== undefined ? spec.selection : { x: 0, y: 0, width: spec.width || 600, height: spec.height || 400 },
             layers: [],
+            activeLayers: [],
             changedInScript: false,
             async createPixelLayer({ name }) {
                 const layer = makeLayer(doc, name, 'pixel');
-                doc.layers.unshift(layer);
-                doc.changedInScript = true;
+                insertAtActiveContext(layer);
                 return layer;
             },
             async createLayerGroup({ name, opacity = 100, blendMode = CONSTANTS.BlendMode.PASSTHROUGH, fromLayers } = {}) {
@@ -153,28 +374,80 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
                 if (state.unexpectedChildMaskOnGroupName === name || (state.unexpectedChildMask && name === 'Formula 1')) {
                     group.mask = { width: 10, height: 10, bounds: { left: 0, top: 0, right: 10, bottom: 10 } };
                 }
+                insertAtActiveContext(group);
                 if (Array.isArray(fromLayers)) {
                     for (const l of fromLayers) {
-                        if (l.parent && Array.isArray(l.parent.layers)) {
-                            l.parent.layers = l.parent.layers.filter(other => other !== l);
-                        } else {
-                            doc.layers = doc.layers.filter(other => other !== l);
-                        }
-                        l.parent = group;
-                        group.layers.push(l);
+                        await l.move(group, CONSTANTS.ElementPlacement.PLACEINSIDE);
                     }
                 }
-                doc.layers.unshift(group);
-                doc.changedInScript = true;
                 return group;
             }
         };
-        const background = makeLayer(doc, 'Background');
-        doc.layers.push(background);
+
+        function buildLayer(entry, parent) {
+            const layer = makeLayer(doc, entry.name || 'Layer', entry.kind || 'pixel', entry);
+            if (entry.visible !== undefined) layer.visible = entry.visible;
+            if (entry.opacity !== undefined) layer.opacity = entry.opacity;
+            if (entry.fillOpacity !== undefined) layer.fillOpacity = entry.fillOpacity;
+            if (entry.blendMode !== undefined) layer.blendMode = entry.blendMode;
+            layer.parent = parent || null;
+            if (layer.kind === 'group') {
+                layer.layers = (entry.children || []).map(child => buildLayer(child, layer));
+            }
+            return layer;
+        }
+
+        if (Array.isArray(spec.layerTree)) {
+            doc.layers = spec.layerTree.map(entry => buildLayer(entry, null));
+        } else {
+            const background = makeLayer(doc, 'Background');
+            doc.layers.push(background);
+        }
+        const initialActive = spec.activeLayerName
+            ? findLayerByName(spec.activeLayerName, doc.layers)
+            : doc.layers[0];
+        doc.activeLayers = initialActive ? [initialActive] : [];
+        let activeHistoryState = spec.historyAvailable === true ? captureHistoryState(doc) : null;
+        if (spec.historyAvailable === true) {
+            Object.defineProperty(doc, 'activeHistoryState', {
+                enumerable: true,
+                get() { return activeHistoryState; },
+                set(snapshot) {
+                    if (!snapshot || snapshot.__fakePhotoshopHistoryState !== true) {
+                        throw new Error('Unsupported fake Photoshop history state');
+                    }
+                    restoreHistoryState(snapshot, doc);
+                    activeHistoryState = snapshot;
+                }
+            });
+        }
+        // History is optional in the fake. Most tests retain the older delete-created fallback;
+        // focused rollback tests opt in to model Photoshop's native history-state restoration.
+        doc._beginHistoryStep = () => {
+            if (spec.historyAvailable === true) activeHistoryState = captureHistoryState(doc);
+        };
+        doc._commitHistoryStep = () => {
+            if (spec.historyAvailable === true) activeHistoryState = captureHistoryState(doc);
+        };
         return doc;
     }
 
-    const doc = makeDocument(document);
+    /**
+     * Reusable recursive walk for the history snapshot helpers above.
+     *
+     * @param {object} container - The document or a group layer.
+     * @returns {object[]} All layers in depth-first order.
+     */
+    function skinAllLayers(container) {
+        const result = [];
+        for (const layer of Array.from(container.layers || [])) {
+            result.push(layer);
+            if (layer.layers) result.push(...skinAllLayers(layer));
+        }
+        return result;
+    }
+
+    doc = makeDocument(document);
     const other = makeDocument({ id: 99, name: 'another.psd', width: 300, height: 300 });
     const app = { documents: [doc, other], activeDocument: other };
 
@@ -205,6 +478,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
         async getLayerMask({ documentID, layerID, kind, sourceBounds }) {
             state.getLayerMaskCalls = (state.getLayerMaskCalls || 0) + 1;
             const layer = findLayerById(layerID);
+            applyMaskReadSideEffect();
             if (!layer || !layer.mask) return null;
             if (state.corruptVerifiedMaskOnLayerId === layerID) {
                 return {
@@ -300,8 +574,10 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
         },
         async createImageDataFromBuffer(data, options) {
             state.createImageDataCalls = (state.createImageDataCalls || 0) + 1;
-            state.imageDataCreated += 1;
             if (state.failCreateImageDataOnCall === state.createImageDataCalls) throw new Error('createImageDataFromBuffer failed');
+            // Count only buffers that were actually returned to the caller; a rejected
+            // creation has no ImageData handle for the script to dispose.
+            state.imageDataCreated += 1;
             const components = options.components;
             if (data.length !== options.width * options.height * components) throw new Error('wrong buffer length');
             const sixteen = data instanceof Uint16Array;
@@ -367,6 +643,8 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             return commands.map(cmd => {
                 if (cmd && cmd._obj === 'select' && Array.isArray(cmd._target) && cmd._target[0] && cmd._target[0]._ref === 'layer') {
                     state.selectedLayerId = cmd._target[0]._id;
+                    const selected = findLayerById(state.selectedLayerId);
+                    if (selected) doc.activeLayers = [selected];
                     return {};
                 }
                 if (cmd && cmd._obj === 'make' && cmd.using && cmd.using._enum === 'userMaskEnabled') {
@@ -409,6 +687,8 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             throw new Error('[photoshop-busy] Photoshop stayed busy for 10 seconds and would not let the plugin work. Nothing was changed in the document by this call.');
         }
         doc.changedInScript = false;
+        doc._beginHistoryStep();
+
         const fn = new Function(
             'app', 'action', 'core', 'imaging', 'constants', 'doc', 'require',
             `return (async () => {
@@ -422,11 +702,18 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
         let value;
         try {
             value = await fn(app, action, core, imaging, CONSTANTS, doc, requireInScript);
+            state.lastScriptValue = value;
         } catch (error) {
-            if (doc.changedInScript) state.historySteps.push(`Agent: ${payload.historyName}`);
+            if (doc.changedInScript) {
+                state.historySteps.push(`Agent: ${payload.historyName}`);
+                doc._commitHistoryStep();
+            }
             throw new Error(`The script failed: ${error.message}`);
         }
-        if (doc.changedInScript) state.historySteps.push(`Agent: ${payload.historyName}`);
+        if (doc.changedInScript) {
+            state.historySteps.push(`Agent: ${payload.historyName}`);
+            doc._commitHistoryStep();
+        }
         return {
             result: value === undefined ? null : value,
             status: { documentId: doc.id, documentName: doc.name, historyStep: state.historySteps[state.historySteps.length - 1] || 'Open', sinceLastCall: [] }
@@ -470,7 +757,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
     }
 
     // findLayerById is exported on fake for test inspection of nested layer hierarchy
-    return { state, doc, other, app, bridge, grayOf, findLayerById, constants: CONSTANTS };
+    return { state, doc, other, app, bridge, grayOf, findLayerById, findLayerByName, constants: CONSTANTS };
 }
 
 const silent = { info() {}, warn() {}, error() {} };

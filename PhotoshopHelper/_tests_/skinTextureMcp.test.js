@@ -16,11 +16,10 @@ const { createAgentService, resolveAgentPaths } = require('../agent');
 const { createMcpRouter } = require('../mcp-server');
 const { createFakePhotoshop } = require('./skinTextureFakes');
 
-// These tests need formulas.wasm, which is not kept in git. Without it they are skipped
-// (a CommonJS module may return early; the tests below are then never registered).
-const missingWasmCore = require('../skin-texture/wasm-loader.js').checkWasmCore();
+// Lifecycle tests require private binaries; corrupt present binaries remain hard failures.
+const missingWasmCore = require('./skinTextureTestSupport').missingBinaryReason();
 if (missingWasmCore) {
-    test('skin texture tests need formulas.wasm', { skip: missingWasmCore }, () => {});
+    test('skin texture private binary prerequisite', { skip: missingWasmCore }, () => {});
     return;
 }
 
@@ -94,6 +93,22 @@ test('tools/list publishes the four skin texture tools next to the existing ones
     assert.deepEqual(start.inputSchema.required, ['task_id', 'request_id', 'rect', 'px_per_mm']);
     assert.equal('outputs' in start.inputSchema.properties, false, 'outputs must not be in published start schema');
     assert.ok('recipe' in start.inputSchema.properties, 'recipe is in start schema');
+    assert.deepEqual(start.inputSchema.properties.recipe.enum, ['skin_three_v2']);
+    assert.deepEqual(Object.keys(start.inputSchema.properties.params.properties).sort(), ['azimuthDeg', 'elevationDeg', 'seed']);
+    assert.equal(start.inputSchema.properties.params.additionalProperties, false);
+    assert.deepEqual(start.inputSchema.properties.params.properties.seed, { type: 'integer', minimum: 0, maximum: 4294967295 });
+    const fields = start.inputSchema.properties.fields;
+    assert.deepEqual(fields.required, ['face']);
+    assert.equal(fields.additionalProperties, false);
+    assert.deepEqual(fields.properties.face.required, ['eyes', 'noseTip', 'mouth', 'chin']);
+    assert.equal(fields.properties.face.additionalProperties, false);
+    assert.equal(fields.properties.face.properties.eyes.minItems, 2);
+    assert.equal(fields.properties.face.properties.eyes.maxItems, 2);
+    assert.equal(fields.properties.face.properties.eyes.items.minItems, 2);
+    assert.equal(fields.properties.face.properties.eyes.items.maxItems, 2);
+    assert.match(start.description, /Formula 1 is visible/);
+    assert.match(start.description, /Formula 2 is hidden/);
+    assert.match(start.description, /Formula 3 is hidden/);
 
     const apply = tools.find(t => t.name === 'ps_skin_texture_apply');
     assert.ok('mask_source' in apply.inputSchema.properties, 'mask_source is in apply schema');
@@ -105,8 +120,11 @@ test('start, status and apply work end to end through the MCP router', async con
     const started = await callTool('ps_start_task', { intent: 'add skin texture' });
     const taskId = started.text.match(/(task-[a-f0-9]+)/)[1];
 
+    // Use real MCP JSON routing for face fields, including fractional/out-of-patch points.
+    const face = { eyes: [[-12.5, 10], [90, 12]], noseTip: [40, 50], mouth: [[20, 80], [70, 80]], chin: [45, 110], yawDeg: 9 };
     const job = await callTool('ps_skin_texture_start', {
-        task_id: taskId, request_id: 'cheek-1', rect: { x: 12, y: 8, width: 40, height: 30 }, px_per_mm: 5
+        task_id: taskId, request_id: 'cheek-1', rect: { x: 12, y: 8, width: 40, height: 30 }, px_per_mm: 5,
+        params: { seed: 0, azimuthDeg: 42, elevationDeg: 25 }, fields: { face }
     });
     assert.ok(!job.result.isError, job.text);
 
@@ -117,22 +135,26 @@ test('start, status and apply work end to end through the MCP router', async con
         await new Promise(resolve => setTimeout(resolve, 20));
     }
     assert.equal(status.json.phase, 'ready', status.text);
+    assert.deepEqual(status.json.formulas.formula_1.params.fields, { face });
+    assert.equal(status.json.formulas.formula_1.params.seed, 0);
+    assert.equal(status.json.formulas.formula_2.params.fields, undefined);
+    assert.equal(status.json.formulas.formula_3.params.fields, undefined);
 
     // Applying without mask_source on first write is refused
     const noMask = await callTool('ps_skin_texture_apply', { task_id: taskId, job_id: job.json.job_id });
     assert.equal(noMask.result.isError, true);
     assert.equal(noMask.json.error.code, 'MASK_SOURCE_REQUIRED');
 
-    // Applying with selection mask_source writes Skin group with 4 components
+    // Applying with selection mask_source writes Skin group with 5 components
     const applied = await callTool('ps_skin_texture_apply', {
         task_id: taskId,
         job_id: job.json.job_id,
         mask_source: { kind: 'selection' }
     });
     assert.equal(applied.json.phase, 'applied', applied.text);
-    assert.equal(applied.json.recipe_id, 'skin_pair_v1');
+    assert.equal(applied.json.recipe_id, 'skin_three_v2');
     assert.ok(fake.doc.layers.some(layer => layer.name.startsWith('Skin')));
-    assert.equal(applied.json.apply.layers.length, 4);
+    assert.equal(applied.json.apply.layers.length, 5);
 
     // Legacy outputs are refused before computing
     const legacyStart = await callTool('ps_skin_texture_start', {
@@ -158,12 +180,12 @@ test('through the MCP router: the descriptions state the request_id limits and t
     const { tools } = await rpc('tools/list', {});
     const describe = name => tools.find(tool => tool.name === name).description;
     assert.match(describe('ps_skin_texture_start'), /REQUEST_ALREADY_USED/);
-    assert.match(describe('ps_skin_texture_start'), /at most 100 different/);
+    assert.match(describe('ps_skin_texture_start'), /At most 100 different/);
     assert.match(describe('ps_skin_texture_start'), /last 2 job records/);
     assert.match(describe('ps_skin_texture_status'), /preparing_write/);
     assert.match(describe('ps_skin_texture_status'), /can_cancel_without_change/);
     assert.match(describe('ps_skin_texture_cancel'), /preparing_write/);
-    assert.match(describe('ps_skin_texture_apply'), /never sent by itself/);
+    assert.match(describe('ps_skin_texture_apply'), /never sent automatically/);
 
     const started = await callTool('ps_start_task', { intent: 'add skin texture' });
     const taskId = started.text.match(/(task-[a-f0-9]+)/)[1];

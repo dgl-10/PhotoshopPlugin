@@ -12,7 +12,7 @@ const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { computeSkinPairV1 } = require('../skin-texture/recipe-worker-engine.js');
+const { computeSkinThreeV2 } = require('../skin-texture/recipe-worker-engine.js');
 const recipeCatalog = require('../skin-texture/recipe-catalog');
 const wasmLoader = require('../skin-texture/wasm-loader.js');
 const SkinExchange = require('../skin-texture/exchange.js');
@@ -20,11 +20,10 @@ const exchangeFiles = require('../skin-texture/exchange-files');
 const { DEFAULT_OPTIONS } = require('../skin-texture/job-manager');
 const { makeHarness: makeRawHarness, holdPublish } = require('./skinTextureFakes');
 
-// These tests need formulas.wasm, which is not kept in git. Without it they are skipped
-// (a CommonJS module may return early; the tests below are then never registered).
-const missingWasmCore = wasmLoader.checkWasmCore();
+// Lifecycle tests require private binaries; corrupt present binaries remain hard failures.
+const missingWasmCore = require('./skinTextureTestSupport').missingBinaryReason();
 if (missingWasmCore) {
-    test('skin texture tests need formulas.wasm', { skip: missingWasmCore }, () => {});
+    test('skin texture private binary prerequisite', { skip: missingWasmCore }, () => {});
     return;
 }
 
@@ -71,15 +70,17 @@ function heldWorkers() {
         return worker;
     };
     // Compute what the real worker would send, and send it.
-    const finish = worker => {
-        const result = computeSkinPairV1(worker.workerData, () => {});
+    const finish = async (worker, overrides = {}) => {
+        const result = await computeSkinThreeV2(worker.workerData, () => {});
         worker.emit('message', {
             type: 'result',
             files: result.files,
             checksums: result.checksums,
             stats: result.stats,
             timings: result.timings,
-            recipe: 'skin_pair_v1'
+            cores: result.cores,
+            recipe: 'skin_three_v2',
+            ...overrides
         });
     };
     return { factory, created, finish };
@@ -99,6 +100,43 @@ function applyScripts(h) {
  */
 function textureLayers(h) {
     return h.fake.doc.layers.filter(layer => layer.name.startsWith('Skin'));
+}
+
+/**
+ * Flatten the current Photoshop layer tree so tests can compare old object IDs and references.
+ *
+ * @param {object} h - Harness.
+ * @returns {object[]} All document layers in depth-first order.
+ */
+function documentLayers(h) {
+    function walk(siblings) {
+        const found = [];
+        for (const layer of siblings || []) {
+            found.push(layer);
+            found.push(...walk(layer.layers));
+        }
+        return found;
+    }
+    return walk(h.fake.doc.layers);
+}
+
+/**
+ * Capture stable layer-tree values, including parentage and sibling order, for rollback tests.
+ *
+ * @param {object[]} siblings - The root or group child layers to describe.
+ * @returns {object[]} A recursive tree of old layer properties and IDs.
+ */
+function layerTreeSnapshot(siblings) {
+    return Array.from(siblings || []).map(layer => ({
+        id: layer.id,
+        name: layer.name,
+        kind: layer.kind,
+        visible: layer.visible,
+        opacity: layer.opacity,
+        blendMode: String(layer.blendMode),
+        parentId: layer.parent ? layer.parent.id : null,
+        children: layerTreeSnapshot(layer.layers)
+    }));
 }
 
 /**
@@ -125,16 +163,29 @@ test('a full cycle: quick start, background computation, one exact write', async
     assert.equal(started.isError, false, started.text);
     assert.match(started.json.job_id, /^skt-[0-9a-f]{12}$/);
     assert.ok(['checking_document', 'computing', 'ready'].includes(started.json.phase));
-    assert.equal(started.json.recipe_id, 'skin_pair_v1');
-    assert.deepEqual(started.json.outputs, ['formula_2_pores', 'formula_2_furrows', 'formula_1_pores', 'formula_1_furrows']);
+    assert.equal(started.json.recipe_id, 'skin_three_v2');
+    assert.deepEqual(started.json.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_dermis', 'formula_3_pores', 'formula_3_furrows']);
 
     const ready = await h.waitForPhase(taskId, started.json.job_id, 'ready');
     assert.equal(applyScripts(h).length, 0, 'a finished computation writes nothing by itself');
     assert.equal(textureLayers(h).length, 0);
-    assert.equal(ready.recipe_id, 'skin_pair_v1');
+    assert.equal(ready.recipe_id, 'skin_three_v2');
     assert.equal(ready.core.matches_pinned, true);
     assert.ok(ready.formulas.formula_1);
     assert.ok(ready.formulas.formula_2);
+    assert.ok(ready.formulas.formula_3);
+    // Provenance must remain visible after the worker has exited, for every formula.
+    for (const definition of Object.values(recipeCatalog.FORMULA_DEFINITIONS)) {
+        const formula = ready.formulas[definition.id];
+        assert.equal(formula.formula_version, 2);
+        assert.equal(formula.variant, definition.variant);
+        assert.equal(formula.variant_version, definition.variantVersion);
+        assert.equal(formula.sha256, definition.sha256);
+        assert.equal(formula.visible, definition.visible);
+        const core = ready.core.formulas.find(item => item.formula_id === definition.id);
+        assert.equal(core.sha256, definition.sha256);
+        assert.equal(core.name, definition.variant);
+    }
     assert.ok(Array.isArray(ready.diagnostics.notes));
     assert.equal(ready.document.color_profile, 'sRGB IEC61966-2.1');
     assert.ok(!/base64|"data"/.test(JSON.stringify(ready)), 'no pixels in the answer');
@@ -142,49 +193,30 @@ test('a full cycle: quick start, background computation, one exact write', async
     const applied = await h.call('ps_skin_texture_apply', { task_id: taskId, job_id: ready.job_id, mask_source: { kind: 'selection' } });
     assert.equal(applied.isError, false, applied.text);
     assert.equal(applied.json.phase, 'applied');
-    assert.equal(applied.json.apply.layers.length, 4);
+    assert.equal(applied.json.apply.layers.length, 5);
     assert.ok(applied.json.apply.structure);
     assert.equal(applied.json.apply.structure.mainGroup.name.startsWith('Skin'), true);
-    assert.equal(applied.json.apply.structure.subgroups.length, 2);
+    assert.equal(applied.json.apply.structure.subgroups.length, 3);
 
     // The pixels are the formulas core's own, exactly over the rect, opaque and gray.
-    const wasmInstance = wasmLoader.createWasmInstance();
-    const commonReq = {
-        width: RECT.width,
-        height: RECT.height,
-        document: { width: 600, height: 400 },
-        rect: RECT,
-        pxPerMm: 6,
-        seed: 2,
-        lighting: { azimuthDeg: 315, elevationDeg: 45 },
-        zone: 'cheek',
-        params: { mode: 'lines', seed: 2, azimuthDeg: 315, elevationDeg: 45 },
-        outputs: ['pores', 'furrows']
-    };
-    const res1 = wasmLoader.executeWasm({ ...commonReq, presets: ['candidate1'] }, wasmInstance);
-    const res2 = wasmLoader.executeWasm({ ...commonReq, presets: ['candidate2'] }, wasmInstance);
-    const expectedOutputs = {
-        formula_1: { pores: res1.layers.formula_1_pores, furrows: res1.layers.formula_1_furrows },
-        formula_2: { pores: res2.layers.formula_2_pores, furrows: res2.layers.formula_2_furrows }
-    };
-
-    // Walk the document's real layer tree instead of trusting the script's own report. Both
-    // formula groups hold layers named "Pores" and "Microrelief", so only the group a layer
-    // actually sits in tells which formula the person sees; a script that put Formula 1
-    // pixels into the visible "Formula 2" group must fail here.
-    const formulaOfGroup = {
-        'Formula 2': { formulaId: 'formula_2', visible: true },
-        'Formula 1': { formulaId: 'formula_1', visible: false }
-    };
-    const outputOfLayer = { Pores: 'pores', Microrelief: 'furrows' };
+    const expectedOutputs = {};
+    // Compare Photoshop's actual pixel buffers with each variant's declared source layer.
+    for (const formula of Object.values(recipeCatalog.FORMULA_DEFINITIONS)) {
+        const request = recipeCatalog.resolveFormulaParams(formula.id, { width: 600, height: 400 }, RECT, 6, { seed: 2 });
+        const computed = wasmLoader.executeWasm(formula.id, request);
+        expectedOutputs[formula.id] = Object.fromEntries(formula.layers.map(layer => [layer.output, computed.layers[layer.sourceLayerId]]));
+    }
+    const formulaOfGroup = Object.fromEntries(Object.values(recipeCatalog.FORMULA_DEFINITIONS)
+        .map(formula => [formula.name, { formulaId: formula.id, visible: formula.visible, layers: formula.layers }]));
+    const outputOfLayer = { Pores: 'pores', Unevenness: 'unevenness', Dermis: 'dermis', Furrows: 'furrows' };
     const skinGroup = h.fake.doc.layers.find(layer => layer.kind === 'group' && layer.name === `Skin [${ready.job_id}]`);
     assert.ok(skinGroup, 'the Skin group is in the task document');
-    assert.deepEqual(skinGroup.layers.map(group => group.name), ['Formula 2', 'Formula 1']);
+    assert.deepEqual(skinGroup.layers.map(group => group.name), ['Formula 1', 'Formula 2', 'Formula 3']);
     const treeLayerIds = [];
     for (const group of skinGroup.layers) {
         const formula = formulaOfGroup[group.name];
         assert.equal(group.visible, formula.visible, `${group.name} visibility`);
-        assert.deepEqual(group.layers.map(layer => layer.name), ['Pores', 'Microrelief'], group.name);
+        assert.deepEqual(group.layers.map(layer => layer.name), formula.layers.map(layer => layer.layerName), group.name);
         for (const layer of group.layers) {
             const label = `${group.name} / ${layer.name}`;
             assert.deepEqual(layer.bounds, { left: RECT.x, top: RECT.y, right: RECT.x + RECT.width, bottom: RECT.y + RECT.height }, label);
@@ -205,7 +237,13 @@ test('a full cycle: quick start, background computation, one exact write', async
     // The answer names exactly the layers that are in the tree.
     const byId = (a, b) => a - b;
     assert.deepEqual(applied.json.apply.layers.map(layer => layer.id).sort(byId), treeLayerIds.sort(byId));
-    assert.deepEqual(h.fake.state.historySteps, [`Agent: skin texture ${ready.job_id}: recipe skin_pair_v1`]);
+    for (const layer of applied.json.apply.layers) {
+        const definition = recipeCatalog.FORMULA_DEFINITIONS[layer.formulaId];
+        assert.equal(layer.formulaVersion, 2);
+        assert.equal(layer.componentKey, `${layer.formulaId}_${layer.output}`);
+        assert.deepEqual(layer.core, { name: definition.variant, version: definition.variantVersion, sha256: definition.sha256 });
+    }
+    assert.deepEqual(h.fake.state.historySteps, [`Agent: skin texture ${ready.job_id}: recipe skin_three_v2`]);
     assert.equal(h.fake.state.imageDataDisposed, h.fake.state.imageDataCreated, 'all images are disposed');
     assert.equal(h.fake.state.nestedModalCalls, 0, 'no nested executeAsModal');
 
@@ -256,6 +294,26 @@ test('repeated and simultaneous starts share one job; a reused key with other ar
     assert.equal(busy.isError, true);
     assert.equal(busy.json.error.code, 'SLOT_BUSY');
     assert.equal(workers.created.length, 1, 'no second computation');
+});
+
+test('face member order shares one request; changed landmarks conflict before any second computation', async context => {
+    const workers = heldWorkers();
+    const h = makeHarness(context, { createWorker: workers.factory });
+    const taskId = await h.startTask();
+    const face = { eyes: [[10, 10], [90, 12]], noseTip: [50, 50], mouth: [[30, 80], [70, 80]], chin: [50, 110] };
+    const original = await h.call('ps_skin_texture_start', startArgs(taskId, { fields: { face } }));
+    assert.equal(original.isError, false, original.text);
+    const reordered = { chin: face.chin, mouth: face.mouth, eyes: face.eyes, noseTip: face.noseTip };
+    const repeat = await h.call('ps_skin_texture_start', startArgs(taskId, { fields: { face: reordered } }));
+    assert.equal(repeat.json.job_id, original.json.job_id);
+    assert.equal(repeat.json.repeated_request, true);
+    const changed = await h.call('ps_skin_texture_start', startArgs(taskId, { fields: { face: { ...face, noseTip: [51, 50] } } }));
+    assert.equal(changed.json.error.code, 'REQUEST_ID_CONFLICT');
+    assert.equal(workers.created.length, 1);
+    // Fields remain document coordinates and reach only the declared face-capable variant.
+    assert.deepEqual(workers.created[0].workerData.formulaParams.formula_1.fields, { face });
+    assert.equal(workers.created[0].workerData.formulaParams.formula_2.fields, undefined);
+    assert.equal(workers.created[0].workerData.formulaParams.formula_3.fields, undefined);
 });
 
 test('simultaneous applies send one write', async context => {
@@ -326,20 +384,11 @@ test('a 16-bit document gets the verified 16-bit mapping with its own profile', 
     assert.equal(layer.pixels.componentSize, 16);
     assert.equal(layer.pixels.colorProfile, 'ProPhoto RGB');
     assert.equal(layer.pixels.fullRange, false);
-    const wasmRes = wasmLoader.executeWasm({
-        width: RECT.width,
-        height: RECT.height,
-        document: { width: 600, height: 400 },
-        rect: RECT,
-        pxPerMm: 6,
-        seed: 2,
-        lighting: { azimuthDeg: 315, elevationDeg: 45 },
-        zone: 'cheek',
-        params: { mode: 'lines', seed: 2, azimuthDeg: 315, elevationDeg: 45 },
-        presets: [firstLayerMeta.formulaId === 'formula_1' ? 'candidate1' : 'candidate2'],
-        outputs: [firstLayerMeta.output]
-    });
-    const gray = wasmRes.layers[firstLayerMeta.formulaId + '_' + firstLayerMeta.output];
+    const definition = recipeCatalog.FORMULA_DEFINITIONS[firstLayerMeta.formulaId];
+    const source = definition.layers.find(item => item.output === firstLayerMeta.output);
+    const request = recipeCatalog.resolveFormulaParams(firstLayerMeta.formulaId, { width: 600, height: 400 }, RECT, 6, { seed: 2 });
+    const wasmRes = wasmLoader.executeWasm(firstLayerMeta.formulaId, request);
+    const gray = wasmRes.layers[source.sourceLayerId];
     for (let i = 0; i < gray.length; i++) {
         assert.equal(layer.pixels.data[i * 4], Math.round(gray[i] * 32768 / 255));
         assert.equal(layer.pixels.data[i * 4 + 3], 32768);
@@ -368,7 +417,7 @@ test('the computation runs off the main thread; calls stay short', async context
     }, 10);
     context.after(() => clearInterval(timer));
 
-    const started = await h.call('ps_skin_texture_start', startArgs(taskId, { rect: { x: 0, y: 0, width: 512, height: 384 }, params: { mode: 'cells' } }));
+    const started = await h.call('ps_skin_texture_start', startArgs(taskId, { rect: { x: 0, y: 0, width: 512, height: 384 }, params: { seed: 17 } }));
     let statusCalls = 0;
     let slowestStatus = 0;
     let computeMs = 0;
@@ -420,7 +469,7 @@ test('a long computation never holds a call; cancel stops it and is safe to repe
     assert.match(again.json.cancel, /Nothing to cancel/);
 
     // A late result from the stopped worker is ignored.
-    workers.finish(workers.created[0]);
+    await workers.finish(workers.created[0]);
     const after = await h.call('ps_skin_texture_apply', { task_id: taskId, job_id: started.json.job_id });
     assert.equal(after.json.refused.code, 'NOT_READY_CANCELLED');
     assert.equal(applyScripts(h).length, 0);
@@ -473,6 +522,27 @@ test('a failing or vanishing worker fails the job', async context => {
     const gone = await h.waitForPhase(taskId, second.json.job_id, 'failed');
     assert.match(gone.error.message, /without a result/);
 });
+
+for (const corrupt of ['missing', 'mismatched']) {
+    test(`worker result with ${corrupt} formula provenance fails before publication`, async context => {
+        const workers = heldWorkers();
+        const h = makeHarness(context, { createWorker: workers.factory });
+        const taskId = await h.startTask();
+        const started = await h.call('ps_skin_texture_start', startArgs(taskId));
+        await h.waitForPhase(taskId, started.json.job_id, 'computing');
+        // Supply otherwise genuine exchange bytes so provenance validation is the only
+        // failing condition; replacing a pinned digest must never reach Photoshop.
+        const cores = Object.fromEntries(recipeCatalog.getFormulasCoreIdentity().formulas.map(core => [core.formulaId, core]));
+        if (corrupt === 'missing') delete cores.formula_2;
+        else cores.formula_3 = { ...cores.formula_3, sha256: '0'.repeat(64) };
+        await workers.finish(workers.created[0], { cores });
+        const failed = await h.waitForPhase(taskId, started.json.job_id, 'failed');
+        assert.equal(failed.error.code, 'COMPUTE_FAILED');
+        assert.deepEqual(h.ownFiles(), []);
+        assert.equal(applyScripts(h).length, 0);
+        assert.equal(h.fake.doc.layers.length, 1);
+    });
+}
 
 test('dispose stops workers and removes own files', async context => {
     const workers = heldWorkers();
@@ -640,7 +710,10 @@ test('a delayed answer: apply returns within its budget, status follows the writ
     const pending = await h.call('ps_skin_texture_apply', { task_id: taskId, job_id: ready.job_id });
     assert.ok(Date.now() - t0 < 1000);
     assert.equal(pending.isError, false);
-    assert.equal(pending.json.phase, 'applying');
+    assert.ok(['preparing_write', 'applying'].includes(pending.json.phase));
+    // Five asynchronous file publications can outlast the call budget on a busy disk.
+    // Wait for the actual send boundary before asserting cancellation cannot undo it.
+    await h.waitForPhase(taskId, ready.job_id, 'applying');
 
     const cancel = await h.call('ps_skin_texture_cancel', { task_id: taskId, job_id: ready.job_id });
     assert.equal(cancel.json.phase, 'applying');
@@ -652,7 +725,7 @@ test('a delayed answer: apply returns within its budget, status follows the writ
 
     release();
     const done = await h.waitForPhase(taskId, ready.job_id, 'applied');
-    assert.equal(done.apply.layers.length, 4);
+    assert.equal(done.apply.layers.length, 5);
     await h.call('ps_skin_texture_apply', { task_id: taskId, job_id: ready.job_id });
     assert.equal(applyScripts(h).length, 1);
     assert.equal(textureLayers(h).length, 1);
@@ -678,7 +751,7 @@ test('a lost answer leaves the outcome unknown, never repeats the write, and cle
     const cancel = await h.call('ps_skin_texture_cancel', { task_id: taskId, job_id: ready.job_id });
     assert.match(cancel.json.cancel, /unknown/);
 
-    assert.equal(h.ownFiles().length, 4, 'files stay while a late script could still read them');
+    assert.equal(h.ownFiles().length, 5, 'files stay while a late script could still read them');
     await new Promise(resolve => setTimeout(resolve, 40));
     h.jobs._sweep();
     await new Promise(resolve => setTimeout(resolve, 40));
@@ -740,22 +813,45 @@ test('when its own layers cannot be removed the outcome is reported as unknown, 
     const h = makeHarness(context);
     const taskId = await h.startTask();
     const ready = await readyJob(h, taskId);
+    const originalIds = new Set(documentLayers(h).map(layer => layer.id));
     h.fake.state.failPutPixelsOnCall = 2;
     h.fake.state.failAllDeletes = true;
     const answer = await h.call('ps_skin_texture_apply', { task_id: taskId, job_id: ready.job_id });
     assert.equal(answer.json.phase, 'apply_unknown');
-    assert.equal(answer.json.apply.leftover_layer_ids.length, 2);
+    const scriptResult = h.fake.state.lastScriptValue;
+    const remainingIds = scriptResult.leftover.slice().sort((a, b) => a - b);
+    const createdIds = scriptResult.createdLayerIds.slice().sort((a, b) => a - b);
+
+    // The new explicit hierarchy is already Skin + Formula 3 + two components when the
+    // second pixel write fails. A failed cleanup must name every remaining object from this
+    // attempt and must never classify the pre-existing document layer as an orphan.
+    assert.equal(answer.json.apply.leftover_layer_ids.length, 4);
+    assert.deepEqual(remainingIds, createdIds);
+    assert.deepEqual(answer.json.apply.leftover_layer_ids.slice().sort((a, b) => a - b), createdIds);
+    assert.ok(remainingIds.every(id => !originalIds.has(id)));
+    assert.deepEqual(documentLayers(h).filter(layer => remainingIds.includes(layer.id)).map(layer => layer.id).sort((a, b) => a - b), createdIds);
 });
 
-test('a failure before the first layer changes nothing', async context => {
+test('a first component data failure rolls back its newly created empty groups', async context => {
     const h = makeHarness(context);
     const taskId = await h.startTask();
     const ready = await readyJob(h, taskId);
+    const originalLayers = documentLayers(h);
+    const originalIds = originalLayers.map(layer => layer.id).sort((a, b) => a - b);
+    const originalTree = layerTreeSnapshot(h.fake.doc.layers);
     h.fake.state.failCreateImageDataOnCall = 1;
     const answer = await h.call('ps_skin_texture_apply', { task_id: taskId, job_id: ready.job_id });
     assert.equal(answer.json.phase, 'failed');
-    assert.equal(h.fake.doc.layers.length, 1);
-    assert.equal(h.fake.state.historySteps.length, 0);
+    assert.deepEqual(layerTreeSnapshot(h.fake.doc.layers), originalTree);
+    assert.deepEqual(documentLayers(h).map(layer => layer.id).sort((a, b) => a - b), originalIds);
+    for (const original of originalLayers) assert.equal(h.fake.findLayerById(original.id), original);
+
+    // Group creation happened before the first pixel buffer was requested. The failure path
+    // must still report a clean rollback, leave no attempt-owned layer, and dispose each
+    // ImageData handle that was actually returned to the script.
+    assert.equal(h.fake.state.lastScriptValue.changed, 'rolled_back');
+    assert.deepEqual(h.fake.state.lastScriptValue.leftover, []);
+    assert.equal(h.fake.state.imageDataDisposed, h.fake.state.imageDataCreated, 'all returned images are disposed');
 });
 
 test('only provably own orphans are removed from the data folder', async context => {
@@ -813,7 +909,7 @@ async function readyHeld(h, workers, taskId, extra) {
     const started = await h.call('ps_skin_texture_start', startArgs(taskId, extra));
     assert.equal(started.isError, false, started.text);
     await h.waitForPhase(taskId, started.json.job_id, 'computing');
-    workers.finish(workers.created.find(worker => worker.workerData.meta.jobId === started.json.job_id));
+    await workers.finish(workers.created.find(worker => worker.workerData.meta.jobId === started.json.job_id));
     return h.waitForPhase(taskId, started.json.job_id, 'ready');
 }
 
@@ -1157,7 +1253,7 @@ test('R2: simultaneous applies during preparation share one attempt and one writ
     await hold.reached;
     hold.release();
     for (const answer of await Promise.all(pending)) assert.equal(answer.json.phase, 'applied', answer.text);
-    assert.equal(hold.calls, 4, 'four file hand-overs');
+    assert.equal(hold.calls, 5, 'five file hand-overs');
     assert.equal(applyScripts(h).length, 1);
     assert.equal(textureLayers(h).length, 1);
 });
@@ -1188,7 +1284,7 @@ test('across the send: once the write was sent, cancel, repeats and the end of t
     h.tasks.abort('stopped by the user');
     release();
     const done = await h.waitForPhase(taskId, ready.job_id, 'applied');
-    assert.equal(done.apply.layers.length, 4);
+    assert.equal(done.apply.layers.length, 5);
     assert.equal(applyScripts(h).length, 1);
     assert.equal(textureLayers(h).length, 1);
 });
@@ -1218,7 +1314,7 @@ test('R3: on quit, files of a write with an unknown outcome stay until deadline 
     const unknown = await h.call('ps_skin_texture_apply', { task_id: taskId, job_id: ready.job_id });
     assert.equal(unknown.json.phase, 'apply_unknown');
     const files = h.ownFiles();
-    assert.equal(files.length, 4);
+    assert.equal(files.length, 5);
 
     await h.jobs.dispose();
     await settled();
@@ -1253,7 +1349,7 @@ test('R3: the same holds when only the delayed-removal list still knows the file
     assert.equal(gone.json.error.code, 'JOB_UNKNOWN', 'the record of the unknown write was dropped');
     assert.equal(gone.json.error.details.phase, 'apply_unknown');
     const files = h.ownFiles();
-    assert.equal(files.length, 4);
+    assert.equal(files.length, 5);
     await h.jobs.dispose();
     await settled();
     assert.deepEqual(h.ownFiles(), files);
@@ -1265,7 +1361,7 @@ test('R3: once deadline plus grace has passed, quitting removes those files', as
     const ready = await readyJob(h, taskId);
     loseApplyAnswers(h);
     assert.equal((await h.call('ps_skin_texture_apply', { task_id: taskId, job_id: ready.job_id })).json.phase, 'apply_unknown');
-    assert.equal(h.ownFiles().length, 4);
+    assert.equal(h.ownFiles().length, 5);
     await new Promise(resolve => setTimeout(resolve, 40));
     await h.jobs.dispose();
     assert.deepEqual(h.ownFiles(), []);

@@ -1,178 +1,201 @@
 'use strict';
 
-/**
- * Active worker computation, exchange format, and adapter request checks for the
- * standard skin texture recipe (task07).
- */
-
+/** Validate request contracts independently of private formulas, plus the SKTX exchange format. */
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
-const { Worker } = require('node:worker_threads');
-
-const SkinExchange = require('../skin-texture/exchange.js');
+const SkinExchange = require('../skin-texture/exchange');
 const adapter = require('../skin-texture/core-adapter');
-const recipeCatalog = require('../skin-texture/recipe-catalog');
-const { WORKER_FILE } = require('../skin-texture/job-manager');
+const catalog = require('../skin-texture/recipe-catalog');
+const { Worker } = require('node:worker_threads');
+const { missingBinaryReason, runWorker } = require('./skinTextureTestSupport');
+const good = { rect: { x: 20, y: 30, width: 24, height: 20 }, px_per_mm: 4 };
+const face = { eyes: [[-10, 20], [80, 20]], noseTip: [35, 65], mouth: [[10, 90], [60, 90]], chin: [35, 125], yawDeg: 12, pitchDeg: -5 };
 
-// These tests need formulas.wasm, which is not kept in git. Without it they are skipped
-// (a CommonJS module may return early; the tests below are then never registered).
-const missingWasmCore = require('../skin-texture/wasm-loader.js').checkWasmCore();
-if (missingWasmCore) {
-    test('skin texture tests need formulas.wasm', { skip: missingWasmCore }, () => {});
-    return;
-}
+// Face coordinates remain document-relative even when the patch misses several landmarks.
+test('three-formula defaults, lighting, fields and canonical identity', () => {
+    const implicit = adapter.checkRequestShape(good);
+    const explicit = adapter.checkRequestShape({ ...good, recipe: 'skin_three_v2' });
+    assert.equal(implicit.recipe, 'skin_three_v2');
+    assert.equal(implicit.key, explicit.key);
+    assert.deepEqual(implicit.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_dermis', 'formula_3_pores', 'formula_3_furrows']);
+    const withFace = adapter.checkRequestShape({ ...good, fields: { face } });
+    assert.notEqual(withFace.key, implicit.key);
+    const reordered = { chin: face.chin, mouth: face.mouth, noseTip: face.noseTip, eyes: face.eyes, pitchDeg: -5, yawDeg: 12 };
+    assert.equal(adapter.checkRequestShape({ ...good, fields: { face: reordered } }).key, withFace.key);
+    const changed = adapter.checkRequestShape({ ...good, fields: { face: { ...face, yawDeg: 13 } } });
+    assert.notEqual(changed.key, withFace.key);
+    const normalized = adapter.normalizeForDocument(withFace, { width: 120, height: 100 });
+    for (const id of ['formula_1', 'formula_2', 'formula_3']) {
+        const request = normalized.coreParams[id];
+        assert.equal(request.width, good.rect.width);
+        assert.equal(request.height, good.rect.height);
+        assert.deepEqual(request.document, { width: 120, height: 100 });
+        assert.deepEqual(request.rect, good.rect);
+        assert.equal(request.seed, 1);
+        assert.deepEqual(request.lighting, { azimuthDeg: 315, elevationDeg: 45 });
+        if (id === 'formula_1') assert.deepEqual(request.fields, { face });
+        else assert.equal(request.fields, undefined);
+    }
+    assert.equal(normalized.work.rectPixels, 480);
+    assert.ok(Number.isFinite(normalized.work.retainedOutputBytes));
+    assert.equal(normalized.work.radius, undefined);
+    // Normalization must copy fields so a caller cannot mutate a worker request afterwards.
+    normalized.coreParams.formula_1.fields.face.chin[0] = 999;
+    assert.equal(face.chin[0], 35);
+});
 
-const META = { jobId: 'skt-0123456789ab', taskId: 'task-abc123', core: { version: 'task04-1' } };
+// Every rejected argument is caught before a Photoshop probe or a Wasm allocation is needed.
+test('invalid geometry, obsolete recipe/mode, seed, lighting and fields are refused', () => {
+    const invalid = [
+        [{ rect: undefined }, 'INVALID_RECT'],
+        [{ rect: { x: -1, y: 0, width: 4, height: 4 } }, 'INVALID_RECT'],
+        [{ rect: { x: 0, y: 0, width: 4.5, height: 4 } }, 'INVALID_RECT'],
+        [{ rect: { x: 0, y: 0, width: 5000, height: 4000 } }, 'RECT_TOO_LARGE'],
+        [{ rect: { ...good.rect, extra: 1 } }, 'INVALID_RECT'],
+        ...[undefined, 0, Infinity, NaN, 0.24, 401].map(value => [{ px_per_mm: value }, 'INVALID_SCALE']),
+        [{ recipe: 'skin_pair_v1' }, 'INVALID_RECIPE'],
+        ...[[], ['main']].map(value => [{ outputs: value }, 'INVALID_OUTPUTS']),
+        ...[{ mode: 'lines' }, { relief: 2 }, { seed: -1 }, { seed: 4294967296 }, { seed: 1.5 }, { seed: '1' }, { azimuthDeg: Infinity }, { elevationDeg: 4 }, { elevationDeg: 91 }, { elevationDeg: '45' }, []].map(value => [{ params: value }, 'INVALID_PARAMS']),
+        ...[[], { unknown: {} }, { face: {} }, { face: { ...face, extra: 1 } }, { face: { ...face, eyes: [[1, 1], [1, 1]] } }, { face: { ...face, eyes: [[1, 1], [3, 1]] } }, { face: { ...face, chin: [NaN, 20] } }, { face: { ...face, noseTip: [1, 2, 3] } }, { face: { ...face, yawDeg: Infinity } }].map(value => [{ fields: value }, 'INVALID_FIELDS'])
+    ];
+    for (const [overrides, code] of invalid) assert.throws(() => adapter.checkRequestShape({ ...good, ...overrides }), error => error.code === code, JSON.stringify(overrides));
+    for (const seed of [0, 4294967295]) assert.equal(adapter.checkRequestShape({ ...good, params: { seed } }).params.seed, seed);
+    const checked = adapter.checkRequestShape(good);
+    assert.throws(() => adapter.normalizeForDocument(checked, { width: 30, height: 80 }), error => error.code === 'RECT_OUTSIDE_DOCUMENT');
+});
 
-/**
- * Run the real worker once for a recipe request.
- *
- * @param {object} formulaParams - Resolved formula parameters { formula_1, formula_2, common }.
- * @param {string[]} outputs - Output keys.
- * @param {object} rect - Document rectangle.
- * @param {string} [recipe] - Recipe name.
- * @returns {Promise<object>} The result message.
- */
-function runRecipeWorker(formulaParams, outputs, rect, recipe = 'skin_pair_v1') {
-    const doc = formulaParams && formulaParams.formula_1
-        ? { id: 1, width: formulaParams.formula_1.width, height: formulaParams.formula_1.height }
-        : { id: 1, width: 400, height: 400 };
-    return new Promise((resolve, reject) => {
-        const worker = new Worker(WORKER_FILE, {
-            workerData: {
-                recipe,
-                formulaParams,
-                params: formulaParams,
-                outputs,
-                meta: { ...META, document: doc, rect }
+test('main-thread parameter resolution does not compile, instantiate or execute Wasm', () => {
+    const OriginalModule = WebAssembly.Module;
+    const OriginalInstance = WebAssembly.Instance;
+    try {
+        // Fail at the allocation boundary rather than relying on source-text searches.
+        WebAssembly.Module = function forbiddenModule() { throw new Error('main-thread compile'); };
+        WebAssembly.Instance = function forbiddenInstance() { throw new Error('main-thread instance'); };
+        const checked = adapter.checkRequestShape({ ...good, fields: { face } });
+        const normalized = adapter.normalizeForDocument(checked, { width: 120, height: 100 });
+        assert.equal(normalized.coreParams.formula_3.pxPerMm, 4);
+    } finally {
+        WebAssembly.Module = OriginalModule;
+        WebAssembly.Instance = OriginalInstance;
+    }
+});
+
+test('default and explicit recipes produce the same five outputs and versioned metadata', { skip: missingBinaryReason() }, async () => {
+    const document = { width: 120, height: 100 };
+    const normalized = adapter.normalizeForDocument(adapter.checkRequestShape(good), document);
+    const [implicit, explicit] = await Promise.all([
+        runWorker(normalized.coreParams, good.rect, document, undefined),
+        runWorker(normalized.coreParams, good.rect, document, 'skin_three_v2')
+    ]);
+    assert.equal(implicit.recipe, 'skin_three_v2');
+    assert.deepEqual(Object.keys(implicit.files), catalog.RECIPE_COMPONENTS.map(layer => layer.componentKey));
+    for (const component of catalog.RECIPE_COMPONENTS) {
+        const decoded = SkinExchange.decode(implicit.files[component.componentKey]);
+        assert.equal(decoded.header.formula_id, component.formulaId);
+        assert.equal(decoded.header.formula_version, 2);
+        assert.equal(decoded.payload.length, 480);
+        assert.deepEqual(Buffer.from(implicit.files[component.componentKey]), Buffer.from(explicit.files[component.componentKey]));
+        const formula = catalog.FORMULA_DEFINITIONS[component.formulaId];
+        assert.deepEqual(decoded.header.core, { name: formula.variant, version: formula.variantVersion, sha256: formula.sha256 });
+    }
+});
+
+test('cancelling the real coordinator stops its active nested worker tree', { skip: missingBinaryReason(), timeout: 15000 }, async context => {
+    const counterBuffer = new SharedArrayBuffer(4);
+    const counter = new Int32Array(counterBuffer);
+    const document = { width: 1024, height: 1024 };
+    const rect = { x: 0, y: 0, ...document };
+    const normalized = adapter.normalizeForDocument(adapter.checkRequestShape({ rect, px_per_mm: 1.6 }), document);
+    const workerFile = require('../skin-texture/job-manager').WORKER_FILE;
+    // Install an observable heartbeat beneath each real formula worker. A grandchild
+    // remains responsive during synchronous Wasm computation, so an orphaned formula
+    // worker cannot hide behind a blocked JavaScript interval in its own event loop.
+    const bootstrap = `
+        const threads = require('node:worker_threads');
+        const NativeWorker = threads.Worker;
+        const counterBuffer = threads.workerData.counterBuffer;
+        threads.Worker = class ObservedFormulaWorker extends NativeWorker {
+            constructor(filename, options) {
+                const childCode = \`
+                    const { Worker, workerData } = require('node:worker_threads');
+                    new Worker(\\\`const {workerData}=require('node:worker_threads');
+                        const count=new Int32Array(workerData);
+                        setInterval(()=>Atomics.add(count,0,1),10);\\\`,
+                        {eval:true,workerData:workerData.counterBuffer});
+                    require(workerData.filename);
+                \`;
+                super(childCode, { ...options, eval: true,
+                    workerData: { ...options.workerData, counterBuffer, filename } });
             }
-        });
+        };
+        require(threads.workerData.workerFile);
+    `;
+    const worker = new Worker(bootstrap, { eval: true, workerData: {
+        counterBuffer, workerFile, recipe: 'skin_three_v2', formulaParams: normalized.coreParams,
+        meta: { jobId: 'skt-0123456789ab', taskId: 'task-test', document: { id: 7, ...document }, rect }
+    } });
+    context.after(() => worker.terminate());
+    let failure;
+    worker.on('error', error => { failure = error; });
+    const deadline = Date.now() + 10000;
+    while (Atomics.load(counter, 0) < 3) {
+        if (failure) throw failure;
+        assert.ok(Date.now() < deadline, 'the active nested heartbeat starts');
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    await worker.terminate();
+    const stopped = Atomics.load(counter, 0);
+    await new Promise(resolve => setTimeout(resolve, 120));
+    assert.equal(Atomics.load(counter, 0), stopped, 'no descendant remains alive after cancellation');
+});
+
+test('each real formula worker exits before the next formula starts', { skip: missingBinaryReason() }, async context => {
+    const normalized = adapter.normalizeForDocument(adapter.checkRequestShape(good), { width: 120, height: 100 });
+    const workerFile = require('../skin-texture/job-manager').WORKER_FILE;
+    const audit = [];
+    // Wrap Worker only inside the coordinator, retaining actual worker execution and exit
+    // promises. The audit records observable lifetime overlap, rather than GC assumptions.
+    const bootstrap = `
+        const threads = require('node:worker_threads');
+        const NativeWorker = threads.Worker;
+        let active = 0;
+        threads.Worker = class AuditedWorker extends NativeWorker {
+            constructor(filename, options) {
+                super(filename, options);
+                threads.parentPort.postMessage({type:'audit',kind:'start',formula:options.workerData.formulaId,active:++active});
+                this.once('exit',()=>threads.parentPort.postMessage({type:'audit',kind:'exit',formula:options.workerData.formulaId,active:--active}));
+            }
+        };
+        require(threads.workerData.workerFile);
+    `;
+    const worker = new Worker(bootstrap, { eval: true, workerData: {
+        workerFile, recipe: 'skin_three_v2', formulaParams: normalized.coreParams,
+        meta: { jobId: 'skt-0123456789ab', taskId: 'task-test', document: { id: 7, width: 120, height: 100 }, rect: good.rect }
+    } });
+    context.after(() => worker.terminate());
+    await new Promise((resolve, reject) => {
         worker.on('message', message => {
-            if (message.type === 'result') resolve(message);
+            if (message.type === 'audit') audit.push(message);
             if (message.type === 'error') reject(new Error(message.message));
         });
-        worker.on('error', reject);
+        worker.once('error', reject);
+        worker.once('exit', code => code ? reject(new Error(`worker exited ${code}`)) : resolve());
     });
-}
-
-/**
- * @param {object} message - Worker result.
- * @param {string} output - Output name.
- * @param {object} rect - Expected rect.
- * @returns {Uint8Array} The decoded gray layer.
- */
-function grayFrom(message, output, rect) {
-    return SkinExchange.decode(message.files[output], { jobId: META.jobId, output, rect }).payload;
-}
-
-test('runtime has no legacy core and the adapter reports the wasm core identity', () => {
-    // 1. Runtime skin-texture directory must NOT contain skin-core.js
-    const runtimeCorePath = path.join(__dirname, '..', 'skin-texture', 'skin-core.js');
-    assert.equal(fs.existsSync(runtimeCorePath), false, 'Runtime skin-core.js must be removed');
-
-    // 2. Adapter reports new formula core identity (.wasm)
-    const identity = adapter.getCoreIdentity();
-    assert.equal(identity.version, '1.1.0');
-    assert.equal(identity.matchesPinned, true);
-});
-
-test('real worker computes all 4 outputs for default recipe and matches explicit recipe on small ROI', async () => {
-    const rect = { x: 20, y: 20, width: 32, height: 32 };
-    const doc = { width: 300, height: 300 };
-    const pxPerMm = 4.49;
-    const params = { mode: 'lines', seed: 1, azimuthDeg: 315, elevationDeg: 45 };
-
-    const reqDefault = adapter.checkRequestShape({ rect, px_per_mm: pxPerMm, params });
-    const reqExplicit = adapter.checkRequestShape({ recipe: 'skin_pair_v1', rect, px_per_mm: pxPerMm, params });
-
-    assert.equal(reqDefault.recipe, 'skin_pair_v1');
-    assert.equal(reqDefault.key, reqExplicit.key);
-
-    const normDefault = adapter.normalizeForDocument(reqDefault, doc);
-    const normExplicit = adapter.normalizeForDocument(reqExplicit, doc);
-
-    const resultDefault = await runRecipeWorker(normDefault.coreParams, reqDefault.outputs, rect);
-    const resultExplicit = await runRecipeWorker(normExplicit.coreParams, reqExplicit.outputs, rect);
-
-    assert.equal(resultDefault.recipe, 'skin_pair_v1');
-    assert.deepEqual(Object.keys(resultDefault.files).sort(), [
-        'formula_1_furrows', 'formula_1_pores', 'formula_2_furrows', 'formula_2_pores'
-    ].sort());
-
-    for (const key of reqDefault.outputs) {
-        const grayDef = grayFrom(resultDefault, key, rect);
-        const grayExp = grayFrom(resultExplicit, key, rect);
-        assert.deepEqual(Buffer.from(grayDef), Buffer.from(grayExp), `Component ${key} matches between default and explicit`);
-        assert.equal(grayDef.length, rect.width * rect.height);
-        assert.deepEqual(resultDefault.checksums[key], resultExplicit.checksums[key]);
-    }
-});
-
-test('a rect gives exactly the same pixels as that area of the whole document (seamless tiling)', async () => {
-    // Both formulas and both modes (lines, cells) must guarantee seamless tiling:
-    // rendering an ROI produces the identical pixel slice of the whole document rendering.
-    const doc = { width: 170, height: 130 };
-    const rect = { x: 41, y: 33, width: 57, height: 46 };
-    const pxPerMm = 6;
-    const seed = 2;
-
-    for (const mode of ['lines', 'cells']) {
-        const wholeParams = {
-            formula_1: recipeCatalog.resolveFormulaParams('formula_1', doc, { x: 0, y: 0, width: doc.width, height: doc.height }, pxPerMm, { mode, seed }),
-            formula_2: recipeCatalog.resolveFormulaParams('formula_2', doc, { x: 0, y: 0, width: doc.width, height: doc.height }, pxPerMm, { mode, seed })
-        };
-        const partParams = {
-            formula_1: recipeCatalog.resolveFormulaParams('formula_1', doc, rect, pxPerMm, { mode, seed }),
-            formula_2: recipeCatalog.resolveFormulaParams('formula_2', doc, rect, pxPerMm, { mode, seed })
-        };
-
-        const outputs = ['formula_1_pores', 'formula_1_furrows', 'formula_2_pores', 'formula_2_furrows'];
-        const [wholeResult, partResult] = await Promise.all([
-            runRecipeWorker(wholeParams, outputs, { x: 0, y: 0, width: doc.width, height: doc.height }),
-            runRecipeWorker(partParams, outputs, rect)
-        ]);
-
-        for (const output of outputs) {
-            const wholeGray = grayFrom(wholeResult, output, { x: 0, y: 0, width: doc.width, height: doc.height });
-            const partGray = grayFrom(partResult, output, rect);
-            for (let y = 0; y < rect.height; y++) {
-                const wholeRow = wholeGray.subarray((rect.y + y) * doc.width + rect.x, (rect.y + y) * doc.width + rect.x + rect.width);
-                const partRow = partGray.subarray(y * rect.width, (y + 1) * rect.width);
-                assert.deepEqual(Buffer.from(partRow), Buffer.from(wholeRow), `mode ${mode}, output ${output}, row ${y}`);
-            }
-        }
-    }
-});
-
-test('worker rejects invalid workerData and does not fall back to task01', async () => {
-    await assert.rejects(
-        () => new Promise((resolve, reject) => {
-            const worker = new Worker(WORKER_FILE, {
-                workerData: {
-                    recipe: 'unsupported_recipe',
-                    params: {},
-                    outputs: ['main'],
-                    meta: META
-                }
-            });
-            worker.on('message', m => {
-                if (m.type === 'error') reject(new Error(m.message));
-                else resolve(m);
-            });
-            worker.on('error', reject);
-        }),
-        /Worker only supports recipe "skin_pair_v1"/
-    );
+    assert.deepEqual(audit.map(event => [event.kind, event.formula, event.active]), [
+        ['start', 'formula_1', 1], ['exit', 'formula_1', 0],
+        ['start', 'formula_2', 1], ['exit', 'formula_2', 0],
+        ['start', 'formula_3', 1], ['exit', 'formula_3', 0]
+    ]);
 });
 
 test('the exchange file round-trips and refuses every kind of damage', () => {
     const rect = { x: 3, y: 4, width: 20, height: 10 };
     const gray = new Uint8Array(200).map((_, i) => (i * 37) & 255);
-    const meta = { jobId: 'skt-0123456789ab', taskId: 'task-1', output: 'formula_2_pores', document: { id: 5, width: 50, height: 40 }, rect };
+    const meta = { jobId: 'skt-0123456789ab', taskId: 'task-1', output: 'formula_2_dermis', document: { id: 5, width: 50, height: 40 }, rect };
     const bytes = SkinExchange.encode(meta, gray);
-    const expect = { jobId: meta.jobId, taskId: 'task-1', output: 'formula_2_pores', documentId: 5, document: { width: 50, height: 40 }, rect };
+    const expect = { jobId: meta.jobId, taskId: 'task-1', output: 'formula_2_dermis', documentId: 5, document: { width: 50, height: 40 }, rect };
     assert.deepEqual(Buffer.from(SkinExchange.decode(bytes, expect).payload), Buffer.from(gray));
 
     const cases = {
@@ -214,66 +237,4 @@ test('gray maps to RGBA 8 and to the verified 16-bit range for every value', () 
         assert.equal(SkinExchange.from16(w), v);
     }
     assert.equal(SkinExchange.to16(128), 16448, 'the value task02 read back from 16-bit documents');
-});
-
-test('requests are checked and normalized: default recipe skin_pair_v1, outputs and old params refused', () => {
-    const good = { rect: { x: 0, y: 0, width: 100, height: 80 }, px_per_mm: 5 };
-    const checked = adapter.checkRequestShape(good);
-    assert.equal(checked.recipe, 'skin_pair_v1');
-    assert.equal(checked.outputs.length, 4);
-
-    const refused = [
-        [{ ...good, rect: undefined }, 'INVALID_RECT'],
-        [{ ...good, rect: { x: 0, y: 0, width: 10.5, height: 10 } }, 'INVALID_RECT'],
-        [{ ...good, rect: { x: -1, y: 0, width: 10, height: 10 } }, 'INVALID_RECT'],
-        [{ ...good, rect: { x: 0, y: 0, width: 10, height: 10, z: 1 } }, 'INVALID_RECT'],
-        [{ ...good, rect: { x: 0, y: 0, width: 5000, height: 4000 } }, 'RECT_TOO_LARGE'],
-        [{ ...good, px_per_mm: undefined }, 'INVALID_SCALE'],
-        [{ ...good, px_per_mm: 0 }, 'INVALID_SCALE'],
-        [{ ...good, px_per_mm: Infinity }, 'INVALID_SCALE'],
-        [{ ...good, px_per_mm: Number.NaN }, 'INVALID_SCALE'],
-        [{ ...good, recipe: 'skin_task01' }, 'INVALID_RECIPE'],
-        [{ ...good, outputs: ['main'] }, 'INVALID_OUTPUTS'],
-        [{ ...good, outputs: [] }, 'INVALID_OUTPUTS'],
-        [{ ...good, params: { relief: 2.5 } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { pores: true } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { furrows: false } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { width: 4000 } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { rect: { x: 0 } } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { pxPerMm: 9 } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { elevationDeg: Infinity } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { elevationDeg: '45' } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { elevationDeg: 2 } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { mode: 'hexagons' } }, 'INVALID_PARAMS'],
-        [{ ...good, params: { seed: 1.5 } }, 'INVALID_PARAMS'],
-        [{ ...good, params: [] }, 'INVALID_PARAMS']
-    ];
-    for (const [args, code] of refused) {
-        assert.throws(() => adapter.checkRequestShape(args), error => error.code === code, JSON.stringify(args));
-    }
-});
-
-test('the document size is checked once Photoshop has reported it', () => {
-    const request = adapter.checkRequestShape({ rect: { x: 50, y: 50, width: 100, height: 100 }, px_per_mm: 6 });
-    assert.throws(() => adapter.normalizeForDocument(request, { width: 120, height: 400 }), error => error.code === 'RECT_OUTSIDE_DOCUMENT');
-    const ok = adapter.normalizeForDocument(request, { width: 400, height: 400 });
-    assert.equal(ok.coreParams.formula_1.width, 400);
-    assert.equal(ok.coreParams.formula_2.width, 400);
-    assert.deepEqual(ok.coreParams.formula_1.rect, request.rect);
-
-    // At an extreme scale the neutralising blur needs a margin the core would refuse.
-    const huge = adapter.checkRequestShape({ rect: { x: 0, y: 0, width: 4096, height: 4096 }, px_per_mm: 1000 });
-    assert.throws(() => adapter.normalizeForDocument(huge, { width: 8000, height: 8000 }), error => error.code === 'WORK_AREA_TOO_LARGE');
-});
-
-test('the visibility notes say what a small scale suppressed', () => {
-    const p = recipeCatalog.resolveFormulaParams('formula_1', { width: 120, height: 120 }, { x: 0, y: 0, width: 120, height: 120 }, 2.5, {});
-    const stats = {
-        suppressed: { primary: 0, secondary: 0, roughness: [0, 0, 0] },
-        pores: { counts: [10, 20], visible: [5, 10] },
-        layers: { pores: { min: 120, max: 136 }, furrows: { min: 127, max: 129 } }
-    };
-    const notes = adapter.visibilityNotes(p, stats, ['pores', 'furrows']);
-    assert.ok(notes.some(line => /primary furrows.*not drawn/.test(line)), notes.join('\n'));
-    assert.ok(notes.some(line => /px_per_mm/.test(line)));
 });

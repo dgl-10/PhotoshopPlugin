@@ -1,27 +1,15 @@
 'use strict';
 
 /**
- * UXP script generator for skin texture recipes.
- *
- * Implements the UXP batchPlay/DOM scripting for recipe 'skin_pair_v1':
- * - Runs inside the plugin's agentExecuteScript within a single executeAsModal scope.
- * - Reads the mask source (active selection or existing layer mask) BEFORE creating any layers.
- * - Enforces zero partial state: if mask source is missing/empty, refuses before creating Skin.
- * - Verifies all 4 exchange files (Formula 1 Pores/Microrelief, Formula 2 Pores/Microrelief).
- * - Creates the structured hierarchy:
- *     Skin [marker] (Pass Through, Opacity 100%, user mask)
- *       Formula 2 (Pass Through, Opacity 100%, visible)
- *         Pores (Linear Light, Opacity 50%, Fill 100%)
- *         Microrelief (Linear Light, Opacity 50%, Fill 100%)
- *       Formula 1 (Pass Through, Opacity 100%, hidden)
- *         Pores (Linear Light, Opacity 50%, Fill 100%)
- *         Microrelief (Linear Light, Opacity 50%, Fill 100%)
- * - Preserves target bounds for texture layers, applies single mask to Skin group.
- * - In case of any failure during creation, rolls back only the newly created layers/groups.
+ * Build the single-history-step apply script for three generation-two skin formulas.
+ * All five exchange files and the common mask are validated before hierarchy creation.
+ * Document checks, mask verification and rollback remain shared across all formulas.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { CREATE_HIERARCHY, DESCRIBE_GROUPS } = require('./recipe-hierarchy-script');
+const { SCENE_GUARD } = require('./recipe-scene-guard-script');
 
 const EXCHANGE_SOURCE_FILE = path.join(__dirname, 'exchange.js');
 let exchangeSource = null;
@@ -64,12 +52,12 @@ function skinDocumentFacts(d) {
 `;
 
 /**
- * Build the UXP script for writing recipe skin_pair_v1 into Photoshop.
+ * Build the UXP script for writing recipe skin_three_v2 into Photoshop.
  *
  * @param {object} expect
  * @param {string} expect.jobId - Job identifier
  * @param {string} expect.taskId - Task identifier
- * @param {string} expect.recipe - Recipe identifier ('skin_pair_v1')
+ * @param {string} expect.recipe - Recipe identifier ('skin_three_v2')
  * @param {string} expect.marker - Marker for unique job tracking
  * @param {object} expect.document - Expected document state at start
  * @param {object} expect.rect - Texture target rectangle { x, y, width, height }
@@ -111,6 +99,7 @@ function skinCodeOf(error) {
 }
 
 let maskImageDataToDispose = null;
+${SCENE_GUARD}
 
 try {
     // 1. Deadline check
@@ -145,7 +134,7 @@ try {
         return skinRefuse('DATA_FOLDER_CHANGED', 'The plugin data folder is not the one the files were written to. Nothing was changed.');
     }
 
-    // 5. Read and decode all 4 exchange files
+    // 5. Read and decode all five exchange files
     let t = clock();
     const planes = {};
     for (const item of EXPECT.components) {
@@ -175,7 +164,7 @@ try {
             if (h.formula_version !== item.formulaVersion) {
                 return skinRefuse('COMPONENT_HEADER_MISMATCH', 'Component ' + item.componentKey + ' has formula_version ' + h.formula_version + ' instead of ' + item.formulaVersion + '. Nothing was changed.');
             }
-            if (!h.core || h.core.version !== item.coreVersion || h.core.sha256 !== item.coreSha256) {
+            if (!h.core || h.core.name !== item.coreName || h.core.version !== item.coreVersion || h.core.sha256 !== item.coreSha256) {
                 return skinRefuse('COMPONENT_HEADER_MISMATCH', 'Component ' + item.componentKey + ' core identity mismatch. Nothing was changed.');
             }
             planes[item.componentKey] = { item, gray: decoded.payload, bytes: bytes.length };
@@ -277,7 +266,7 @@ try {
         return skinRefuse(maskSrc.kind === 'selection' ? 'SELECTION_READ_FAILED' : 'LAYER_MASK_READ_FAILED', 'Could not read the mask source pixels for verification. Nothing was changed.');
     }
 
-    // 7. Write structure: Formula 2 (visible) & Formula 1 (hidden) inside Skin group
+    // 7. Write all three formula groups inside Skin; only Formula 1 starts visible.
     const sixteen = was.bitsPerChannel === 16;
     const r = EXPECT.rect;
 
@@ -309,8 +298,12 @@ try {
             });
             layerTimings.putPixelsMs = Math.round(clock() - lt);
 
-            layer.blendMode = C.BlendMode.LINEARLIGHT;
-            layer.opacity = 50;
+            // Presentation follows the verified variant response contract.
+            const blendModes = { linear_light: C.BlendMode.LINEARLIGHT, normal: C.BlendMode.NORMAL,
+                overlay: C.BlendMode.OVERLAY, soft_light: C.BlendMode.SOFTLIGHT };
+            if (blendModes[plane.item.blendMode] === undefined) throw new Error('UNSUPPORTED_BLEND_MODE: ' + plane.item.blendMode);
+            layer.blendMode = blendModes[plane.item.blendMode];
+            layer.opacity = plane.item.opacity * 100;
             if (layer.fillOpacity !== undefined) layer.fillOpacity = 100;
 
             const b = layer.bounds;
@@ -320,6 +313,9 @@ try {
             }
             written.push({
                 formulaId: plane.item.formulaId,
+                formulaVersion: plane.item.formulaVersion,
+                componentKey: plane.item.componentKey,
+                core: { name: plane.item.coreName, version: plane.item.coreVersion, sha256: plane.item.coreSha256 },
                 output: plane.item.output,
                 id: layer.id,
                 name: layer.name,
@@ -337,42 +333,7 @@ try {
 
     t = clock();
 
-    // In Photoshop, each newly created layer/group is placed above the previous one.
-    // Build bottom-to-top to ensure correct visual stacking order:
-    // Formula 1 at bottom, Formula 2 on top; inside each formula: Microrelief below, Pores on top.
-
-    // 1. Create Formula 1 layers (bottom-to-top: Microrelief then Pores)
-    const f1MicroLayer = await createTexturePixelLayer('formula_1_furrows');
-    const f1PoresLayer = await createTexturePixelLayer('formula_1_pores');
-    const f1Group = await doc.createLayerGroup({
-        name: 'Formula 1',
-        fromLayers: [f1PoresLayer, f1MicroLayer]
-    });
-    created.push(f1Group.id);
-    f1Group.blendMode = C.BlendMode.PASSTHROUGH;
-    f1Group.opacity = 100;
-    f1Group.visible = false;
-
-    // 2. Create Formula 2 layers (bottom-to-top: Microrelief then Pores, above Formula 1)
-    const f2MicroLayer = await createTexturePixelLayer('formula_2_furrows');
-    const f2PoresLayer = await createTexturePixelLayer('formula_2_pores');
-    const f2Group = await doc.createLayerGroup({
-        name: 'Formula 2',
-        fromLayers: [f2PoresLayer, f2MicroLayer]
-    });
-    created.push(f2Group.id);
-    f2Group.blendMode = C.BlendMode.PASSTHROUGH;
-    f2Group.opacity = 100;
-    f2Group.visible = true;
-
-    // 3. Create main Skin group containing Formula 2 (top) and Formula 1 (bottom)
-    const skinGroup = await doc.createLayerGroup({
-        name: 'Skin ' + EXPECT.marker,
-        fromLayers: [f2Group, f1Group]
-    });
-    created.push(skinGroup.id);
-    skinGroup.blendMode = C.BlendMode.PASSTHROUGH;
-    skinGroup.opacity = 100;
+${CREATE_HIERARCHY}
 
     // 8. Put single common mask onto Skin group
     // Initialize with hideAll mask so all pixels outside maskBounds are guaranteed hidden (black).
@@ -475,7 +436,7 @@ try {
     }
 
     // Verify that child groups have NO user mask attached
-    for (const childGroup of [f1Group, f2Group]) {
+    for (const childGroup of formulaGroups.map(item => item.group)) {
         let childMask = null;
         try {
             childMask = await imaging.getLayerMask({ documentID: doc.id, layerID: childGroup.id, kind: 'user' });
@@ -501,10 +462,11 @@ try {
     timings.createHierarchyMs = Math.round(clock() - t);
     timings.totalMs = Math.round(clock() - startedAt);
 
-    const f2PoresInfo = written.find(w => w.output === 'formula_2_pores' || (w.formulaId === 'formula_2' && w.output === 'pores'));
-    const f2MicroInfo = written.find(w => w.output === 'formula_2_furrows' || (w.formulaId === 'formula_2' && w.output === 'furrows'));
-    const f1PoresInfo = written.find(w => w.output === 'formula_1_pores' || (w.formulaId === 'formula_1' && w.output === 'pores'));
-    const f1MicroInfo = written.find(w => w.output === 'formula_1_furrows' || (w.formulaId === 'formula_1' && w.output === 'furrows'));
+    // Existing layer visibility, geometry and hierarchy must survive the entire apply,
+    // including native mask readback calls. Treat an indirect native side effect as failure.
+    if (!skinOriginalScenePreserved()) {
+        throw new Error('EXISTING_LAYERS_CHANGED: Applying Skin changed a pre-existing layer');
+    }
 
     return {
         ok: true,
@@ -525,29 +487,22 @@ try {
                     bounds: maskBounds ? { left: +maskBounds.left, top: +maskBounds.top, right: +maskBounds.right, bottom: +maskBounds.bottom } : null
                 }
             },
-            subgroups: [
-                {
-                    id: f2Group.id,
-                    name: f2Group.name,
-                    blendMode: String(f2Group.blendMode),
-                    opacity: f2Group.opacity,
-                    visible: Boolean(f2Group.visible),
-                    layers: [f2PoresInfo, f2MicroInfo].filter(Boolean)
-                },
-                {
-                    id: f1Group.id,
-                    name: f1Group.name,
-                    blendMode: String(f1Group.blendMode),
-                    opacity: f1Group.opacity,
-                    visible: Boolean(f1Group.visible),
-                    layers: [f1PoresInfo, f1MicroInfo].filter(Boolean)
-                }
-            ]
+            subgroups: ${DESCRIBE_GROUPS}
         },
         layers: written,
         timings
     };
 } catch (error) {
+    // In real Photoshop the native history state is available even while this script is
+    // history-suspended. Restoring it also undoes indirect edits to existing layers that
+    // deleting only our new objects cannot repair. The plugin still owns the modal scope.
+    let historyRestored = false;
+    if (created.length && skinPreviousHistoryState) {
+        try {
+            doc.activeHistoryState = skinPreviousHistoryState;
+            historyRestored = skinOriginalScenePreserved();
+        } catch (restoreError) {}
+    }
     // Roll back only objects created in this attempt, reverse creation order
     const rolledBack = [];
     const leftover = [];
@@ -560,7 +515,8 @@ try {
             leftover.push(id);
         }
     }
-    const changed = created.length === 0 ? false : (leftover.length ? 'partial' : 'rolled_back');
+    const existingScenePreserved = skinOriginalScenePreserved();
+    const changed = !existingScenePreserved ? 'partial' : (created.length === 0 ? false : (leftover.length ? 'partial' : 'rolled_back'));
     return {
         ok: false,
         code: skinCodeOf(error),
@@ -570,6 +526,8 @@ try {
         createdLayerIds: created,
         rolledBack,
         leftover,
+        historyRestored,
+        existingScenePreserved,
         timings
     };
 } finally {

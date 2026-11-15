@@ -79,6 +79,7 @@ const adapter = require('./core-adapter');
 const exchangeFiles = require('./exchange-files');
 const scripts = require('./uxp-scripts');
 const recipeCatalog = require('./recipe-catalog');
+const recipeView = require('./recipe-job-view');
 
 const WORKER_FILE = path.join(__dirname, 'worker.js');
 
@@ -165,7 +166,7 @@ function createSkinTextureJobs({
 }) {
     const options = { ...DEFAULT_OPTIONS, ...limits };
     const core = recipeCatalog.getFormulasCoreIdentity();
-    const formulasCore = recipeCatalog.getFormulasCoreIdentity();
+    const formulasCore = core;
 
     // taskId -> { taskId, jobs: Map<jobId, job>, requests: Map<requestId, ledgerEntry>, closed, closedReason }
     // A ledger entry is { jobId, keyHash, retired }: retired is null while the job record is
@@ -180,7 +181,9 @@ function createSkinTextureJobs({
     let disposing = null;
 
     if (logger && typeof logger.info === 'function') {
-        logger.info('[skin-texture] Core: ' + formulasCore.name + ' v' + formulasCore.version + ' (' + formulasCore.sha256 + ')');
+        for (const formula of formulasCore.formulas) {
+            logger.info(`[skin-texture] ${formula.formulaId}: ${formula.name} v${formula.version} (${formula.sha256})`);
+        }
     }
 
     const sweepTimer = setInterval(sweep, options.sweepIntervalMs);
@@ -308,7 +311,7 @@ function createSkinTextureJobs({
     }
 
     function historyNameOf(job) {
-        return `skin texture ${job.id}: recipe skin_pair_v1`;
+        return `skin texture ${job.id}: recipe ${recipeCatalog.DEFAULT_RECIPE}`;
     }
 
     function dropResult(job) {
@@ -638,14 +641,13 @@ function createSkinTextureJobs({
             taskId: job.taskId,
             document: { id: job.document.id, width: job.document.width, height: job.document.height },
             rect: job.request.rect,
-            recipe_id: job.request.recipe || 'skin_pair_v1',
-            core: { version: formulasCore.version, sha256: formulasCore.sha256 }
+            recipe_id: job.request.recipe || recipeCatalog.DEFAULT_RECIPE
         };
 
         let worker;
         try {
             worker = createWorker({
-                recipe: job.request.recipe || 'skin_pair_v1',
+                recipe: job.request.recipe || recipeCatalog.DEFAULT_RECIPE,
                 formulaParams: job.coreParams,
                 params: job.coreParams,
                 outputs: job.request.outputs,
@@ -693,17 +695,31 @@ function createSkinTextureJobs({
             failJob(job, 'COMPUTE_FAILED', 'The computation returned an incomplete result.');
             return;
         }
+        // A ready job must identify the actual workers' binaries, not merely repeat the
+        // startup pins when a worker returned no provenance or computed another variant.
+        if (formulasCore.formulas.some(expected => {
+            const actual = message.cores && message.cores[expected.formulaId];
+            return !actual || actual.name !== expected.name || actual.version !== expected.version
+                || actual.sha256 !== expected.sha256 || actual.matchesPinned !== true;
+        })) {
+            failJob(job, 'COMPUTE_FAILED', 'The computation returned missing or mismatched formula identities.');
+            return;
+        }
         const bytes = outputs.reduce((sum, output) => sum + filesByOutput[output].length, 0);
         job.result = { files: filesByOutput, checksums: message.checksums || {}, bytes };
         job.stats = message.stats || null;
         job.workerTimings = message.timings || null;
+        job.computedCores = message.cores || null;
+        job.workerMemory = message.memory || null;
         job.times.readyAt = now();
         job.times.computeMs = job.times.readyAt - job.times.computeStartedAt;
         job.times.expiresAt = job.times.readyAt + options.resultTtlMs;
         job.progress = null;
         job.diagnostics = buildDiagnostics(job);
         if (logger && typeof logger.info === 'function') {
-            logger.info('[skin-texture] ' + job.id + ' computed via ' + formulasCore.name + ' v' + formulasCore.version + ' (' + formulasCore.sha256 + ') in ' + job.times.computeMs + 'ms');
+            for (const formula of formulasCore.formulas) {
+                logger.info(`[skin-texture] ${job.id} computed ${formula.formulaId} via ${formula.name} v${formula.version} (${formula.sha256}) in ${job.workerTimings && job.workerTimings[`${formula.formulaId}_compute_ms`]}ms`);
+            }
         }
         job.phase = 'ready';
         if (job.cancelRequestedAt) {
@@ -725,56 +741,10 @@ function createSkinTextureJobs({
         }
     }
 
+    /** Delegate variant-specific diagnostic summaries to the recipe view. */
     function buildDiagnostics(job) {
-        const stats = job.stats || {};
-        const stats1 = stats.formula_1 || {};
-        const stats2 = stats.formula_2 || {};
-        const layers = {};
-        if (stats1.layers) {
-            for (const [k, v] of Object.entries(stats1.layers)) {
-                layers[`formula_1_${k}`] = {
-                    min: v.min,
-                    max: v.max,
-                    mean: Math.round(v.mean * 1000) / 1000,
-                    clippedFraction: v.clippedFraction
-                };
-            }
-        }
-        if (stats2.layers) {
-            for (const [k, v] of Object.entries(stats2.layers)) {
-                layers[`formula_2_${k}`] = {
-                    min: v.min,
-                    max: v.max,
-                    mean: Math.round(v.mean * 1000) / 1000,
-                    clippedFraction: v.clippedFraction
-                };
-            }
-        }
-        const f1Notes = (job.coreParams && job.coreParams.formula_1)
-            ? adapter.visibilityNotes(job.coreParams.formula_1, stats1, ['pores', 'furrows'])
-            : [];
-        const f2Notes = (job.coreParams && job.coreParams.formula_2)
-            ? adapter.visibilityNotes(job.coreParams.formula_2, stats2, ['pores', 'furrows'])
-            : [];
-        return {
-            layers,
-            formulas: {
-                formula_1: {
-                    suppressed: stats1.suppressed || null,
-                    pores: stats1.pores ? { counts: stats1.pores.counts, visible: stats1.pores.visible } : null,
-                    notes: f1Notes
-                },
-                formula_2: {
-                    suppressed: stats2.suppressed || null,
-                    pores: stats2.pores ? { counts: stats2.pores.counts, visible: stats2.pores.visible } : null,
-                    notes: f2Notes
-                }
-            },
-            notes: [...new Set([...f1Notes, ...f2Notes])]
-        };
+        return recipeView.buildDiagnostics(job);
     }
-
-    // ── Apply ──────────────────────────────────────────────────────────────────
 
     /**
      * Write a ready job, or report the outcome of the write already made.
@@ -782,6 +752,7 @@ function createSkinTextureJobs({
      * @param {object} task - The running task.
      * @param {string} jobId - Job id.
      * @param {object} transport - See start().
+     * @param {object} maskSource - Selection or existing pixel mask for the Skin group.
      * @returns {Promise<{job: object, refusal?: object}>}
      */
     async function apply(task, jobId, transport, maskSource) {
@@ -946,7 +917,7 @@ function createSkinTextureJobs({
     }
 
     async function runApply(job, attempt, transport) {
-        const recipe = (job.request && job.request.recipe) || 'skin_pair_v1';
+        const recipe = (job.request && job.request.recipe) || recipeCatalog.DEFAULT_RECIPE;
         const components = recipeCatalog.getRecipeComponents(recipe);
         const names = components.map(c => exchangeFiles.fileNameFor(job.id, attempt.number, c.componentKey));
         attempt.files = names;
@@ -1004,8 +975,9 @@ function createSkinTextureJobs({
                 ...c,
                 file: names[i],
                 recipeId: recipe,
-                coreVersion: formulasCore.version,
-                coreSha256: formulasCore.sha256
+                coreName: recipeCatalog.FORMULA_DEFINITIONS[c.formulaId].variant,
+                coreVersion: recipeCatalog.FORMULA_DEFINITIONS[c.formulaId].variantVersion,
+                coreSha256: recipeCatalog.FORMULA_DEFINITIONS[c.formulaId].sha256
             })),
             dataFolder: job.dataFolderNative,
             deadlineEpochMs: attempt.deadlineEpochMs
@@ -1054,8 +1026,8 @@ function createSkinTextureJobs({
             const structure = r.structure;
             const layers = Array.isArray(r.layers) ? r.layers : [];
             const consistent = structure && structure.mainGroup && structure.mainGroup.hasUserMask
-                && Array.isArray(structure.subgroups) && structure.subgroups.length === 2
-                && layers.length === 4
+                && Array.isArray(structure.subgroups) && structure.subgroups.length === 3
+                && layers.length === recipeCatalog.RECIPE_COMPONENTS.length
                 && layers.every(layer => Number.isInteger(layer.id) && layer.bounds
                     && layer.bounds.left === rect.x && layer.bounds.top === rect.y
                     && layer.bounds.right === rect.x + rect.width && layer.bounds.bottom === rect.y + rect.height);
@@ -1406,7 +1378,7 @@ function createSkinTextureJobs({
             case 'applying':
                 return 'The write was sent to Photoshop. Call ps_skin_texture_status in a few seconds. Calling apply again does not write a second time.';
             case 'applied':
-                return 'Skin texture recipe applied. The Skin group has been assembled with Formula 2 (active) and Formula 1 (hidden), 50% Linear Light component layers, and a common user mask on the Skin group. Written to the document as a single Photoshop History step; undo removes it completely. Calling ps_skin_texture_apply again will not write a second time. Adjust visibility, layer opacities, or mask as needed using the returned layer IDs.';
+                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Dermis) and hidden Formula 3 (Pores, Furrows), with one common mask. All five layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. Compare by showing exactly one formula group; adjust strength with layer opacity using the returned IDs.';
             case 'apply_unknown':
                 return `The outcome of the write is unknown. Before anything else look at the document (ps_get_document) `
                     + `for layers whose names contain "${markerOf(job)}". Do not repeat the write: apply will not send it `
@@ -1462,31 +1434,10 @@ function createSkinTextureJobs({
         out.px_per_mm = job.request.pxPerMm;
         out.outputs = job.request.outputs;
 
-        out.recipe_id = job.request.recipe || 'skin_pair_v1';
-        out.core = {
-            name: formulasCore.name,
-            version: formulasCore.version,
-            sha256: formulasCore.sha256,
-            matches_pinned: formulasCore.matchesPinned
-        };
-        out.formulas = {
-            formula_1: {
-                formula_id: 'formula_1',
-                formula_version: 1,
-                name: 'Formula 1',
-                visible: false,
-                outputs: ['pores', 'furrows'],
-                params: withParams && job.coreParams && job.coreParams.formula_1 ? adapter.publicParams(job.coreParams.formula_1) : undefined
-            },
-            formula_2: {
-                formula_id: 'formula_2',
-                formula_version: 1,
-                name: 'Formula 2',
-                visible: true,
-                outputs: ['pores', 'furrows'],
-                params: withParams && job.coreParams && job.coreParams.formula_2 ? adapter.publicParams(job.coreParams.formula_2) : undefined
-            }
-        };
+        out.recipe_id = job.request.recipe || recipeCatalog.DEFAULT_RECIPE;
+        out.core = recipeView.publicCore(formulasCore);
+        out.formulas = recipeView.describeFormulas(job, formulasCore, withParams);
+        if (job.request.fields) out.fields = job.request.fields;
         if (job.request.params) out.recipe_params = job.request.params;
 
         if (job.phase === 'computing' && job.progress) {
@@ -1500,8 +1451,9 @@ function createSkinTextureJobs({
         if (job.phase === 'ready') times.result_expires_at = iso(job.times.expiresAt);
         out.times = times;
         if (job.work) {
-            out.work = { blur_radius_px: job.work.radius, working_pixels: job.work.heightPixels, estimated_memory_mb: Math.round(job.work.estimatedBytes / 1048576) };
+            out.work = { rect_pixels: job.work.rectPixels, retained_output_mb: job.work.retainedOutputBytes / 1048576 };
         }
+        if (job.workerMemory) out.memory = job.workerMemory;
         if (job.result && job.result.checksums) {
             out.result = { checksums: job.result.checksums, bytes: job.result.bytes, held_in_memory: Boolean(job.result.files) };
         }
@@ -1520,7 +1472,11 @@ function createSkinTextureJobs({
             if (typeof a.retryable === 'boolean') applyView.retryable = a.retryable;
             if (a.structure) applyView.structure = a.structure;
             if (a.maskSource) applyView.mask_source = a.maskSource;
-            if (a.layers) applyView.layers = a.layers.map(layer => ({ output: layer.output, id: layer.id, name: layer.name, bounds: layer.bounds, parent: layer.parent || null }));
+            if (a.layers) applyView.layers = a.layers.map(layer => ({
+                output: layer.output, id: layer.id, name: layer.name, bounds: layer.bounds,
+                parent: layer.parent || null, formulaId: layer.formulaId,
+                formulaVersion: layer.formulaVersion, componentKey: layer.componentKey, core: layer.core
+            }));
             if (a.existingLayers) applyView.existing_layers = a.existingLayers;
             if (a.leftover) applyView.leftover_layer_ids = a.leftover;
             if (a.historyStep) applyView.history_step = a.historyStep;
