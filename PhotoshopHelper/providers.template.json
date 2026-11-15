@@ -1309,6 +1309,120 @@
             ]
         },
         {
+            "id": "seedream_v5_5_fal",
+            "generation_modes": [
+                "t2i",
+                "i2i"
+            ],
+            "name": "Seedream v5.5 via Fal API Key (from $0.03/per image)",
+            "tags": {
+                "provider": "fal",
+                "family": "seedream"
+            },
+            "nice_name": "Seedream v5.5 (FAL Key)",
+            "filename_suffix": "seedream_v5_5",
+            "image_format": "data_uri",
+            "max_reference_images": 10,
+            "supports_negative_prompt": false,
+            "english_only": false,
+            "mask_handling": {
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "image_urls"
+            },
+            "remarks": "<b>Pricing:</b><br>• 1K / 1.5K (≤ 2.61 MP): <b>$0.03</b>/img (1.5K is recommended for best quality/price)<br>• 2K (> 2.61 MP): <b>$0.0405</b>/img<br>• Edit input fee: +$0.012 per reference image<br>• Supports up to 10 input images and native transparent PNG backgrounds.",
+            "preprocessor": [
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": 1536,
+                        "auto_resize_2_max": true,
+                        "filter_by": "{{image_size}}",
+                        "filter_type": "equals",
+                        "values": "1.5K"
+                    }
+                },
+                {
+                    "name": "image_get_size",
+                    "args": {
+                        "max_size": "{{image_size}}",
+                        "auto_resize_2_max": true,
+                        "filter_by": "{{image_size}}",
+                        "filter_type": "not_equals",
+                        "values": "1.5K"
+                    }
+                }
+            ],
+            "request_config": {
+                "{{?!source_image}}endpoint_url": "https://queue.fal.run/bytedance/seedream/v5.5/text-to-image",
+                "{{?source_image}}endpoint_url": "https://queue.fal.run/bytedance/seedream/v5.5/edit",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": "Key {{env:FAL_API_KEY}}",
+                    "X-Fal-Store-IO": "0"
+                },
+                "body_template": {
+                    "prompt": "{{prompt}}",
+                    "output_format": "png",
+                    "enable_safety_checker": false,
+                    "{{?!aspect_ratio}}image_size": "auto_{{image_size}}",
+                    "{{?aspect_ratio}}image_size": "{{calculated_output_size}}",
+                    "num_images": "{{num_images}}",
+                    "{{?transparent_bg}}background": "transparent",
+                    "{{?source_image}}image_urls": [
+                        "{{source_image}}",
+                        "{{resolved_image_array}}"
+                    ]
+                }
+            },
+            "response_config": {
+                "$ref": "fal",
+                "params": {
+                    "model_path": "bytedance/seedream/v5.5/edit"
+                }
+            },
+            "parameters": [
+                {
+                    "name": "prompt",
+                    "type": "string",
+                    "alias": "prompt",
+                    "label": "Text Prompt",
+                    "default": ""
+                },
+                {
+                    "name": "image_size",
+                    "type": "dropdown",
+                    "alias": "output_resolution",
+                    "label": "Output Size",
+                    "options": [
+                        {
+                            "value": "1K",
+                            "alias": "std",
+                            "label": "1K (~1024) — $0.03"
+                        },
+                        {
+                            "value": "1.5K",
+                            "alias": "high",
+                            "label": "1.5K (~1536) — $0.03 (Best Value)"
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "ultra",
+                            "label": "2K (~2048) — $0.0405"
+                        }
+                    ],
+                    "default": "1.5K"
+                },
+                {
+                    "name": "transparent_bg",
+                    "type": "boolean",
+                    "label": "Transparent Background",
+                    "default": false
+                }
+            ]
+        },
+        {
             "id": "alibaba_fal",
             "generation_modes": [
                 "t2i",

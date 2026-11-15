@@ -183,7 +183,7 @@
                 "provider": "spacexai",
                 "family": "grok"
             },
-            "remarks": "Note that all generations that do not pass moderation are charged at full cost.",
+            "remarks": "<b>Pricing:</b> $0.02 per output image + $0.002 per input image.<br>Note that all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
             "max_reference_images": 5,
             "supports_negative_prompt": false,
@@ -206,22 +206,8 @@
                 "9:16",
                 "1:2"
             ],
-            "nice_name": {
-                "default": "Grok Imagine Standard (SpaceXAI Key)",
-                "depends_on": "model_spacexai",
-                "values": {
-                    "grok-imagine-image": "Grok Imagine Standard (SpaceXAI Key)",
-                    "grok-imagine-image-quality": "Grok Imagine Quality (SpaceXAI Key)"
-                }
-            },
-            "filename_suffix": {
-                "default": "grok_imagine",
-                "depends_on": "model_spacexai",
-                "values": {
-                    "grok-imagine-image": "grok_imagine",
-                    "grok-imagine-image-quality": "grok_imagine_quality"
-                }
-            },
+            "nice_name": "Grok Imagine Standard (SpaceXAI Key)",
+            "filename_suffix": "grok_imagine",
             "request_config": {
                 "{{?!source_image}}endpoint_url": "https://api.x.ai/v1/images/generations",
                 "{{?source_image}}endpoint_url": "https://api.x.ai/v1/images/edits",
@@ -235,7 +221,7 @@
                     "type": "image_url"
                 },
                 "body_template": {
-                    "model": "{{model_spacexai}}",
+                    "model": "grok-imagine-image",
                     "prompt": "{{prompt}}",
                     "n": "{{num_images}}",
                     "resolution": "{{resolution}}",
@@ -273,22 +259,6 @@
                     "alias": "prompt",
                     "label": "Text Prompt",
                     "default": ""
-                },
-                {
-                    "name": "model_spacexai",
-                    "type": "dropdown",
-                    "label": "Model",
-                    "options": [
-                        {
-                            "value": "grok-imagine-image",
-                            "label": "Standard ($0.02/per output image + $0.002/per input image)"
-                        },
-                        {
-                            "value": "grok-imagine-image-quality",
-                            "label": "Quality ($0.05(1K)/$0.07(2K)/per output image + $0.01/per input image)"
-                        }
-                    ],
-                    "default": "grok-imagine-image"
                 },
                 //{
                 //    "name": "n",
@@ -937,120 +907,6 @@
                             "label": "FLUX1.1 [pro] Ultra Raw ($0.06 per image)"
                         }
                     ]
-                }
-            ]
-        },
-        {
-            "id": "seedream_v5_5_fal",
-            "generation_modes": [
-                "t2i",
-                "i2i"
-            ],
-            "name": "Seedream v5.5 via Fal API Key (from $0.03/per image)",
-            "tags": {
-                "provider": "fal",
-                "family": "seedream"
-            },
-            "nice_name": "Seedream v5.5 (FAL Key)",
-            "filename_suffix": "seedream_v5_5",
-            "image_format": "data_uri",
-            "max_reference_images": 10,
-            "supports_negative_prompt": false,
-            "english_only": false,
-            "mask_handling": {
-                "supported": true,
-                "type": "first_referential",
-                "field_name": "image_urls"
-            },
-            "remarks": "<b>Pricing:</b><br>• 1K / 1.5K (≤ 2.61 MP): <b>$0.03</b>/img (1.5K is recommended for best quality/price)<br>• 2K (> 2.61 MP): <b>$0.0405</b>/img<br>• Edit input fee: +$0.012 per reference image<br>• Supports up to 10 input images and native transparent PNG backgrounds.",
-            "preprocessor": [
-                {
-                    "name": "image_get_size",
-                    "args": {
-                        "max_size": 1536,
-                        "auto_resize_2_max": true,
-                        "filter_by": "{{image_size}}",
-                        "filter_type": "equals",
-                        "values": "1.5K"
-                    }
-                },
-                {
-                    "name": "image_get_size",
-                    "args": {
-                        "max_size": "{{image_size}}",
-                        "auto_resize_2_max": true,
-                        "filter_by": "{{image_size}}",
-                        "filter_type": "not_equals",
-                        "values": "1.5K"
-                    }
-                }
-            ],
-            "request_config": {
-                "{{?!source_image}}endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v5.5/text-to-image",
-                "{{?source_image}}endpoint_url": "https://queue.fal.run/fal-ai/bytedance/seedream/v5.5/edit",
-                "method": "POST",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Authorization": "Key {{env:FAL_API_KEY}}",
-                    "X-Fal-Store-IO": "0"
-                },
-                "body_template": {
-                    "prompt": "{{prompt}}",
-                    "output_format": "png",
-                    "enable_safety_checker": false,
-                    "{{?!aspect_ratio}}image_size": "auto_{{image_size}}",
-                    "{{?aspect_ratio}}image_size": "{{calculated_output_size}}",
-                    "num_images": "{{num_images}}",
-                    "{{?transparent_bg}}background": "transparent",
-                    "{{?source_image}}image_urls": [
-                        "{{source_image}}",
-                        "{{resolved_image_array}}"
-                    ]
-                }
-            },
-            "response_config": {
-                "$ref": "fal",
-                "params": {
-                    "model_path": "fal-ai/bytedance/seedream/v5.5/edit"
-                }
-            },
-            "parameters": [
-                {
-                    "name": "prompt",
-                    "type": "string",
-                    "alias": "prompt",
-                    "label": "Text Prompt",
-                    "default": ""
-                },
-                {
-                    "name": "image_size",
-                    "type": "dropdown",
-                    "alias": "output_resolution",
-                    "label": "Output Size",
-                    "options": [
-                        {
-                            "value": "1K",
-                            "alias": "std",
-                            "label": "1K (~1024) — $0.03"
-                        },
-                        {
-                            "value": "1.5K",
-                            "alias": "high",
-                            "label": "1.5K (~1536) — $0.03 (Best Value)"
-                        },
-                        {
-                            "value": "2K",
-                            "alias": "ultra",
-                            "label": "2K (~2048) — $0.0405"
-                        }
-                    ],
-                    "default": "1.5K"
-                },
-                {
-                    "name": "transparent_bg",
-                    "type": "boolean",
-                    "label": "Transparent Background",
-                    "default": false
                 }
             ]
         }
