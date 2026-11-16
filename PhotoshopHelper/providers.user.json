@@ -173,17 +173,17 @@
             ]
         },
         {
-            "id": "spacexai_grok_imagine",
+            "id": "spacexsi_grok_imagine",
             "generation_modes": [
                 "t2i",
                 "i2i"
             ],
-            "name": "Grok Imagine - via SpaceXAI API Key (from $0.02/per image)", // Grok Imagine on FAL applies strong moderation filters
+            "name": "Grok Imagine - via SpaceXSI API Key (from $0.02/per image)", // Grok Imagine on FAL applies strong moderation filters
             "tags": {
-                "provider": "spacexai",
+                "provider": "spacexsi",
                 "family": "grok"
             },
-            "remarks": "<b>Pricing:</b> $0.02 per output image + $0.002 per input image.<br>Note that all generations that do not pass moderation are charged at full cost.",
+            "remarks": "<b>Pricing:</b> flat per output image + per input/reference image (source + extra refs, up to 5 total). On 1.0, 1.5K maps to 2K.<br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Model</b></td><td><b>1K</b></td><td><b>1.5K</b></td><td><b>2K</b></td><td><b>Input/Ref</b></td></tr><tr><td><b>1.0 Standard</b></td><td>$0.02</td><td>→ 2K</td><td>$0.02</td><td>+$0.002/img</td></tr><tr><td><b>2.0 Low</b></td><td>$0.04</td><td>$0.05</td><td>$0.06</td><td>+$0.01/img</td></tr><tr><td><b>2.0 Medium</b></td><td>$0.06</td><td>$0.07</td><td>$0.08</td><td>+$0.01/img</td></tr></table><br>Note: all generations that do not pass moderation are charged at full cost.",
             "image_format": "data_uri",
             "max_reference_images": 5,
             "supports_negative_prompt": false,
@@ -206,8 +206,24 @@
                 "9:16",
                 "1:2"
             ],
-            "nice_name": "Grok Imagine Standard (SpaceXAI Key)",
-            "filename_suffix": "grok_imagine",
+            "nice_name": {
+                "default": "Grok Imagine Standard (SpaceXSI Key)",
+                "depends_on": "quality",
+                "values": {
+                    "v1": "Grok Imagine Standard (SpaceXSI Key)",
+                    "low": "Grok Imagine 2.0 Low (SpaceXSI Key)",
+                    "medium": "Grok Imagine 2.0 Medium (SpaceXSI Key)"
+                }
+            },
+            "filename_suffix": {
+                "default": "grok_imagine",
+                "depends_on": "quality",
+                "values": {
+                    "v1": "grok_imagine",
+                    "low": "grok_imagine_2_0_low",
+                    "medium": "grok_imagine_2_0_medium"
+                }
+            },
             "request_config": {
                 "{{?!source_image}}endpoint_url": "https://api.x.ai/v1/images/generations",
                 "{{?source_image}}endpoint_url": "https://api.x.ai/v1/images/edits",
@@ -221,10 +237,13 @@
                     "type": "image_url"
                 },
                 "body_template": {
-                    "model": "grok-imagine-image",
+                    "{{?quality == 'v1'}}model": "grok-imagine-image",
+                    "{{?quality != 'v1'}}model": "grok-imagine-image-2.0",
                     "prompt": "{{prompt}}",
                     "n": "{{num_images}}",
-                    "resolution": "{{resolution}}",
+                    "{{?quality != 'v1'}}quality": "{{quality}}",
+                    "{{?quality == 'v1' && resolution == '1.5k'}}resolution": "2k",
+                    "{{?!(quality == 'v1' && resolution == '1.5k')}}resolution": "{{resolution}}",
                     "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
                     "{{?source_image}}images": [
                         {
@@ -260,6 +279,26 @@
                     "label": "Text Prompt",
                     "default": ""
                 },
+                {
+                    "name": "quality",
+                    "type": "dropdown",
+                    "label": "Quality",
+                    "options": [
+                        {
+                            "value": "v1",
+                            "label": "1.0 Standard (from $0.02 per image)"
+                        },
+                        {
+                            "value": "low",
+                            "label": "2.0 Low (from $0.04 per image)"
+                        },
+                        {
+                            "value": "medium",
+                            "label": "2.0 Medium (from $0.06 per image)"
+                        }
+                    ],
+                    "default": "v1"
+                },
                 //{
                 //    "name": "n",
                 //    "type": "slider",
@@ -278,154 +317,18 @@
                     "options": [
                         {
                             "value": "1k",
-                            "alias": "std"
+                            "alias": "std",
+                            "label": "1k"
+                        },
+                        {
+                            "value": "1.5k",
+                            "alias": "stdplus",
+                            "label": "1.5k (2.0 only; 1.0 uses 2k)"
                         },
                         {
                             "value": "2k",
-                            "alias": "high"
-                        },
-                        {
-                            "value": "2k",
-                            "alias": "ultra",
-                            "hidden": true
-                        }
-                    ],
-                    "default": "1k"
-                }
-            ]
-        },
-        {
-            "id": "spacexai_grok_imagine_2_0",
-            "generation_modes": [
-                "t2i",
-                "i2i"
-            ],
-            "name": "Grok Imagine 2.0 - via SpaceXAI API Key (from $0.04/per image)",
-            "tags": {
-                "provider": "spacexai",
-                "family": "grok"
-            },
-            "remarks": "<b>Image 2.0</b> is a single model with a Quality field (low / medium). Mask / Magic Wand / segmentation are UI-only and not wired in the API.<br>Official multi-ref limit is <b>3 source images total</b> (1 source + 2 extra refs).<br><br><b>Pricing</b> (output + $0.01 per input image):<br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Resolution</b></td><td><b>Low</b></td><td><b>Medium</b></td></tr><tr><td>1K</td><td>$0.04</td><td>$0.06</td></tr><tr><td>2K</td><td>$0.06</td><td>$0.08</td></tr></table><br>Note that all generations that do not pass moderation are charged at full cost.",
-            "image_format": "data_uri",
-            "max_reference_images": 5,
-            "supports_negative_prompt": false,
-            "english_only": false,
-            "mask_handling": {
-                // "supported": true,
-                // "type": "separate_field",
-                // "field_name": "mask"
-                "supported": false,
-                "required": false
-            },
-            "allowed_aspect_ratios": [
-                "2:1",
-                "16:9",
-                "3:2",
-                "4:3",
-                "1:1",
-                "3:4",
-                "2:3",
-                "9:16",
-                "1:2"
-            ],
-            "nice_name": {
-                "default": "Grok Imagine 2.0 (SpaceXAI Key)",
-                "depends_on": "quality",
-                "values": {
-                    "low": "Grok Imagine 2.0 Low (SpaceXAI Key)",
-                    "medium": "Grok Imagine 2.0 Medium (SpaceXAI Key)"
-                }
-            },
-            "filename_suffix": {
-                "default": "grok_imagine_2_0",
-                "depends_on": "quality",
-                "values": {
-                    "low": "grok_imagine_2_0_low",
-                    "medium": "grok_imagine_2_0_medium"
-                }
-            },
-            "request_config": {
-                "{{?!source_image}}endpoint_url": "https://api.x.ai/v1/images/generations",
-                "{{?source_image}}endpoint_url": "https://api.x.ai/v1/images/edits",
-                "method": "POST",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Authorization": "Bearer {{env:SPACEXAI_API_KEY}}"
-                },
-                "reference_item_template": {
-                    "url": "{{item}}",
-                    "type": "image_url"
-                },
-                "body_template": {
-                    "model": "grok-imagine-image-2.0",
-                    "prompt": "{{prompt}}",
-                    "n": "{{num_images}}",
-                    "quality": "{{quality}}",
-                    "resolution": "{{resolution}}",
-                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
-                    "{{?source_image}}images": [
-                        {
-                            "url": "{{source_image}}",
-                            "type": "image_url"
-                        },
-                        "{{resolved_references}}"
-                    ],
-                    "{{?mask_image}}mask": {
-                        "url": "{{mask_image}}",
-                        "type": "image_url"
-                    }
-                }
-            },
-            "response_config": {
-                "$ref": "sync",
-                "params": {
-                    "format": "url",
-                    "extract": [
-                        {
-                            "path": "data",
-                            "mode": "array",
-                            "item_path": "url"
-                        }
-                    ]
-                }
-            },
-            "parameters": [
-                {
-                    "name": "prompt",
-                    "type": "string",
-                    "alias": "prompt",
-                    "label": "Text Prompt",
-                    "default": ""
-                },
-                {
-                    "name": "quality",
-                    "type": "dropdown",
-                    "label": "Quality",
-                    "options": [
-                        {
-                            "value": "low",
-                            "label": "Low — $0.04 (1K) / $0.06 (2K) + $0.01/input"
-                        },
-                        {
-                            "value": "medium",
-                            "label": "Medium — $0.06 (1K) / $0.08 (2K) + $0.01/input"
-                        }
-                    ],
-                    "default": "medium"
-                },
-                {
-                    "name": "resolution",
-                    "type": "dropdown",
-                    "alias": "output_resolution",
-                    "label": "Resolution",
-                    "options": [
-                        {
-                            "value": "1k",
-                            "alias": "std"
-                        },
-                        {
-                            "value": "2k",
-                            "alias": "high"
+                            "alias": "high",
+                            "label": "2k"
                         },
                         {
                             "value": "2k",

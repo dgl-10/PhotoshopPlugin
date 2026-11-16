@@ -1403,13 +1403,18 @@
                         },
                         {
                             "value": "1.5K",
-                            "alias": "high",
+                            "alias": "stdplus",
                             "label": "1.5K (~1536) — $0.03 (Best Value)"
                         },
                         {
                             "value": "2K",
-                            "alias": "ultra",
+                            "alias": "high",
                             "label": "2K (~2048) — $0.0405"
+                        },
+                        {
+                            "value": "2K",
+                            "alias": "ultra",
+                            "hidden": true
                         }
                     ],
                     "default": "1.5K"
