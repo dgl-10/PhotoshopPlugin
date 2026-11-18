@@ -831,8 +831,9 @@
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
-                "supported": false,
-                "required": false
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "parts"
             },
             "remarks": "<b>Pricing:</b> $0.0336 per 1K output image (1120 tokens @ $30/1M) + ~$0.00028 per input image (1120 tokens @ $0.25/1M).<br>• <b>Resolution:</b> 1K only.<br>• <b>Reference images:</b> API accepts up to 14 object images, but according to Google docs Lite is optimized for single-turn generation/editing and is not optimized for multiple reference inputs, character consistency, or multi-turn sequential editing.",
             "request_config": {
@@ -996,8 +997,9 @@
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
-                "supported": false,
-                "required": false
+                "supported": true,
+                "type": "first_referential",
+                "field_name": "parts"
             },
             "remarks": "<b>Pricing per output image:</b><br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Model</b></td><td><b>1K</b></td><td><b>2K</b></td><td><b>4K</b></td><td><b>Input image</b></td></tr><tr><td><b>Nano Banana 2.1</b></td><td>$0.0336</td><td>$0.0504</td><td>$0.113</td><td>~$0.00056</td></tr><tr><td><b>Nano Banana Pro</b></td><td>$0.134</td><td>$0.134</td><td>$0.240</td><td>~$0.00112</td></tr><tr><td><b>Nano Banana 2 (depr.)</b></td><td>$0.0672</td><td>$0.1008</td><td>$0.1512</td><td>~$0.00028</td></tr></table><br>• <b>References (up to 14):</b> 2.1 & 2 support up to 10 objects + 4 characters; Pro supports up to 6 objects + 5 characters.<br>• <b>Google Search Grounding:</b> 5,000 free search queries/month shared on Gemini 3+, then $14/1,000 queries (billed per search query executed by the model). Image Search is supported on 2.1 and 2 only (skipped on Pro; Web + Image runs Web only on Pro) and cannot be used to search for people.",
             "request_config": {
