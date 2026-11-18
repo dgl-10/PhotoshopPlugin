@@ -175,6 +175,8 @@ Defines how source images, masks, and reference images are encoded before being 
 
 > **Note:** The `"url"` format currently falls back to `data_uri` because images are stored locally and there's no public URL service configured. This may change in the future.
 
+> **MIME Type Placeholders:** When using `"base64_raw"` with APIs that require a separate MIME type field alongside the raw Base64 payload (e.g., Google Gemini `inlineData.mimeType`), use `{{source_image_mime}}`, `{{mask_image_mime}}`, `{{item_mime}}` (in `reference_item_template`), or `{{reference_1_mime}}`, `{{reference_2_mime}}`, ... instead of hardcoding `"image/png"`. See §5.6.
+
 **This field is server-side only** — it is stripped before sending provider data to the browser.
 
 ### 3.3 Mask Handling (`mask_handling`)
@@ -478,6 +480,7 @@ This is the service that owns the API key and the HTTP endpoint, not the model b
 | `"replicate"` | Replicate |
 | `"fal"` | FAL |
 | `"openai"` | OpenAI (direct) |
+| `"google"` | Google Gemini (direct) |
 | `"spacexai"` | SpaceXAI (direct) |
 | `"bfl"` | Black Forest Labs (direct) |
 | `"civitai"` | Civitai Orchestration |
@@ -499,6 +502,7 @@ is offered through several hosts.
 | `"seedream"` | Seedream 4.5 / 5.0 (any host) |
 | `"flux"` | FLUX.1 Fill, FLUX.2 |
 | `"gpt-image"` | GPT-Image-1.5 / GPT-Image-2 |
+| `"nano-banana"` | Google Gemini Nano Banana image models (2.1, 2, Lite, Pro) |
 | `"alibaba"` | Umbrella family for Alibaba models (Wan, Qwen) |
 | `"wan"` | Wan video/image models (2.5, 2.6, 2.7) |
 | `"qwen"` | Qwen image models (2.0, 3.0 Pro) |
@@ -611,7 +615,7 @@ When `true` and the user requests `num_images = 3`, the server makes 3 separate 
 
 ### 4.3 Reference Item Template
 
-Some APIs (like OpenAI GPT-Image) require reference images to be wrapped in specific object structures instead of being plain strings.
+Some APIs (like OpenAI GPT-Image or Google Gemini) require reference images to be wrapped in specific object structures instead of being plain strings.
 
 ```jsonc
 "request_config": {
@@ -628,7 +632,18 @@ Some APIs (like OpenAI GPT-Image) require reference images to be wrapped in spec
 }
 ```
 
-The server processes each reference image through the template, replacing `{{item}}` with the actual image data, then substitutes the full array into `{{resolved_references}}`.
+The server processes each reference image through the template, replacing `{{item}}` with the actual image data and `{{item_mime}}` with that image's detected MIME type (`"image/png"`, `"image/jpeg"`, `"image/webp"`, or `"image/gif"`), then substitutes the full array into `{{resolved_references}}`.
+
+For APIs that use `"image_format": "base64_raw"` and require an explicit MIME type field alongside the raw base64 payload (such as Google Gemini's `inlineData`), combine `{{item}}` with `{{item_mime}}`:
+
+```jsonc
+"reference_item_template": {
+    "inlineData": {
+        "mimeType": "{{item_mime}}",
+        "data": "{{item}}"
+    }
+}
+```
 
 Result (3 references):
 ```json
@@ -785,15 +800,18 @@ These variables are always available in the placeholder context during request b
 | Variable | Source | Description |
 |----------|--------|-------------|
 | `{{source_image}}` | Server | Source image encoded in the provider's `image_format` |
+| `{{source_image_mime}}` | Server | Detected MIME type of `source_image` after preprocessing (inspected from magic bytes). Possible values: `"image/png"`, `"image/jpeg"`, `"image/webp"`, `"image/gif"` (falls back to `"image/png"` if unrecognized; `null` if no source image). |
 | `{{mask_image}}` | Server | Mask image encoded in the provider's `image_format` (or `null` if not using mask) |
+| `{{mask_image_mime}}` | Server | Detected MIME type of `mask_image` after preprocessing (same value set as `{{source_image_mime}}`, or `null` if not using mask). |
 | `{{num_images}}` | Client (root payload) | Number of images the user wants to generate |
 | `{{aspect_ratio}}` | Client (root payload) | Selected aspect ratio (e.g., `"16:9"`) or empty string for "Match Input" |
 | `{{prompt}}` | Client (params) | The user's text prompt |
 | `{{negative_prompt}}` | Client (params) | Negative prompt (if supported by provider) |
 | `{{env:VAR_NAME}}` | Environment | Server-side environment variable |
 | `{{resolved_image_array}}` | Server | Flat array of encoded reference images (optionally with mask prepended/appended). Automatically flattened into the parent array. |
-| `{{resolved_references}}` | Server | Array of reference image objects generated via `reference_item_template`. Automatically flattened into the parent array. |
+| `{{resolved_references}}` | Server | Array of reference image objects generated via `reference_item_template` (inside which `{{item}}` and `{{item_mime}}` are available). Automatically flattened into the parent array. |
 | `{{reference_1}}`, `{{reference_2}}`, ... | Server | Individual reference images by index (1-based) |
+| `{{reference_1_mime}}`, `{{reference_2_mime}}`, ... | Server | Detected MIME type for each individual reference image by index (1-based). Same value set: `"image/png"`, `"image/jpeg"`, `"image/webp"`, `"image/gif"`. |
 | `{{calculated_output_size}}` | Preprocessor | An `{width, height}` object calculated by `image_get_size` or `image_get_size_mp` |
 | `{{calculated_output_size_width}}` | Preprocessor | Calculated width as a number by `image_get_size` or `image_get_size_mp`|
 | `{{calculated_output_size_height}}` | Preprocessor | Calculated height as a number by `image_get_size` or `image_get_size_mp`|
@@ -815,7 +833,7 @@ Inserts reference images as plain strings into an array. If placed inside a JSON
 **Used by:** FAL-based providers (Seedream, Wan, Qwen)
 
 #### Method 2: Object Array (`{{resolved_references}}` + `reference_item_template`)
-Each reference image is wrapped through the `reference_item_template` and the resulting objects are spread into the array.
+Each reference image is wrapped through the `reference_item_template` (where `{{item}}` is the encoded image and `{{item_mime}}` is its detected MIME type) and the resulting objects are spread into the array.
 
 ```jsonc
 "reference_item_template": { "url": "{{item}}", "type": "image_url" },
@@ -828,10 +846,10 @@ Each reference image is wrapped through the `reference_item_template` and the re
 // Result: [{ "url": "src...", "type": "image_url" }, { "url": "ref1...", "type": "image_url" }, ...]
 ```
 
-**Used by:** OpenAI GPT-Image
+**Used by:** OpenAI GPT-Image, Google Gemini (`inlineData` with `{{item_mime}}` and `{{item}}`)
 
 #### Method 3: Flat Fields (`{{reference_1}}`, `{{reference_2}}`, ...)
-Each reference image is placed into a separate named field using conditional syntax to omit empty ones.
+Each reference image is placed into a separate named field using conditional syntax to omit empty ones. When needed, per-image MIME types are also available as `{{reference_1_mime}}`, `{{reference_2_mime}}`, etc.
 
 ```jsonc
 "body_template": {
@@ -856,7 +874,7 @@ The `parameters` array defines the dynamic UI controls rendered in the browser. 
 
 | `type` | UI Element | Required Fields | Optional Fields |
 |--------|-----------|----------------|-----------------|
-| `"string"` | Text input | `name`, `default` | `label`, `alias` |
+| `"string"` | Text input (or multi-line text area if `"multiline": true`) | `name`, `default` | `label`, `alias`, `multiline` |
 | `"boolean"` | Checkbox | `name`, `default` | `label`, `alias` |
 | `"integer"` | Number input (whole numbers) | `name`, `default` | `label`, `alias` |
 | `"number"` | Number input (decimals) | `name`, `default` | `label`, `alias` |
@@ -871,6 +889,12 @@ The `parameters` array defines the dynamic UI controls rendered in the browser. 
 | `label` | `string` | Human-readable label shown in the UI. Defaults to `name` if absent. |
 | `alias` | `string` | Cross-provider identifier for value persistence. See §6.3 and §6.4. |
 | `default` | `any` | Default value when the parameter has no saved state. |
+
+#### String-Specific Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `multiline` | `boolean` | Optional (`false` by default). When `true`, renders a multi-line `<textarea rows="3">` styled identically to the Prompt field instead of a single-line `<input type="text">`. Ignored when `alias` is `"prompt"` or `"negative_prompt"`, which always render in fixed text areas (§6.3). |
 
 ### 6.2 Dropdown Options — Aliases and Hidden Values
 

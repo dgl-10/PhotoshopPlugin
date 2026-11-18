@@ -701,6 +701,8 @@ class App {
                 html += `<div class="slider-row"><input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${val}" ${attrs}><span data-val="${escapeHtml(p.name)}">${escapeHtml(val)}</span></div>`;
             } else if (p.type === 'boolean') {
                 html += `<label class="check"><input type="checkbox" ${val ? 'checked' : ''} ${attrs}> ${escapeHtml(p.label || p.name)}</label>`;
+            } else if (p.type === 'string' && p.multiline) {
+                html += `<textarea rows="3" ${attrs}>${escapeHtml(val ?? '')}</textarea>`;
             } else {
                 const type = (p.type === 'integer' || p.type === 'number') ? 'number' : 'text';
                 html += `<input type="${type}" value="${escapeHtml(val ?? '')}" ${attrs}>`;

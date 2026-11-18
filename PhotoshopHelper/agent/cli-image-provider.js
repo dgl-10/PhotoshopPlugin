@@ -69,7 +69,7 @@ const CLI_PROFILES = {
     agy: {
         label: CLI_LABELS.agy,
         max_reference_images: 3,
-        tag_family: 'nana-banana'
+        tag_family: 'nano-banana'
     },
     claude: {
         label: CLI_LABELS.claude

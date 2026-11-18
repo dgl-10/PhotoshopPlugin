@@ -133,7 +133,7 @@ For each supported mode:
 - configure `mask_handling` only according to documented mask support;
 - set `max_reference_images` to the total verified API image limit (the full image budget accepted by the API endpoint, e.g., 3 for Qwen or 4 for Wan 2.7). Never subtract 1 for the source image — the runtime automatically allocates slots for `source_image` and referential masks dynamically;
 - preserve the provider's required source/reference order;
-- use the guide's canonical source and reference placeholders;
+- use the guide's canonical source, reference, and MIME-type placeholders (never hardcode an input image MIME type such as `"image/png"` when the API requires an explicit MIME field alongside raw Base64 data);
 - include a mask only in modes and fields that officially accept it;
 - verify mask dimensions, alpha/transparency expectations, and required preprocessing;
 - do not send an empty source, mask, or image array merely to satisfy a field name.
@@ -237,8 +237,9 @@ Read the API key only from the supplied environment variable using the guide's
 not assume every provider uses `Authorization: Bearer`.
 
 Possible patterns include `"Authorization": "Bearer {{env:<API_KEY_ENV_VAR>}}"`,
-`"Authorization": "Key {{env:<API_KEY_ENV_VAR>}}"`, and
-`"x-key": "{{env:<API_KEY_ENV_VAR>}}"`.
+`"Authorization": "Key {{env:<API_KEY_ENV_VAR>}}"`,
+`"x-key": "{{env:<API_KEY_ENV_VAR>}}"`, and
+`"x-goog-api-key": "{{env:<API_KEY_ENV_VAR>}}"`.
 
 Choose exactly the documented pattern. Never output the secret value and never create
 a UI field for it.
@@ -303,10 +304,10 @@ live test.
 Always include a `tags` object on the provider as documented in the guide.
 
 - `tags.provider`: slug of the API host from `PROVIDER_NAME` (for example `replicate`,
-  `fal`, `openai`, `spacexai`, `bfl`, `civitai`). This is the service that owns the key and endpoint,
+  `fal`, `openai`, `google`, `spacexai`, `bfl`, `civitai`). This is the service that owns the key and endpoint,
   not the model brand. Reuse an existing host slug when the same API family is used.
 - `tags.family`: slug of the model line from `MODEL_ID` (for example `seedream`,
-  `flux`, `grok`, `gpt-image`, `qwen`, `alibaba`, `p-image`). Reuse an existing family
+  `flux`, `grok`, `gpt-image`, `nano-banana`, `qwen`, `alibaba`, `p-image`). Reuse an existing family
   slug when the configuration is another host or version of the same line.
 
 Use lowercase slugs with optional hyphens. `tags.family` can be a single slug string

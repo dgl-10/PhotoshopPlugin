@@ -3,6 +3,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const { waitForApiResult, downloadAndSaveImages, makeRequest } = require('./apiGeneratorResultsGetter');
+const { detectMimeTypeFromBase64 } = require('./imageUtils');
 const { loadProvidersCatalog } = require('./providers-catalog');
 const { resolveTemplate } = require('./templateEngine');
 const { resolveWebhelperFile } = require('./webhelper-storage');
@@ -88,6 +89,77 @@ function formatImage(filePath, format) {
         return `data:${mime};base64,${base64}`;
     }
     return base64;
+}
+
+/**
+ * Detect the MIME type of a formatted image value produced by formatImage(),
+ * formatReferenceImage(), or a preprocessor.
+ *
+ * Magic bytes are inspected first so that images re-encoded by preprocessors
+ * (for example, a WebP reference re-encoded as PNG during resize) always report
+ * the true MIME type of their binary payload. When magic bytes are not recognized,
+ * any explicit Data URI header or file extension is used before falling back to
+ * 'image/png'.
+ *
+ * @param {string|null|undefined} formattedImage - Formatted image string (raw base64, Data URI, or file path).
+ * @param {string} [imageFormat] - Provider image_format ('base64_raw', 'data_uri', 'url', or 'file_path').
+ * @returns {string|null} Detected MIME type (e.g. 'image/jpeg', 'image/png', 'image/webp'), or null if absent.
+ */
+function detectFormattedImageMime(formattedImage, imageFormat) {
+    if (!formattedImage || typeof formattedImage !== 'string') {
+        return null;
+    }
+
+    let rawBase64 = formattedImage;
+    let headerMime = null;
+
+    if (imageFormat === 'file_path') {
+        if (fs.existsSync(formattedImage)) {
+            const buffer = fs.readFileSync(formattedImage);
+            rawBase64 = buffer.subarray(0, 12).toString('base64');
+        } else {
+            rawBase64 = '';
+        }
+        const ext = path.extname(formattedImage).toLowerCase();
+        if (ext === '.jpg' || ext === '.jpeg') headerMime = 'image/jpeg';
+        else if (ext === '.webp') headerMime = 'image/webp';
+        else if (ext === '.gif') headerMime = 'image/gif';
+        else if (ext === '.png') headerMime = 'image/png';
+    } else if (formattedImage.startsWith('data:')) {
+        const match = formattedImage.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/s);
+        if (match) {
+            headerMime = match[1].toLowerCase();
+            rawBase64 = match[2];
+        }
+    }
+
+    if (rawBase64) {
+        const bytes = Buffer.from(rawBase64.substring(0, 16), 'base64');
+        if (bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+            return 'image/jpeg';
+        }
+        if (bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+            return 'image/png';
+        }
+        if (
+            bytes.length >= 12 &&
+            bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+            bytes.subarray(8, 12).toString('ascii') === 'WEBP'
+        ) {
+            return 'image/webp';
+        }
+        if (bytes.length >= 6) {
+            const gifSig = bytes.subarray(0, 6).toString('ascii');
+            if (gifSig === 'GIF87a' || gifSig === 'GIF89a') {
+                return 'image/gif';
+            }
+        }
+    }
+
+    if (headerMime === 'image/jpg') {
+        return 'image/jpeg';
+    }
+    return headerMime || detectMimeTypeFromBase64(rawBase64 || '');
 }
 
 /**
@@ -620,7 +692,9 @@ async function generate(taskOrId, providerIdOrObject, num_images, aspect_ratio, 
     }
 
     context.source_image = sourceImageFormatted;
+    context.source_image_mime = detectFormattedImageMime(sourceImageFormatted, provider.image_format);
     context.mask_image = maskImageFormatted;
+    context.mask_image_mime = detectFormattedImageMime(maskImageFormatted, provider.image_format);
 
     // Build one canonical additional-image list for every provider template style.
     const maskType = provider.mask_handling?.type;
@@ -629,17 +703,26 @@ async function generate(taskOrId, providerIdOrObject, num_images, aspect_ratio, 
         maskImageFormatted,
         maskType
     );
+    const requestReferenceImageMimes = requestReferenceImages.map(ref =>
+        detectFormattedImageMime(ref, provider.image_format)
+    );
 
-    // Provide flat reference properties (reference_1, reference_2, etc.). Referential
+    // Provide flat reference properties (reference_1, reference_2, etc.) and their
+    // corresponding MIME types (reference_1_mime, reference_2_mime, etc.). Referential
     // masks intentionally occupy their configured position in these fields.
     requestReferenceImages.forEach((refBase64, index) => {
         context[`reference_${index + 1}`] = refBase64;
+        context[`reference_${index + 1}_mime`] = requestReferenceImageMimes[index];
     });
 
     // Provide wrapped references when a provider expects objects instead of strings.
     if (reqConfig.reference_item_template) {
-        context.resolved_references = requestReferenceImages.map(refBase64 => {
-            const tempContext = { ...context, item: refBase64 };
+        context.resolved_references = requestReferenceImages.map((refBase64, index) => {
+            const tempContext = {
+                ...context,
+                item: refBase64,
+                item_mime: requestReferenceImageMimes[index]
+            };
             return resolveTemplate(reqConfig.reference_item_template, tempContext);
         });
     }
@@ -831,6 +914,7 @@ module.exports = {
     // keep the helpers module-private.
     resolveImageFilePath,
     formatReferenceImage,
+    detectFormattedImageMime, // Exported solely for unit testing MIME detection across image formats
     resolveGenerationTask,
     normalizeGenerationImages,
     requireTextToImageAspectRatio,
