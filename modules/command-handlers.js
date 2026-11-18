@@ -332,7 +332,8 @@ async function agentFromPsCapture(payload) {
     const link = requirePanel();
 
     return agentDocument.withWorkingDocument(payload.taskId, async (doc) => {
-        if (!(await hasSelection(doc))) {
+        const fullDocument = payload.fullDocument === true;
+        if (!fullDocument && !(await hasSelection(doc))) {
             throw new Error(
                 `There is no selection in "${doc.name}". Select the area first — with `
                 + 'ps_execute_script, or ask the person to — then capture again.'
@@ -353,7 +354,7 @@ async function agentFromPsCapture(payload) {
                 executionContext,
                 sourceMode,
                 payload.keepTransparency === true,
-                payload.fullDocument === true,
+                fullDocument,
                 padding
             ),
             'Agent: capture'
@@ -372,8 +373,9 @@ async function agentFromPsCapture(payload) {
                 aspectRatio: captured.aspectRatio,
                 source: payload.source || 'visible',
                 padding,
-                fullDocument: payload.fullDocument === true,
-                keepTransparency: payload.keepTransparency === true
+                fullDocument,
+                keepTransparency: payload.keepTransparency === true,
+                hasMask: Boolean(captured.maskData) && !captured.isSelectAll
             },
             status: agentDocument.buildStatus(payload.taskId)
         };

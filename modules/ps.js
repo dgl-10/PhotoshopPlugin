@@ -198,7 +198,7 @@ async function captureSelection(sourceMode, viaTempDocCreation, fullDocMask = fa
         throw new Error("No active document");
     }
 
-    if (!(await hasActiveSelection())) {
+    if (!fullDocMask && !(await hasActiveSelection())) {
         throw new Error("No active selection");
     }
 
@@ -212,26 +212,35 @@ async function captureSelection(sourceMode, viaTempDocCreation, fullDocMask = fa
 /**
  * The capture itself, for a caller that already holds a modal scope — the agent's
  * from_ps_capture opens its own and must not open a second one inside it. Works on the
- * active document and its selection; the caller checks that both exist.
+ * active document and its selection; the caller checks that both exist (unless fullDocMask is true).
  *
  * @param {object} executionContext - Context of the caller's executeAsModal.
  * @param {string} sourceMode - 'copyMerged' or 'currentLayer'.
  * @param {boolean} viaTempDocCreation - See captureSelection.
  * @param {boolean} [fullDocMask=false] - See captureSelection.
  * @param {number} [padding=CAPTURE_PADDING] - See captureSelection.
- * @returns {Promise<{imageData: ImageData, maskData: ImageData, bounds: object, context: object}>}
+ * @returns {Promise<{imageData: ImageData, maskData: ImageData|null, bounds: object, context: object}>}
  */
 async function captureSelectionInModal(executionContext, sourceMode, viaTempDocCreation, fullDocMask = false, padding = CAPTURE_PADDING) {
     const doc = app.activeDocument;
     const activeLayer = doc.activeLayers[0];
 
-
-    // Get selection bounds
-    const bounds = await getSelectionBounds();
-
     // Get document dimensions
     const docWidth = doc.width;
     const docHeight = doc.height;
+
+    // Full Doc mode can run with no active selection; read selection bounds only when one exists.
+    const hasSelection = fullDocMask ? await hasActiveSelection() : true;
+    const bounds = hasSelection
+        ? await getSelectionBounds()
+        : {
+            left: 0,
+            top: 0,
+            right: docWidth,
+            bottom: docHeight,
+            width: docWidth,
+            height: docHeight
+        };
 
     let expandedBounds;
     let bestRatioName;
@@ -453,90 +462,101 @@ async function captureSelectionInModal(executionContext, sourceMode, viaTempDocC
         console.log('Expanded Bounds (with padding):', expandedBounds);
     }
 
-    // Get the selection mask
-    // API often returns tight bounds even if we request expanded ones.
-    // We must handle the potential size mismatch manually.
-    const selectionResult = await imaging.getSelection({
-        documentID: doc.id,
-        sourceBounds: expandedBounds
-    });
+    let psImageData = null;
+    let returnedBounds = null;
+    let isSelectAll = false;
+    let maskData = null;
 
-    // Resolve the actual returned bounds and data
-    const returnedBounds = selectionResult.sourceBounds || expandedBounds;
-    const psImageData = selectionResult.imageData;
-    let finalMaskBuffer;
+    if (hasSelection) {
+        // Get the selection mask
+        // API often returns tight bounds even if we request expanded ones.
+        // We must handle the potential size mismatch manually.
+        const selectionResult = await imaging.getSelection({
+            documentID: doc.id,
+            sourceBounds: expandedBounds
+        });
 
-    // Get raw data from the returned image object
-    const rawMaskData = await psImageData.getData();
-    const tightMaskBuffer = new Uint8Array(rawMaskData);
+        // Resolve the actual returned bounds and data
+        returnedBounds = selectionResult.sourceBounds || expandedBounds;
+        psImageData = selectionResult.imageData;
+        let finalMaskBuffer;
 
-    // Check if we need to manually pad
-    // Compare logic: check if returned width/height matches requested dimensions
-    const returnedWidth = returnedBounds.right - returnedBounds.left;
-    const returnedHeight = returnedBounds.bottom - returnedBounds.top;
+        // Get raw data from the returned image object
+        const rawMaskData = await psImageData.getData();
+        const tightMaskBuffer = new Uint8Array(rawMaskData);
 
-    // DOCUMENTATION: Manual Mask Padding Strategy
-    // The imaging.getSelection API tends to "auto-crop" the result to the bounding box of the non-empty selection pixels,
-    // ignoring the requested 'sourceBounds' if they contain empty (transparent/black) headers.
-    // To strictly enforce the requested padding (context), we must:
-    // 1. Detect if the returned image is smaller than requested.
-    // 2. Create a new zero-filled buffer (black) of the full requested size.
-    // 3. Composite the returned mask data into this buffer at the correct relative offset.
+        // Check if we need to manually pad
+        // Compare logic: check if returned width/height matches requested dimensions
+        const returnedWidth = returnedBounds.right - returnedBounds.left;
+        const returnedHeight = returnedBounds.bottom - returnedBounds.top;
 
-    if (returnedWidth < expandedBounds.width || returnedHeight < expandedBounds.height) {
-        console.log(`[Padding Fix] Returned bounds (${returnedWidth}x${returnedHeight}) < Requested (${expandedBounds.width}x${expandedBounds.height}). Applying manual padding.`);
+        // DOCUMENTATION: Manual Mask Padding Strategy
+        // The imaging.getSelection API tends to "auto-crop" the result to the bounding box of the non-empty selection pixels,
+        // ignoring the requested 'sourceBounds' if they contain empty (transparent/black) headers.
+        // To strictly enforce the requested padding (context), we must:
+        // 1. Detect if the returned image is smaller than requested.
+        // 2. Create a new zero-filled buffer (black) of the full requested size.
+        // 3. Composite the returned mask data into this buffer at the correct relative offset.
 
-        // Create full-size black buffer (0 initialized)
-        finalMaskBuffer = new Uint8Array(expandedBounds.width * expandedBounds.height);
+        if (returnedWidth < expandedBounds.width || returnedHeight < expandedBounds.height) {
+            console.log(`[Padding Fix] Returned bounds (${returnedWidth}x${returnedHeight}) < Requested (${expandedBounds.width}x${expandedBounds.height}). Applying manual padding.`);
 
-        // Calculate offsets for placement
-        const offsetX = returnedBounds.left - expandedBounds.left;
-        const offsetY = returnedBounds.top - expandedBounds.top;
+            // Create full-size black buffer (0 initialized)
+            finalMaskBuffer = new Uint8Array(expandedBounds.width * expandedBounds.height);
 
-        // Copy tight mask into the full buffer
-        for (let y = 0; y < returnedHeight; y++) {
-            // Source row start
-            const srcStart = y * returnedWidth;
+            // Calculate offsets for placement
+            const offsetX = returnedBounds.left - expandedBounds.left;
+            const offsetY = returnedBounds.top - expandedBounds.top;
 
-            // Dest row start
-            const dstRow = y + offsetY;
-            const dstStart = (dstRow * expandedBounds.width) + offsetX;
+            // Copy tight mask into the full buffer
+            for (let y = 0; y < returnedHeight; y++) {
+                // Source row start
+                const srcStart = y * returnedWidth;
 
-            // Copy row with bounds validation
-            if (dstRow >= 0 && dstRow < expandedBounds.height) {
-                // Safety: clamp width to prevent overflow
-                const copyLen = Math.min(returnedWidth, expandedBounds.width - offsetX);
-                if (copyLen > 0) {
-                    const sub = tightMaskBuffer.subarray(srcStart, srcStart + copyLen);
-                    finalMaskBuffer.set(sub, dstStart);
+                // Dest row start
+                const dstRow = y + offsetY;
+                const dstStart = (dstRow * expandedBounds.width) + offsetX;
+
+                // Copy row with bounds validation
+                if (dstRow >= 0 && dstRow < expandedBounds.height) {
+                    // Safety: clamp width to prevent overflow
+                    const copyLen = Math.min(returnedWidth, expandedBounds.width - offsetX);
+                    if (copyLen > 0) {
+                        const sub = tightMaskBuffer.subarray(srcStart, srcStart + copyLen);
+                        finalMaskBuffer.set(sub, dstStart);
+                    }
                 }
             }
+        } else {
+            console.log('[Padding Fix] Bounds match requested. No manual padding needed.');
+            finalMaskBuffer = tightMaskBuffer;
         }
+
+        // Determine if the selection is a trivial "Select All" — the mask is entirely white
+        // and carries no spatial information for the model.
+        // NOTE: Bounds-based check alone is not sufficient: Full Doc mode also produces
+        // expandedBounds equal to the document size but with a real mask (black background,
+        // white selection area). Only a pixel-level check is reliable here.
+        // Short-circuit: for non-Select-All masks the loop exits on the first dark pixel.
+        isSelectAll = finalMaskBuffer.every(v => v >= 250);
+        if (isSelectAll) {
+            console.log('[Capture] Select All detected — mask is trivially all-white, will suppress mask-related operations.');
+        }
+
+        // Create a compliant object for the payload
+        // We use a plain object structure that fs.js can understand
+        maskData = {
+            width: expandedBounds.width,
+            height: expandedBounds.height,
+            components: 1, // Grayscale
+            imageData: finalMaskBuffer,
+            sourceBounds: expandedBounds
+        };
     } else {
-        console.log('[Padding Fix] Bounds match requested. No manual padding needed.');
-        finalMaskBuffer = tightMaskBuffer;
+        // Full Doc capture without a selection: behave as maskless (same suppression as Select All).
+        isSelectAll = true;
+        console.log('[Capture] Full Doc with no selection — capturing entire document without mask.');
     }
-
-    // Determine if the selection is a trivial "Select All" — the mask is entirely white
-    // and carries no spatial information for the model.
-    // NOTE: Bounds-based check alone is not sufficient: Full Doc mode also produces
-    // expandedBounds equal to the document size but with a real mask (black background,
-    // white selection area). Only a pixel-level check is reliable here.
-    // Short-circuit: for non-Select-All masks the loop exits on the first dark pixel.
-    const isSelectAll = finalMaskBuffer.every(v => v >= 250);
-    if (isSelectAll) {
-        console.log('[Capture] Select All detected — mask is trivially all-white, will suppress mask-related operations.');
-    }
-
-    // Create a compliant object for the payload
-    // We use a plain object structure that fs.js can understand
-    const maskData = {
-        width: expandedBounds.width,
-        height: expandedBounds.height,
-        components: 1, // Grayscale
-        imageData: finalMaskBuffer,
-        sourceBounds: expandedBounds
-    };
 
     // Get image content
     let imageData;
@@ -649,8 +669,9 @@ async function captureSelectionAsBase64PNG(sourceMode, expandedBounds, activeLay
     // Explicitly set the document selection to expandedBounds
     // to ensure the clipboard contains the full padded area.
     try {
+        // Only currentLayer mode needs a pre-existing active layer; copyMerged copies via tempLayer.
         const copyTarget = activeLayer || (doc.activeLayers && doc.activeLayers[0]);
-        if (!copyTarget) {
+        if (sourceMode !== 'copyMerged' && !copyTarget) {
             throw new Error("No layer found to perform copy operation.");
         }
 
@@ -663,68 +684,77 @@ async function captureSelectionAsBase64PNG(sourceMode, expandedBounds, activeLay
             name: "Capture Merged Padding"
         });
 
-        // 1. Set the selection FIRST (with sync steps)
-        console.log(`[Capture] Resetting selection to expandedBounds:`, expandedBounds);
-        await doc.selection.selectRectangle({
-            top: Math.round(expandedBounds.top),
-            left: Math.round(expandedBounds.left),
-            bottom: Math.round(expandedBounds.bottom),
-            right: Math.round(expandedBounds.right)
-        }, constants.SelectionType.REPLACE);
+        try {
+            // 1. Set the selection FIRST (with sync steps)
+            console.log(`[Capture] Resetting selection to expandedBounds:`, expandedBounds);
+            await doc.selection.selectRectangle({
+                top: Math.round(expandedBounds.top),
+                left: Math.round(expandedBounds.left),
+                bottom: Math.round(expandedBounds.bottom),
+                right: Math.round(expandedBounds.right)
+            }, constants.SelectionType.REPLACE);
 
-        if (sourceMode === 'copyMerged') {
-            console.log("[Capture] Applying technical pixels workaround for copyMerged...");
-            // WORKAROUND: Photoshop trims transparent edges during copyMerged.
-            // We draw pixels on a temporary layer. 
-            // IMPORTANT: 'replace: false' is used so that each putPixels call adds to the layer.
+            if (sourceMode === 'copyMerged') {
+                console.log("[Capture] Applying technical pixels workaround for copyMerged...");
+                // WORKAROUND: Photoshop trims transparent edges during copyMerged.
+                // We draw pixels on a temporary layer.
+                // IMPORTANT: 'replace: false' is used so that each putPixels call adds to the layer.
 
-            const tempLayer = await doc.createLayer({ name: "Technical Padding Layer" });
-
-            const r = leaveWorkingDoc ? 191 : 0;
-            const g = leaveWorkingDoc ? 255 : 0;
-            const b = leaveWorkingDoc ? 0 : 0;
-            const a = leaveWorkingDoc ? 255 : 1;
-
-            // Helper to create and put a single pixel
-            const putSinglePixel = async (x, y) => {
-                const buffer = new Uint8Array([r, g, b, a]);
-                const data = await imaging.createImageDataFromBuffer(buffer, {
-                    width: 1, height: 1, components: 4, colorSpace: "RGB"
+                const tempLayer = await doc.createLayer(constants.LayerKind.NORMAL, {
+                    name: "Technical Padding Layer"
                 });
-                await imaging.putPixels({
-                    layerID: tempLayer.id,
-                    imageData: data,
-                    replace: false, // Critical: don't clear the layer
-                    targetBounds: { top: y, left: x }
-                });
-                data.dispose();
-            };
 
-            // 3. Place pixels at the corners and center
-            await putSinglePixel(Math.round(expandedBounds.left), Math.round(expandedBounds.top));
-            await putSinglePixel(Math.round(expandedBounds.right) - 1, Math.round(expandedBounds.bottom) - 1);
-            if (leaveWorkingDoc) {
-                const centerX = Math.round(expandedBounds.left + expandedBounds.width / 2);
-                const centerY = Math.round(expandedBounds.top + expandedBounds.height / 2);
-                await putSinglePixel(centerX, centerY);
+                // Move tempLayer to root top so it never sits inside a hidden group or clipping mask
+                if (doc.layers.length > 0 && doc.layers[0].id !== tempLayer.id) {
+                    await tempLayer.move(doc.layers[0], constants.ElementPlacement.PLACEBEFORE);
+                }
+
+                const r = leaveWorkingDoc ? 191 : 0;
+                const g = leaveWorkingDoc ? 255 : 0;
+                const b = leaveWorkingDoc ? 0 : 0;
+                const a = leaveWorkingDoc ? 255 : 1;
+
+                // Helper to create and put a single pixel
+                const putSinglePixel = async (x, y) => {
+                    const buffer = new Uint8Array([r, g, b, a]);
+                    const data = await imaging.createImageDataFromBuffer(buffer, {
+                        width: 1, height: 1, components: 4, colorSpace: "RGB"
+                    });
+                    await imaging.putPixels({
+                        layerID: tempLayer.id,
+                        imageData: data,
+                        replace: false, // Critical: don't clear the layer
+                        targetBounds: { top: y, left: x }
+                    });
+                    data.dispose();
+                };
+
+                // 3. Place pixels at the corners and center
+                await putSinglePixel(Math.round(expandedBounds.left), Math.round(expandedBounds.top));
+                await putSinglePixel(Math.round(expandedBounds.right) - 1, Math.round(expandedBounds.bottom) - 1);
+                if (leaveWorkingDoc) {
+                    const centerX = Math.round(expandedBounds.left + expandedBounds.width / 2);
+                    const centerY = Math.round(expandedBounds.top + expandedBounds.height / 2);
+                    await putSinglePixel(centerX, centerY);
+                }
+
+                // 5. Perform copy merged from tempLayer so a hidden activeLayer is never targeted or unhidden
+                await tempLayer.copy(true);
+            } else {
+                // Normal copy for currentLayer (via DOM)
+                await copyTarget.copy();
             }
-
-            // 5. Finally perform the copy merged
-            await copyTarget.copy(true);
-        } else {
-            // Normal copy for currentLayer (via DOM)
-            await copyTarget.copy();
-        }
-
-        // --- CLEANUP & HISTORY REVERSION ---
-        // Finalize the history state. 
-        // passing 'false' as the second argument rolls back all changes made during suspension.
-        if (suspensionID) {
-            console.log("[Capture] Reverting technical document changes (History Clean via Rollback)...");
-            await hostControl.resumeHistory(suspensionID, false);
-            doNotRestoreSelection = true;
-        } else if (leaveWorkingDoc) {
-            console.log("[Capture] DEBUG MODE: Selection and technical layers left untouched.");
+        } finally {
+            // --- CLEANUP & HISTORY REVERSION ---
+            // Finalize the history state.
+            // passing 'false' as the second argument rolls back all changes made during suspension.
+            if (suspensionID) {
+                console.log("[Capture] Reverting technical document changes (History Clean via Rollback)...");
+                await hostControl.resumeHistory(suspensionID, false);
+                doNotRestoreSelection = true;
+            } else if (leaveWorkingDoc) {
+                console.log("[Capture] DEBUG MODE: Selection and technical layers left untouched.");
+            }
         }
 
     } catch (copyErr) {

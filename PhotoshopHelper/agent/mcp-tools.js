@@ -836,8 +836,9 @@ function createAgentTools({
                     full_document: {
                         type: 'boolean',
                         description: 'Capture the whole document instead of a piece, with the '
-                            + 'selection as its mask ("Full Doc Mask" in the panel). For a '
-                            + 'generator that has to see the whole picture. Default false.'
+                            + 'selection as its mask — or without a mask when nothing is selected '
+                            + '("Full Doc Mask" in the panel). For a generator that has to see '
+                            + 'the whole picture. Default false.'
                     },
                     keep_transparency: {
                         type: 'boolean',
@@ -1804,12 +1805,14 @@ function createAgentTools({
 
         const capture = (answer && answer.capture) || {};
         const bounds = capture.bounds || {};
-        const margin = capture.fullDocument ? 'the whole document' : `padding ${capture.padding} px`;
+        const areaDescription = capture.fullDocument
+            ? (capture.hasMask === false ? 'the whole document without a mask' : 'the selection with the whole document')
+            : `the selection with padding ${capture.padding} px`;
         const text = [
             `Capture id ${capture.id} is in the FromPS card, ready for the person to drag `
             + `(number ${capture.number} in the card's list).`,
             `The piece: left ${bounds.left}, top ${bounds.top}, `
-            + `right ${bounds.right}, bottom ${bounds.bottom} — the selection with ${margin}`
+            + `right ${bounds.right}, bottom ${bounds.bottom} — ${areaDescription}`
             + (capture.aspectRatio ? `, aspect ratio ${capture.aspectRatio}.` : '.'),
             `Pass capture_id ${capture.id} to to_ps_place_back.`
         ].join('\n');

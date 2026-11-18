@@ -161,6 +161,36 @@ test('from_ps_capture captures the current selection as it is and returns its id
     assert.match(text, /\[state\]/);
 });
 
+test('from_ps_capture with full_document and no mask reports a maskless full-document capture', async context => {
+    const { tools, calls } = makeTools(context, {
+        agent_start_task: startAnswer(),
+        agent_from_ps_capture: {
+            capture: {
+                id: 14,
+                number: 4,
+                bounds: { left: 0, top: 0, right: 2000, bottom: 3000 },
+                width: 2000,
+                height: 3000,
+                aspectRatio: 'Full Doc 2:3',
+                fullDocument: true,
+                hasMask: false
+            },
+            status: { documentId: 7, documentName: 'poster.psd', historyStep: 'Open', sinceLastCall: [] }
+        }
+    });
+    const taskId = await startTask(tools, 'capture full canvas');
+
+    const result = await tools.call('from_ps_capture', { task_id: taskId, full_document: true });
+
+    const sent = calls.at(-1);
+    assert.equal(sent.action, 'agent_from_ps_capture');
+    assert.equal(sent.payload.fullDocument, true);
+    assert.equal(result.isError, undefined);
+    const text = result.content[0].text;
+    assert.match(text, /left 0, top 0, right 2000, bottom 3000 — the whole document without a mask/);
+    assert.match(text, /aspect ratio Full Doc 2:3/);
+});
+
 test('the from_ps_ and to_ps_ tools describe the panel buttons they stand for', context => {
     const { tools } = makeTools(context);
     const byName = Object.fromEntries(tools.list().map(tool => [tool.name, tool]));

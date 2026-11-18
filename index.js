@@ -371,10 +371,12 @@ async function handleCapture(viaTempDocCreation, fullDocMask = false) {
             return;
         }
 
-        const hasSelection = await ps.hasActiveSelection();
-        if (!hasSelection) {
-            ui.showError('fromps', 'No active selection');
-            return;
+        if (!fullDocMask) {
+            const hasSelection = await ps.hasActiveSelection();
+            if (!hasSelection) {
+                ui.showError('fromps', 'No active selection');
+                return;
+            }
         }
 
         ui.showInfo('fromps', 'Capturing...');

@@ -718,6 +718,8 @@ async function runOverlayRenderer(primary, fallback, rendererName) {
  * fallback for JavaScript-visible errors.
  */
 async function generateOverlayMaskForPreview(maskData, compact = true) {
+    if (!maskData) return null;
+
     if (USE_PNG_OVERLAY_AS_PRIMARY) {
         return runOverlayRenderer(
             () => generateOverlayMaskPng(maskData, compact),
