@@ -7,6 +7,7 @@ const { app, action, core, imaging, constants } = require('photoshop');
 const settings = require('./settings.js');
 const { readImagePixelSize } = require('./image-size.js');
 const copyLayer = require('./copy-layer.js');
+const copyMerged = require('./copy-merged.js');
 
 // Default margin, in pixels, a capture adds around the selection on every side.
 const CAPTURE_PADDING = 50;
@@ -14,6 +15,12 @@ const CAPTURE_PADDING = 50;
 // Pixel alignment step applied to each side when capture falls back to "Padded" mode
 // (e.g., 32 or 16; set to 0 to disable and restore original behavior).
 const PADDED_CAPTURE_STEP = 32;
+
+// Fast transparent Copy merged capture via imaging.getPixels (no temporary document or disk I/O).
+// Default: false (uses the legacy captureSelectionAsBase64PNG path).
+// Set to true to enable the new path for "Slow with transparency", "Full Doc Mask — Slow",
+// and agent from_ps_capture with keep_transparency: true.
+const FAST_COPY_MERGED_TRANSPARENCY = false;
 
 /**
  * Snaps a padded capture dimension to the nearest multiple of `step` when possible,
@@ -570,8 +577,16 @@ async function captureSelectionInModal(executionContext, sourceMode, viaTempDocC
             preserveTransparency: viaTempDocCreation
         });
     } else if (viaTempDocCreation) {
-        console.log("Using native PNG save method for capture...");
-        imageData = await captureSelectionAsBase64PNG(sourceMode, expandedBounds, activeLayer, doc, psImageData, returnedBounds, executionContext);
+        if (FAST_COPY_MERGED_TRANSPARENCY) {
+            console.log("Using fast imaging.getPixels method for transparent Copy merged capture...");
+            imageData = await copyMerged.captureMergedSelection({
+                doc,
+                bounds: expandedBounds
+            });
+        } else {
+            console.log("Using native PNG save method for capture...");
+            imageData = await captureSelectionAsBase64PNG(sourceMode, expandedBounds, activeLayer, doc, psImageData, returnedBounds, executionContext);
+        }
     } else {
         console.log("Using traditional getPixels method for capture...");
 
