@@ -46,7 +46,7 @@ function resolveTemplate(template, vars) {
 
 /**
  * Merge a provider's response_config ($ref + params) with the base handler definition.
- * For "sync" type, params are substituted into {{format}} / {{extract}} placeholders.
+ * For "sync" type, params are applied to result.images (format, extract, and optional error_paths).
  * For async types, params are merged into the template variable context.
  *
  * PRIVATE RUNTIME CONTRACT: a provider built in memory may carry its handler definition in
@@ -70,7 +70,7 @@ function resolveHandler(responseConfig, responseHandlers) {
     const params = responseConfig.params || {};
 
     if (handler.type === 'sync') {
-        // For sync: substitute params into the handler template ({{format}}, {{extract}})
+        // For sync: apply params to result.images ({{format}}, {{extract}}, and optional error_paths)
         // extract is an array of strategy objects — replace the placeholder array with actual params
         if (handler.result && handler.result.images) {
             if (params.format) {
@@ -78,6 +78,9 @@ function resolveHandler(responseConfig, responseHandlers) {
             }
             if (params.extract) {
                 handler.result.images.extract = params.extract;
+            }
+            if (params.error_paths !== undefined) {
+                handler.result.images.error_paths = params.error_paths;
             }
         }
     }
@@ -273,10 +276,48 @@ async function pollUntilDone(pollingConfig, templateVars) {
 }
 
 /**
+ * Find the first non-empty error message along configured dot-paths when a sync
+ * HTTP 200 response returned no images (e.g. policy or prompt blocks).
+ *
+ * @param {unknown} responseData - Parsed response body.
+ * @param {string[]|string|undefined} errorPaths - Ordered dot-paths to inspect.
+ * @returns {string|null} Extracted error message, or null if none matched.
+ */
+function extractSyncErrorMessage(responseData, errorPaths) {
+    const paths = Array.isArray(errorPaths)
+        ? errorPaths
+        : (typeof errorPaths === 'string' ? [errorPaths] : []);
+
+    for (const errPath of paths) {
+        if (typeof errPath !== 'string' || !errPath.trim()) continue;
+        const value = getNested(responseData, errPath.trim());
+        if (value === undefined || value === null) continue;
+
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (trimmed) return trimmed;
+            continue;
+        }
+        if (typeof value === 'number' || typeof value === 'boolean') {
+            return String(value);
+        }
+        if (Array.isArray(value)) {
+            if (value.length > 0) return JSON.stringify(value);
+            continue;
+        }
+        if (typeof value === 'object' && Object.keys(value).length > 0) {
+            return JSON.stringify(value);
+        }
+    }
+
+    return null;
+}
+
+/**
  * Extract image strings (URLs or base64) from the final response data
  * using the ordered extract[] strategies. Returns the first strategy that yields results.
  */
-function extractImages(responseData, imagesConfig) {
+function extractImages(responseData, imagesConfig, syncErrorPaths) {
     const strategies = imagesConfig.extract;
 
     for (const strategy of strategies) {
@@ -307,7 +348,8 @@ function extractImages(responseData, imagesConfig) {
     }
 
     console.error('Failed to extract images from response:', JSON.stringify(responseData).substring(0, 500));
-    throw new Error('Could not extract image data from provider response.');
+    const syncError = extractSyncErrorMessage(responseData, syncErrorPaths);
+    throw new Error(syncError || 'Could not extract image data from provider response.');
 }
 
 /**
@@ -577,7 +619,9 @@ async function waitForApiResult(submitResponse, providerResponseConfig, response
 
     // 3. Extract images from the final response data
     const imagesConfig = handler.result.images;
-    const imageStrings = extractImages(finalData, imagesConfig);
+    // Sync-only fallback: async handlers already report failures via polling.error_path
+    const syncErrorPaths = handler.type === 'sync' ? imagesConfig?.error_paths : undefined;
+    const imageStrings = extractImages(finalData, imagesConfig, syncErrorPaths);
 
     // 4. Compute download headers
     const downloadHeaders = imagesConfig.download_headers

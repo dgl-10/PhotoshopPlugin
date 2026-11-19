@@ -1027,13 +1027,19 @@ Some handlers are parameterized — the provider supplies values that the handle
     "params": { "model_path": "fal-ai/bytedance/seedream/v4.5/edit" }
 }
 
-// Sync provider: supplies the image extraction strategy
+// Sync provider: supplies the image extraction strategy (and optional sync error paths)
 "response_config": {
     "$ref": "sync",
     "params": {
-        "format": "url",
+        "format": "base64_raw",
         "extract": [
-            { "path": "data", "mode": "array", "item_path": "url" }
+            { "path": "candidates.0.content.parts", "mode": "array", "item_path": "inlineData.data" }
+        ],
+        "error_paths": [
+            "error.message",
+            "promptFeedback.blockReason",
+            "candidates.0.finishMessage",
+            "candidates.0.finishReason"
         ]
     }
 }
@@ -1074,11 +1080,24 @@ The simplest type. The API returns generated images directly in the response to 
 }
 ```
 
-The `{{format}}` and `{{extract}}` placeholders are filled from the provider's `response_config.params`:
+The `{{format}}` and `{{extract}}` placeholders are filled from the provider's `response_config.params`. For `sync` handlers, you can also provide an optional `error_paths` array (ordered dot-paths): when an HTTP `200` response contains no extractable images (for example, safety/policy blocks like Gemini `finishMessage` or `promptFeedback.blockReason`), the first non-empty match is thrown as the error message instead of `"Could not extract image data from provider response."`.
 ```jsonc
+// OpenAI-style sync response (no error_paths needed when errors use non-2xx HTTP status)
 "params": {
     "format": "url",
     "extract": [{ "path": "data", "mode": "array", "item_path": "url" }]
+}
+
+// Gemini-style sync response with optional HTTP 200 error_paths
+"params": {
+    "format": "base64_raw",
+    "extract": [{ "path": "candidates.0.content.parts", "mode": "array", "item_path": "inlineData.data" }],
+    "error_paths": [
+        "error.message",
+        "promptFeedback.blockReason",
+        "candidates.0.finishMessage",
+        "candidates.0.finishReason"
+    ]
 }
 ```
 
@@ -1201,6 +1220,7 @@ Defines how to find and download generated images from the API response.
         { "path": "images", "mode": "array", "item_path": "url" },
         { "path": "image", "mode": "single", "item_path": "url" }
     ],
+    "error_paths": [ ... ],      // Optional (sync handlers only)
     "download_headers": { ... }  // Optional
 }
 ```
@@ -1209,6 +1229,7 @@ Defines how to find and download generated images from the API response.
 |-------|------|-------------|
 | `format` | `string` | Format of image data in the response: `"url"` (download URL), `"data_uri"`, or `"base64_raw"`. |
 | `extract` | `array` | **Ordered** array of extraction strategies. The engine tries each in order and uses the first one that yields results. |
+| `error_paths` | `string[]` | Optional (`sync` handlers only). Ordered JSON dot-paths checked when an HTTP `200` response yields no images; the first non-empty match is thrown as the error message. Can be defined on the handler or passed via `response_config.params.error_paths`. |
 | `download_headers` | `object` | Optional headers to include when downloading images (e.g., authentication for protected URLs). |
 
 #### Extraction Strategy Object

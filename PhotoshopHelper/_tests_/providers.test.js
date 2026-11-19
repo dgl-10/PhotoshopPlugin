@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const JSON5 = require('json5');
 const { detectFormattedImageMime } = require('../apiGenerator');
+const { waitForApiResult } = require('../apiGeneratorResultsGetter');
 const { resolveTemplate } = require('../templateEngine');
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -219,4 +220,81 @@ test('Google Nano Banana providers resolve valid T2I and I2I payloads with per-i
         resolved_references: []
     });
     assert.equal(mainProImageSearchBody.tools, undefined);
+});
+
+test('sync response handler extracts error_paths on empty Google Nano Banana HTTP 200 responses', async () => {
+    const templateCatalog = loadCatalog('providers.template.json');
+    const userCatalog = loadCatalog('providers.user.json');
+
+    for (const providerId of ['google_nano_banana_lite', 'google_nano_banana']) {
+        const provider = userCatalog.providers.find(p => p.id === providerId);
+        assert.ok(provider, `${providerId} should exist in providers.user.json`);
+
+        const policyBlockedResponse = {
+            candidates: [{
+                content: {},
+                finishReason: 'IMAGE_SAFETY',
+                index: 0,
+                finishMessage: 'Unable to show the generated image due to safety policy.'
+            }]
+        };
+        await assert.rejects(
+            () => waitForApiResult(policyBlockedResponse, provider.response_config, templateCatalog.response_handlers, {}),
+            { message: 'Unable to show the generated image due to safety policy.' }
+        );
+
+        const promptBlockedResponse = {
+            promptFeedback: {
+                blockReason: 'PROHIBITED_CONTENT'
+            }
+        };
+        await assert.rejects(
+            () => waitForApiResult(promptBlockedResponse, provider.response_config, templateCatalog.response_handlers, {}),
+            { message: 'PROHIBITED_CONTENT' }
+        );
+
+        const textRefusalResponse = {
+            candidates: [{
+                content: { parts: [{ text: 'I cannot generate that image.' }] },
+                finishReason: 'STOP'
+            }]
+        };
+        await assert.rejects(
+            () => waitForApiResult(textRefusalResponse, provider.response_config, templateCatalog.response_handlers, {}),
+            { message: 'I cannot generate that image.' }
+        );
+
+        const finishReasonOnlyResponse = {
+            candidates: [{
+                content: {},
+                finishReason: 'IMAGE_OTHER'
+            }]
+        };
+        await assert.rejects(
+            () => waitForApiResult(finishReasonOnlyResponse, provider.response_config, templateCatalog.response_handlers, {}),
+            { message: 'IMAGE_OTHER' }
+        );
+
+        // Valid image alongside explanatory text must still succeed without triggering error_paths
+        const successWithText = await waitForApiResult({
+            candidates: [{
+                content: {
+                    parts: [
+                        { text: 'Here is your image:' },
+                        { inlineData: { mimeType: 'image/png', data: 'RAW_BASE64_IMG' } }
+                    ]
+                },
+                finishReason: 'STOP'
+            }]
+        }, provider.response_config, templateCatalog.response_handlers, {});
+        assert.deepEqual(successWithText.imageStrings, ['RAW_BASE64_IMG']);
+    }
+
+    // Regression: sync providers without error_paths keep the default extraction error
+    const grok = userCatalog.providers.find(p => p.id === 'spacexsi_grok_imagine');
+    assert.ok(grok, 'spacexsi_grok_imagine should exist in providers.user.json');
+    await assert.rejects(
+        () => waitForApiResult({ respect_moderation: false }, grok.response_config, templateCatalog.response_handlers, {}),
+        { message: 'Could not extract image data from provider response.' }
+    );
 });

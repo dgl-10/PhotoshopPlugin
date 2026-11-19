@@ -925,6 +925,14 @@
                             "mode": "array",
                             "item_path": "inlineData.data"
                         }
+                    ],
+                    "error_paths": [
+                        "error.message",
+                        "promptFeedback.blockReasonMessage",
+                        "promptFeedback.blockReason",
+                        "candidates.0.finishMessage",
+                        "candidates.0.content.parts.0.text",
+                        "candidates.0.finishReason"
                     ]
                 }
             },
@@ -1132,6 +1140,14 @@
                             "mode": "array",
                             "item_path": "inlineData.data"
                         }
+                    ],
+                    "error_paths": [
+                        "error.message",
+                        "promptFeedback.blockReasonMessage",
+                        "promptFeedback.blockReason",
+                        "candidates.0.finishMessage",
+                        "candidates.0.content.parts.0.text",
+                        "candidates.0.finishReason"
                     ]
                 }
             },
