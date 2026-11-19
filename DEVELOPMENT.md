@@ -16,7 +16,7 @@ Most AI plugins for Photoshop require an embedded API key and charge a fee for e
 ### FromPS (From Photoshop)
 - Captures the current selection as an image
 - Saves an alpha mask of the exact selection shape
-- Modes: Copy Merged (all layers) / Current Layer (active layer only)
+- Modes: Copy Merged (all visible layers) / Copy Layer (active layer's own pixels, raster/vector masks, and smart filters — even when hidden; excludes layer effects, opacity/fill, clipping bases, and clipped layers above; supports pixel, smart object, text, shape, and Solid Color/Gradient/Pattern fill layers, not groups or adjustment layers)
 - Export options: Save PNG, Copy to Clipboard, Drag Out (image + mask), and Send to WebHelper (image + mask)
 
 ### ToPS (To Photoshop)
@@ -83,7 +83,7 @@ Most AI plugins for Photoshop require an embedded API key and charge a fee for e
 1. Create a selection in Photoshop (using any selection tool)
 2. Choose a source mode:
    - **Copy Merged** — the visible result of all layers
-   - **Copy [Current] Layer** — the active layer only
+   - **Copy Layer** — captures only the active layer's own pixels with its raster/vector masks and smart filters (even if hidden), excluding layer effects, opacity/fill, clipping bases, and clipped layers above; empty areas within the frame become white (Fast) or transparent (Slow). Supports pixel, smart object, text, shape, and Solid Color, Gradient, or Pattern fill layers (groups, adjustment layers, and other layer types require **Copy Merged**)
 3. Click **Capture Selection**. The following capture modes are available:
    - **Fast** — quick selection capture; the primary capture method. Applies a uniform padding on all sides of the selection and finds the optimal aspect ratio for the source.
    - **Slow with transparency** — slow selection capture. Use this when you need to preserve the transparency of the selection.
@@ -155,6 +155,7 @@ Direct access to the system clipboard (for images) and Drag & Drop from the plug
 │   ├── agent-line.js                     # Bottom status line UI and connection controller for agent tasks
 │   ├── batchplay-watch.js                # batchPlay execution wrapper capturing silent descriptor errors
 │   ├── command-handlers.js               # Execution handlers for agent tool commands inside Photoshop
+│   ├── copy-layer.js                     # Isolated Copy layer capture (validation, frame alignment, PNG encoding)
 │   ├── error-text.js                     # Error formatting utility normalizing Photoshop and script errors
 │   ├── fs.js                             # File and Base64 module (UXP File Access)
 │   ├── helper.js                         # API client for network communication with PhotoshopHelper

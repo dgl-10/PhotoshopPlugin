@@ -315,7 +315,11 @@
                   </div>
                   <div>
                     <dt>Copy layer</dt>
-                    <dd>Captures only the currently active Photoshop layer.</dd>
+                    <dd>Captures only the active layer's own pixels, including its raster/vector masks and smart
+                      filters (even if hidden), while excluding layer effects, opacity/fill, clipping bases, and
+                      clipped layers above it. Empty areas become white (Fast) or transparent (Slow). Supports
+                      pixel layers, smart objects, text, shapes, and Solid Color, Gradient, or Pattern fill layers
+                      (not groups or adjustment layers — use Copy merged for those).</dd>
                   </div>
                 </dl>
               </div>

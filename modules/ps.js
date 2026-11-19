@@ -6,6 +6,7 @@
 const { app, action, core, imaging, constants } = require('photoshop');
 const settings = require('./settings.js');
 const { readImagePixelSize } = require('./image-size.js');
+const copyLayer = require('./copy-layer.js');
 
 // Default margin, in pixels, a capture adds around the selection on every side.
 const CAPTURE_PADDING = 50;
@@ -561,7 +562,14 @@ async function captureSelectionInModal(executionContext, sourceMode, viaTempDocC
     // Get image content
     let imageData;
 
-    if (viaTempDocCreation) {
+    if (sourceMode === 'currentLayer') {
+        imageData = await copyLayer.captureLayerSelection({
+            doc,
+            layer: activeLayer,
+            bounds: expandedBounds,
+            preserveTransparency: viaTempDocCreation
+        });
+    } else if (viaTempDocCreation) {
         console.log("Using native PNG save method for capture...");
         imageData = await captureSelectionAsBase64PNG(sourceMode, expandedBounds, activeLayer, doc, psImageData, returnedBounds, executionContext);
     } else {

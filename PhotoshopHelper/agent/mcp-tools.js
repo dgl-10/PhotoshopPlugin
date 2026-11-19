@@ -831,7 +831,13 @@ function createAgentTools({
                         enum: ['visible', 'current_layer'],
                         description: '"visible" takes everything visible, merged — the usual choice '
                             + '("Copy merged" in the panel). "current_layer" takes only the active '
-                            + 'layer ("Copy layer"). Default "visible".'
+                            + 'layer ("Copy layer"): its own pixels, raster/vector masks, and smart '
+                            + 'filters (even if hidden), without layer effects, opacity/fill, '
+                            + 'clipping bases, or clipped layers above; empty areas are white '
+                            + '(default) or transparent (keep_transparency: true). Supports pixel, '
+                            + 'smart object, text, shape, and Solid Color/Gradient/Pattern fill '
+                            + 'layers; groups, adjustment layers, and other kinds error and '
+                            + 'require "visible". Default "visible".'
                     },
                     full_document: {
                         type: 'boolean',
