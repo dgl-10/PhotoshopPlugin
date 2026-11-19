@@ -8,6 +8,8 @@
  * Photoshop dependency so they can be unit-tested in Node.
  */
 
+const { isHighBitDepth, normalizeToUint8Pixels } = require('./pixel-depth.js');
+
 // Allowlist of layer kinds whose pixels can be captured directly via imaging.getPixels.
 // Shape layers report as solidColor, gradientFill, or pattern depending on fill type.
 const SUPPORTED_LAYER_KINDS = new Set([
@@ -611,6 +613,58 @@ function encodePngDataUrl(pixels, width, height, components) {
     return `data:image/png;base64,${bytesToBase64(pngBytes)}`;
 }
 
+const TARGET_COLOR_SPACE = 'RGB';
+const TARGET_COLOR_PROFILE = 'sRGB IEC61966-2.1';
+
+/**
+ * Whether Slow (transparent) capture on this document must read native pixels and normalize
+ * them to 8-bit in JavaScript.
+ *
+ * Photoshop throws error -32005 when componentSize: 8 is combined with applyAlpha: false on
+ * 16-bit or 32-bit documents, so that combination is never requested. Fast mode
+ * (applyAlpha: true) works with componentSize: 8 at any bit depth and is left untouched.
+ *
+ * @param {object} doc
+ * @param {boolean} preserveTransparency
+ * @returns {boolean}
+ */
+function needsNativePixelNormalization(doc, preserveTransparency) {
+    return Boolean(preserveTransparency) && isHighBitDepth(doc);
+}
+
+/**
+ * Build imaging.getPixels options for capturing a single layer in sRGB.
+ * componentSize: 8 is always requested except in Slow mode on 16-bit/32-bit documents.
+ *
+ * @param {object} params
+ * @param {object} params.doc - Active Photoshop document
+ * @param {object} params.layer - Active Photoshop layer
+ * @param {{left: number, top: number, right: number, bottom: number}} params.targetBounds
+ * @param {boolean} [params.preserveTransparency=false]
+ * @returns {object} Options object for imaging.getPixels
+ */
+function buildLayerGetPixelsOptions({ doc, layer, targetBounds, preserveTransparency = false }) {
+    const options = {
+        documentID: doc.id,
+        layerID: layer.id,
+        sourceBounds: {
+            left: targetBounds.left,
+            top: targetBounds.top,
+            right: targetBounds.right,
+            bottom: targetBounds.bottom
+        },
+        colorSpace: TARGET_COLOR_SPACE,
+        colorProfile: TARGET_COLOR_PROFILE,
+        applyAlpha: !preserveTransparency
+    };
+
+    if (!needsNativePixelNormalization(doc, preserveTransparency)) {
+        options.componentSize = 8;
+    }
+
+    return options;
+}
+
 /**
  * Capture the active layer inside `bounds` in document coordinates and return a PNG data URL.
  * Does not modify the document, selection, active layer, active document, or history.
@@ -630,20 +684,9 @@ async function captureLayerSelection({ doc, layer, bounds, preserveTransparency 
 
     let pixelResult = null;
     try {
-        pixelResult = await imaging.getPixels({
-            documentID: doc.id,
-            layerID: layer.id,
-            sourceBounds: {
-                left: targetBounds.left,
-                top: targetBounds.top,
-                right: targetBounds.right,
-                bottom: targetBounds.bottom
-            },
-            componentSize: 8,
-            colorSpace: 'RGB',
-            colorProfile: 'sRGB IEC61966-2.1',
-            applyAlpha: !preserveTransparency
-        });
+        pixelResult = await imaging.getPixels(
+            buildLayerGetPixelsOptions({ doc, layer, targetBounds, preserveTransparency })
+        );
     } catch (error) {
         if (!isNoPixelsError(error)) {
             throw error;
@@ -657,7 +700,24 @@ async function captureLayerSelection({ doc, layer, bounds, preserveTransparency 
         const psImageData = pixelResult.imageData;
         try {
             const rawData = await psImageData.getData();
-            const sourcePixels = rawData instanceof Uint8Array ? rawData : new Uint8Array(rawData);
+            let sourcePixels;
+            let sourceRowBytes;
+            if (needsNativePixelNormalization(doc, preserveTransparency)) {
+                // Native 16-bit/32-bit data; normalization also yields tightly packed 8-bit rows.
+                const normalized = normalizeToUint8Pixels(rawData, {
+                    width: psImageData.width,
+                    height: psImageData.height,
+                    components: psImageData.components,
+                    componentSize: psImageData.componentSize,
+                    rowBytes: psImageData.rowBytes,
+                    label: 'Copy layer'
+                });
+                sourcePixels = normalized.pixels;
+                sourceRowBytes = normalized.rowBytes;
+            } else {
+                sourcePixels = rawData instanceof Uint8Array ? rawData : new Uint8Array(rawData);
+                sourceRowBytes = psImageData.rowBytes;
+            }
             composite = compositeLayerPixels({
                 targetBounds,
                 sourceBounds: pixelResult.sourceBounds || targetBounds,
@@ -665,7 +725,7 @@ async function captureLayerSelection({ doc, layer, bounds, preserveTransparency 
                 sourceWidth: psImageData.width,
                 sourceHeight: psImageData.height,
                 sourceComponents: psImageData.components,
-                sourceRowBytes: psImageData.rowBytes,
+                sourceRowBytes,
                 preserveTransparency
             });
         } finally {
@@ -689,5 +749,6 @@ module.exports = {
     compositeLayerPixels,
     encodePngBytes,
     encodePngDataUrl,
+    buildLayerGetPixelsOptions,
     captureLayerSelection
 };
