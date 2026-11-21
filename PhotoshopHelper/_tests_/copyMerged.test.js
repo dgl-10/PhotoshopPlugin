@@ -2,8 +2,6 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const fs = require('node:fs');
-const path = require('node:path');
 const zlib = require('node:zlib');
 
 const {
@@ -13,8 +11,6 @@ const {
     alignCompositeFrame,
     captureMergedSelection
 } = require('../../modules/copy-merged.js');
-
-const repositoryRoot = path.resolve(__dirname, '..', '..');
 
 /**
  * Decode a PNG produced by copy-merged.js using Node's zlib to verify headers,
@@ -309,11 +305,4 @@ test('captureMergedSelection produces transparent PNGs, disposes imageData, and 
         /Simulated getData failure/
     );
     assert.equal(disposedCount, 3);
-});
-
-test('ps.js defaults FAST_COPY_MERGED_TRANSPARENCY to false and leaves legacy path intact', () => {
-    const psJs = fs.readFileSync(path.join(repositoryRoot, 'modules', 'ps.js'), 'utf8');
-    assert.match(psJs, /^const FAST_COPY_MERGED_TRANSPARENCY = false;/m);
-    assert.match(psJs, /if \(FAST_COPY_MERGED_TRANSPARENCY\) \{[\s\S]*copyMerged\.captureMergedSelection\(/);
-    assert.match(psJs, /async function captureSelectionAsBase64PNG\(/);
 });

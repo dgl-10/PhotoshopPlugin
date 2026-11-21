@@ -10,7 +10,8 @@ const CREATE_HIERARCHY = `
     // existing group. Own a root container before creating any texture components,
     // then place every new object explicitly rather than relying on that context.
     const rootAnchor = doc.layers.length ? doc.layers[0] : null;
-    const skinGroup = await doc.createLayerGroup({ name: 'Skin ' + EXPECT.marker });
+    // task20: an areola-only job names its outer group "Areolas"; every other job keeps "Skin".
+    const skinGroup = await doc.createLayerGroup({ name: (EXPECT.rootName || 'Skin') + ' ' + EXPECT.marker });
     created.push(skinGroup.id);
     if (rootAnchor) await skinGroup.move(rootAnchor, C.ElementPlacement.PLACEBEFORE);
     if (!Array.from(doc.layers).some(layer => layer.id === skinGroup.id)) {

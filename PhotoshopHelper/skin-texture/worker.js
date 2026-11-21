@@ -8,6 +8,7 @@
  */
 const { parentPort, workerData } = require('node:worker_threads');
 const { DEFAULT_RECIPE } = require('./formula-definitions');
+const { AREOLA_RECIPE } = require('./areola-definitions');
 const { computeSkinThreeV2 } = require('./recipe-worker-engine');
 
 /** Keep long calculations observable without blocking the parent event loop. */
@@ -17,13 +18,13 @@ function progress(stage) {
 
 (async () => {
     try {
-        if (!workerData || workerData.recipe !== DEFAULT_RECIPE) {
-            throw new Error(`Worker only supports recipe "${DEFAULT_RECIPE}", received: ${workerData && workerData.recipe}`);
+        if (!workerData || (workerData.recipe !== DEFAULT_RECIPE && workerData.recipe !== AREOLA_RECIPE)) {
+            throw new Error(`Worker only supports recipes "${DEFAULT_RECIPE}" and "${AREOLA_RECIPE}", received: ${workerData && workerData.recipe}`);
         }
         const result = await computeSkinThreeV2(workerData, progress);
         parentPort.postMessage({ type: 'result', files: result.files, checksums: result.checksums,
             stats: result.stats, timings: result.timings, cores: result.cores, memory: result.memory,
-            recipe: DEFAULT_RECIPE }, result.transfer);
+            recipe: workerData.recipe }, result.transfer);
     } catch (error) {
         parentPort.postMessage({ type: 'error', message: String(error.message || error) });
     } finally {

@@ -9,11 +9,16 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { DEFAULT_RECIPE, FORMULA_DEFINITIONS } = require('./formula-definitions');
+const { AREOLA_DEFINITIONS } = require('./areola-definitions');
 const modules = new Map();
 
-/** Resolve the pinned asset for a known product formula. */
+/**
+ * Resolve the pinned asset for a known product formula or areola variant (task20). The areola
+ * pins are looked up here only; checkWasmCore and getWasmCoreIdentity stay skin-only, so a
+ * missing areola binary never stops the skin recipe.
+ */
 function definition(formulaId) {
-    const formula = FORMULA_DEFINITIONS[formulaId];
+    const formula = FORMULA_DEFINITIONS[formulaId] || AREOLA_DEFINITIONS[formulaId];
     if (!formula) throw new Error(`Unknown formulaId: ${formulaId}`);
     return formula;
 }
@@ -138,4 +143,4 @@ function executeWasm(formulaId, request, targetInstance = null) {
     }
 }
 
-module.exports = { verifyWasmBytes, checkWasmCore, getWasmCoreIdentity, loadWasmModule, createWasmInstance, executeWasm };
+module.exports = { verifyWasmBytes, readVerified, checkWasmCore, getWasmCoreIdentity, loadWasmModule, createWasmInstance, executeWasm };

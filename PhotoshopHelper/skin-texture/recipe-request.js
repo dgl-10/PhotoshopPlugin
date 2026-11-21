@@ -6,6 +6,8 @@
  * validation and all image allocations stay in the disposable formula workers.
  */
 const recipeCatalog = require('./recipe-catalog');
+const areolaRequest = require('./areola-request');
+const areolaGeometry = require('./areola-geometry');
 const MAX_RECT_PIXELS = 4096 * 4096;
 const MAX_RECT_SIDE = 8192;
 const OUTPUTS = Object.freeze(recipeCatalog.RECIPE_COMPONENTS.map(c => c.componentKey));
@@ -52,9 +54,27 @@ function checkRectShape(rect) {
 function normalizeFields(fields) {
     if (fields === undefined || fields === null) return null;
     const fail = message => { throw new SkinRequestError('INVALID_FIELDS', message); };
-    if (!isObject(fields)) fail('fields must be an object containing face.');
-    checkKeys(fields, ['face'], 'INVALID_FIELDS', 'fields');
-    const face = fields.face;
+    if (!isObject(fields)) fail('fields must be an object containing face and/or areolas.');
+    checkKeys(fields, ['face', 'areolas'], 'INVALID_FIELDS', 'fields');
+    if (fields.face === undefined && fields.areolas === undefined) fail('fields needs face or areolas when it is supplied.');
+    // task20: areolas (contract section 10) are canonicalized by their own module. The face path
+    // below is unchanged, and a request without areolas yields exactly the old { face } object.
+    let areolas;
+    if (fields.areolas !== undefined) {
+        try {
+            areolas = areolaGeometry.normalizeAreolas(fields.areolas).areolas;
+        } catch (error) {
+            if (error instanceof areolaGeometry.AreolaGeometryError) throw new SkinRequestError(error.code, error.message);
+            throw error;
+        }
+    }
+    if (fields.face === undefined) return { areolas };
+    const withFace = normalizeFace(fields.face, fail);
+    return areolas ? { ...withFace, areolas } : withFace;
+}
+
+/** The single-face representation of contract 1.3 section 9, as accepted since task15. */
+function normalizeFace(face, fail) {
     if (!isObject(face)) fail('fields.face is required when fields is supplied.');
     checkKeys(face, ['eyes', 'noseTip', 'mouth', 'chin', 'yawDeg', 'pitchDeg'], 'INVALID_FIELDS', 'fields.face');
     const point = (value, label) => {
@@ -92,17 +112,34 @@ function checkRequestShape(args) {
     }
     if (args.outputs !== undefined) throw new SkinRequestError('INVALID_OUTPUTS', 'Omit outputs: the recipe computes all five components of Formula 1, Formula 2 and Formula 3.');
     const recipe = args.recipe === undefined ? recipeCatalog.DEFAULT_RECIPE : args.recipe;
-    if (!recipeCatalog.isRecipe(recipe)) throw new SkinRequestError('INVALID_RECIPE', `Unknown recipe: "${recipe}". Supported recipe: ${recipeCatalog.DEFAULT_RECIPE}.`);
+    if (!recipeCatalog.isRecipe(recipe)) throw new SkinRequestError('INVALID_RECIPE', `Unknown recipe: "${recipe}". Supported recipes: ${recipeCatalog.RECIPES.join(', ')}.`);
     const supplied = args.params === undefined ? {} : args.params;
     if (!isObject(supplied)) throw new SkinRequestError('INVALID_PARAMS', 'params must be an object of recipe parameters by name.');
-    checkKeys(supplied, recipeCatalog.ALLOWED_RECIPE_PARAMS, 'INVALID_PARAMS', `params (allowed: ${recipeCatalog.ALLOWED_RECIPE_PARAMS.join(', ')})`);
-    const params = { ...recipeCatalog.DEFAULT_RECIPE_PARAMS, ...supplied };
+    const allowedParams = [...recipeCatalog.ALLOWED_RECIPE_PARAMS, 'areolaStrength'];
+    checkKeys(supplied, allowedParams, 'INVALID_PARAMS', `params (allowed: ${allowedParams.join(', ')})`);
+    const { areolaStrength: suppliedAreolaStrength, ...recipeParams } = supplied;
+    const params = { ...recipeCatalog.DEFAULT_RECIPE_PARAMS, ...recipeParams };
     if (!Number.isInteger(params.seed) || params.seed < 0 || params.seed > 0xffffffff) throw new SkinRequestError('INVALID_PARAMS', 'params.seed must be an unsigned 32-bit integer (0..4294967295).');
     if (typeof params.azimuthDeg !== 'number' || !Number.isFinite(params.azimuthDeg)) throw new SkinRequestError('INVALID_PARAMS', 'params.azimuthDeg must be a finite number.');
     if (typeof params.elevationDeg !== 'number' || !Number.isFinite(params.elevationDeg) || params.elevationDeg < 5 || params.elevationDeg > 90) throw new SkinRequestError('INVALID_PARAMS', 'params.elevationDeg must be between 5 and 90 degrees.');
     const fields = normalizeFields(args.fields);
-    const key = JSON.stringify({ recipe, rect, pxPerMm, params, fields });
-    return { recipe, rect, pxPerMm, params, fields, outputs: OUTPUTS.slice(), key };
+    // task20: areolas, their strength and the stated origin of the parameters. A request
+    // without them builds exactly the task15 key, outputs and parameters.
+    const fail = (code, message) => { throw new SkinRequestError(code, message); };
+    const hasAreolas = Boolean(fields && fields.areolas);
+    if (recipe === areolaRequest.AREOLA_RECIPE && !hasAreolas) fail('INVALID_FIELDS', `recipe ${recipe} needs fields.areolas.`);
+    if (recipe === areolaRequest.AREOLA_RECIPE && fields.face) fail('INVALID_FIELDS', `fields.face is used only by the skin formulas, which recipe ${recipe} does not compute.`);
+    const areolaStrength = areolaRequest.checkAreolaStrength({ areolaStrength: suppliedAreolaStrength }, hasAreolas, fail);
+    const sources = areolaRequest.normalizeSources(args.sources, supplied, fail, hasAreolas);
+    const layout = areolaRequest.layoutFor(recipe, hasAreolas, recipeCatalog.RECIPE_COMPONENTS);
+    const keyParts = { recipe, rect, pxPerMm, params, fields };
+    if (hasAreolas) keyParts.areolaStrength = areolaStrength;
+    if (args.sources !== undefined) keyParts.sources = sources;
+    const key = JSON.stringify(keyParts);
+    const out = { recipe, rect, pxPerMm, params, fields, outputs: areolaRequest.outputsOf(layout), key, layout };
+    if (hasAreolas) out.areolaStrength = areolaStrength;
+    if (sources) out.sources = sources;
+    return out;
 }
 
 /** Build the three small contract requests after Photoshop confirms document dimensions. */
@@ -111,13 +148,32 @@ function normalizeForDocument(request, document) {
         throw new SkinRequestError('RECT_OUTSIDE_DOCUMENT', `rect ${JSON.stringify(request.rect)} does not fit the document, which is ${document.width}x${document.height} pixels.`);
     }
     const coreParams = { common: request.params };
-    for (const id of Object.keys(recipeCatalog.FORMULA_DEFINITIONS)) {
-        coreParams[id] = recipeCatalog.resolveFormulaParams(id, document, request.rect, request.pxPerMm, request.params, request.fields);
+    const layout = request.layout || areolaRequest.layoutFor(request.recipe, false, recipeCatalog.RECIPE_COMPONENTS);
+    if (layout.skin) {
+        for (const id of Object.keys(recipeCatalog.FORMULA_DEFINITIONS)) {
+            coreParams[id] = recipeCatalog.resolveFormulaParams(id, document, request.rect, request.pxPerMm, request.params, request.fields);
+        }
     }
     const rectPixels = request.rect.width * request.rect.height;
     // This is the exact retained gray payload size, not a prediction of kernel peak RSS.
     // Peak process memory is measured separately because variants have different workspaces.
-    return { coreParams, work: { rectPixels, retainedOutputBytes: rectPixels * OUTPUTS.length } };
+    let retainedOutputBytes = layout.skin ? rectPixels * OUTPUTS.length : 0;
+    let areola = null;
+    if (layout.areolas) {
+        try {
+            const built = areolaRequest.buildAreolaRequests(request.fields.areolas, document, request.rect,
+                request.pxPerMm, request.params, request.areolaStrength);
+            areola = { region: built.region, requests: built.requests, cutout: layout.cutout };
+        } catch (error) {
+            if (error instanceof areolaGeometry.AreolaGeometryError) throw new SkinRequestError(error.code, error.message);
+            throw error;
+        }
+        const regionPixels = areola.region.rect.width * areola.region.rect.height;
+        retainedOutputBytes += regionPixels * (layout.components.length - (layout.skin ? OUTPUTS.length : 0) + (layout.cutout ? 1 : 0));
+    }
+    const out = { coreParams, work: { rectPixels, retainedOutputBytes } };
+    if (areola) out.areola = areola;
+    return out;
 }
 
 /** Omit document geometry already shown elsewhere in the public job view. */

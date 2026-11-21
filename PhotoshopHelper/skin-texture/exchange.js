@@ -27,9 +27,17 @@
  * Pixel conventions: a gray layer is a Uint8Array of width * height samples. RGBA buffers are
  * chunky (R, G, B, A per pixel) with R = G = B = gray and A opaque. 16-bit buffers use
  * Photoshop's reduced 16-bit range 0..32768 (createImageDataFromBuffer with fullRange false,
- * its default); an 8-bit value v maps to round(v * 32768 / 255). Because 255 is odd an exact
- * .5 tie never occurs, so the mapping is unambiguous and round(w * 255 / 32768) inverts it.
- * task02 verified exactly this mapping on 16-bit sRGB and ProPhoto documents.
+ * its default). task02 verified that written 16-bit values are read back unchanged on 16-bit sRGB
+ * and ProPhoto documents.
+ *
+ * Texture layers (grayToRgba16) use the relief mapping toRelief16: 0 -> 0, 128 -> 16384,
+ * 255 -> 32768, linear on each side of 128. The texture layers are Linear Light, whose neutral in
+ * Photoshop's 16-bit range is exactly 16384; the earlier mapping round(v * 32768 / 255) put 128 at
+ * 16448, so every neutral texture pixel brightened the picture by half an 8-bit level per layer
+ * at 50% opacity. task20 measured that live (1-2 levels outside the areolas under three layers,
+ * ending in a step at the layer's edge). fromRelief16 inverts toRelief16 exactly for every value.
+ * Masks keep the plain mapping to16 / from16 (round(v * 32768 / 255) and its inverse): a mask has
+ * no neutral, 255 must be full white, and because 255 is odd an exact .5 tie never occurs.
  */
 'use strict';
 var SkinExchange = (function () {
@@ -91,10 +99,13 @@ var SkinExchange = (function () {
     }
     const to16 = v => Math.round(v * 32768 / 255);
     const from16 = w => Math.round(w * 255 / 32768);
+    // Relief mapping: keeps the Linear Light neutral 128 exactly at 16384 (see the header).
+    const toRelief16 = v => (v <= 128 ? v * 128 : Math.round(16384 + (v - 128) * 16384 / 127));
+    const fromRelief16 = w => (w <= 16384 ? Math.round(w / 128) : Math.round(128 + (w - 16384) * 127 / 16384));
     function grayToRgba16(gray) {
         if (!(gray instanceof Uint8Array)) throw new Error('GRAY_TYPE: expected Uint8Array');
         const lut = new Uint16Array(256);
-        for (let v = 0; v < 256; v++) lut[v] = to16(v);
+        for (let v = 0; v < 256; v++) lut[v] = toRelief16(v);
         const out = new Uint16Array(gray.length * 4);
         for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
             const w = lut[gray[i]];
@@ -200,6 +211,6 @@ var SkinExchange = (function () {
     }
 
     return { format: FORMAT, version: VERSION, magic: MAGIC, crc32, fnv1a, hex, checksums, checkRect, sameRect,
-        grayToRgba8, grayToRgba16, to16, from16, encode, decode };
+        grayToRgba8, grayToRgba16, to16, from16, toRelief16, fromRelief16, encode, decode };
 })();
 if (typeof module !== 'undefined') module.exports = SkinExchange;

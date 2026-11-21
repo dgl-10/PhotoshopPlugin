@@ -6,16 +6,18 @@
  * allocation belongs on Helper's main thread.
  */
 const { DEFAULT_RECIPE, FORMULA_DEFINITIONS, RECIPE_COMPONENTS } = require('./formula-definitions');
+const { AREOLA_RECIPE, AREOLA_COMPONENTS } = require('./areola-definitions');
 const wasmLoader = require('./wasm-loader');
 
-const RECIPES = Object.freeze([DEFAULT_RECIPE]);
+// task20: areola_three_v1 computes the three areola variants only, without the skin formulas.
+const RECIPES = Object.freeze([DEFAULT_RECIPE, AREOLA_RECIPE]);
 const ALLOWED_RECIPE_PARAMS = Object.freeze(['seed', 'azimuthDeg', 'elevationDeg']);
 const DEFAULT_RECIPE_PARAMS = Object.freeze({ seed: 1, azimuthDeg: 315, elevationDeg: 45 });
 
 /** Return an ordered, immutable recipe layout; reject obsolete recipe identifiers. */
 function getRecipeComponents(recipe) {
     if (!RECIPES.includes(recipe)) throw new Error(`Unsupported recipe: ${recipe}`);
-    return RECIPE_COMPONENTS;
+    return recipe === AREOLA_RECIPE ? AREOLA_COMPONENTS : RECIPE_COMPONENTS;
 }
 
 /**
@@ -34,8 +36,10 @@ function resolveFormulaParams(formulaId, document, rect, pxPerMm, commonParams =
         lighting: { azimuthDeg: params.azimuthDeg, elevationDeg: params.elevationDeg },
         zone: 'cheek'
     };
-    if (formula.fields && formula.fields.face && fields) {
-        request.fields = JSON.parse(JSON.stringify(fields));
+    // Only the member the formula declared: a face formula never sees fields.areolas (task20),
+    // and a request with a face alone gives the same { face } object as before.
+    if (formula.fields && formula.fields.face && fields && fields.face) {
+        request.fields = { face: JSON.parse(JSON.stringify(fields.face)) };
     }
     return request;
 }

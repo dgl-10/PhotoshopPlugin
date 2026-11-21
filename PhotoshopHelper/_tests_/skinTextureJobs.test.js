@@ -389,8 +389,11 @@ test('a 16-bit document gets the verified 16-bit mapping with its own profile', 
     const request = recipeCatalog.resolveFormulaParams(firstLayerMeta.formulaId, { width: 600, height: 400 }, RECT, 6, { seed: 2 });
     const wasmRes = wasmLoader.executeWasm(firstLayerMeta.formulaId, request);
     const gray = wasmRes.layers[source.sourceLayerId];
+    // task20: texture layers use the relief mapping, which keeps the Linear Light neutral 128 at
+    // exactly 16384 (the plain round(v * 32768 / 255) put it at 16448 and brightened the picture).
+    const relief = v => (v <= 128 ? v * 128 : Math.round(16384 + (v - 128) * 16384 / 127));
     for (let i = 0; i < gray.length; i++) {
-        assert.equal(layer.pixels.data[i * 4], Math.round(gray[i] * 32768 / 255));
+        assert.equal(layer.pixels.data[i * 4], relief(gray[i]));
         assert.equal(layer.pixels.data[i * 4 + 3], 32768);
     }
 });

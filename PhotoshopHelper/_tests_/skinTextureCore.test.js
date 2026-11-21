@@ -226,15 +226,24 @@ test('the exchange file round-trips and refuses every kind of damage', () => {
     assert.ok([...source].every(char => char.charCodeAt(0) < 128));
 });
 
-test('gray maps to RGBA 8 and to the verified 16-bit range for every value', () => {
+test('gray maps to RGBA 8 and to the 16-bit relief range for every value', () => {
     const gray = new Uint8Array(256).map((_, i) => i);
     const rgba8 = SkinExchange.grayToRgba8(gray);
     const rgba16 = SkinExchange.grayToRgba16(gray);
+    let previous = -1;
     for (let v = 0; v < 256; v++) {
         assert.deepEqual(Array.from(rgba8.subarray(v * 4, v * 4 + 4)), [v, v, v, 255]);
-        const w = Math.round(v * 32768 / 255);
+        // task20: the relief mapping, independent of the module's own formula.
+        const w = v <= 128 ? v * 128 : Math.round(16384 + (v - 128) * 16384 / 127);
         assert.deepEqual(Array.from(rgba16.subarray(v * 4, v * 4 + 4)), [w, w, w, 32768]);
-        assert.equal(SkinExchange.from16(w), v);
+        assert.equal(SkinExchange.fromRelief16(w), v, 'the relief mapping inverts exactly');
+        assert.ok(w > previous, 'the relief mapping is strictly increasing');
+        previous = w;
     }
-    assert.equal(SkinExchange.to16(128), 16448, 'the value task02 read back from 16-bit documents');
+    assert.equal(SkinExchange.toRelief16(128), 16384, 'Linear Light neutral in Photoshop 16-bit');
+    assert.equal(SkinExchange.toRelief16(0), 0);
+    assert.equal(SkinExchange.toRelief16(255), 32768);
+    // Masks keep the plain mapping, which task02 read back from 16-bit documents.
+    for (let v = 0; v < 256; v++) assert.equal(SkinExchange.from16(SkinExchange.to16(v)), v);
+    assert.equal(SkinExchange.to16(128), 16448);
 });

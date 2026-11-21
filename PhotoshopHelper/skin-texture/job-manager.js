@@ -80,6 +80,10 @@ const exchangeFiles = require('./exchange-files');
 const scripts = require('./uxp-scripts');
 const recipeCatalog = require('./recipe-catalog');
 const recipeView = require('./recipe-job-view');
+// task20: areola variants; a job without areolas takes exactly the task15 values from these.
+const areolaCores = require('./areola-cores');
+const areolaJob = require('./areola-job');
+const areolaFind = require('./areola-find');
 
 const WORKER_FILE = path.join(__dirname, 'worker.js');
 
@@ -311,7 +315,8 @@ function createSkinTextureJobs({
     }
 
     function historyNameOf(job) {
-        return `skin texture ${job.id}: recipe ${recipeCatalog.DEFAULT_RECIPE}`;
+        const areolas = job.request.layout && job.request.layout.areolas && job.request.layout.skin ? ' with areolas' : '';
+        return `skin texture ${job.id}: recipe ${job.request.recipe || recipeCatalog.DEFAULT_RECIPE}${areolas}`;
     }
 
     function dropResult(job) {
@@ -399,6 +404,12 @@ function createSkinTextureJobs({
         if (disposed) throw new adapter.SkinRequestError('SHUTTING_DOWN', 'Helper is quitting.');
         const requestId = checkRequestId(args.request_id);
         const request = adapter.checkRequestShape(args);
+        if (request.layout.areolas) {
+            // A missing or different areola binary refuses this request only, naming the variant;
+            // nothing is computed and no other variant takes its place.
+            const problem = areolaCores.checkAreolaCores();
+            if (problem) throw new adapter.SkinRequestError('AREOLA_CORE_UNAVAILABLE', `${problem} Nothing was computed.`);
+        }
         const store = storeFor(task.id, true);
         const keyHash = keyHashOf(request.key);
 
@@ -625,6 +636,7 @@ function createSkinTextureJobs({
         job.runtimeId = runtimeBefore;
         job.versions = result.versions || null;
         job.coreParams = normalized.coreParams;
+        job.areola = normalized.areola || null;
         job.work = normalized.work;
         maybeSweepOrphans(folder);
         startCompute(job);
@@ -651,6 +663,7 @@ function createSkinTextureJobs({
                 formulaParams: job.coreParams,
                 params: job.coreParams,
                 outputs: job.request.outputs,
+                areola: job.areola,
                 meta
             });
         } catch (error) {
@@ -697,7 +710,8 @@ function createSkinTextureJobs({
         }
         // A ready job must identify the actual workers' binaries, not merely repeat the
         // startup pins when a worker returned no provenance or computed another variant.
-        if (formulasCore.formulas.some(expected => {
+        const expectedCores = areolaJob.expectedCores(job, formulasCore);
+        if (expectedCores.some(expected => {
             const actual = message.cores && message.cores[expected.formulaId];
             return !actual || actual.name !== expected.name || actual.version !== expected.version
                 || actual.sha256 !== expected.sha256 || actual.matchesPinned !== true;
@@ -717,7 +731,7 @@ function createSkinTextureJobs({
         job.progress = null;
         job.diagnostics = buildDiagnostics(job);
         if (logger && typeof logger.info === 'function') {
-            for (const formula of formulasCore.formulas) {
+            for (const formula of expectedCores) {
                 logger.info(`[skin-texture] ${job.id} computed ${formula.formulaId} via ${formula.name} v${formula.version} (${formula.sha256}) in ${job.workerTimings && job.workerTimings[`${formula.formulaId}_compute_ms`]}ms`);
             }
         }
@@ -918,11 +932,14 @@ function createSkinTextureJobs({
 
     async function runApply(job, attempt, transport) {
         const recipe = (job.request && job.request.recipe) || recipeCatalog.DEFAULT_RECIPE;
-        const components = recipeCatalog.getRecipeComponents(recipe);
-        const names = components.map(c => exchangeFiles.fileNameFor(job.id, attempt.number, c.componentKey));
+        // task20: the files follow the job's layout (areola layers and the cut-out, if any);
+        // a skin job without areolas has exactly the five task15 outputs here.
+        const outputs = areolaJob.fileOutputs(job);
+        const names = outputs.map(output => exchangeFiles.fileNameFor(job.id, attempt.number, output));
+        const fileByOutput = Object.fromEntries(outputs.map((output, i) => [output, names[i]]));
         attempt.files = names;
         let t = now();
-        for (let i = 0; i < components.length; i++) {
+        for (let i = 0; i < outputs.length; i++) {
             // Stop early between files; the decisive check is the one right before sending.
             const early = reasonNotToSend(job, attempt, transport);
             if (early) {
@@ -930,7 +947,7 @@ function createSkinTextureJobs({
                 return;
             }
             try {
-                await exchangeFiles.publish(job.dataFolder, names[i], job.result.files[components[i].componentKey]);
+                await exchangeFiles.publish(job.dataFolder, names[i], job.result.files[outputs[i]]);
             } catch (error) {
                 await exchangeFiles.removeOwn(job.dataFolder, names);
                 settleApply(job, attempt, {
@@ -956,6 +973,7 @@ function createSkinTextureJobs({
             return;
         }
         attempt.deadlineEpochMs = now() + options.applyStartDeadlineMs;
+        const expectation = areolaJob.applyExpectation(job, recipe, fileByOutput);
         const code = scripts.buildRecipeApplyScript({
             jobId: job.id,
             taskId: job.taskId,
@@ -971,14 +989,9 @@ function createSkinTextureJobs({
             },
             rect: job.request.rect,
             maskSource: attempt.maskSource,
-            components: components.map((c, i) => ({
-                ...c,
-                file: names[i],
-                recipeId: recipe,
-                coreName: recipeCatalog.FORMULA_DEFINITIONS[c.formulaId].variant,
-                coreVersion: recipeCatalog.FORMULA_DEFINITIONS[c.formulaId].variantVersion,
-                coreSha256: recipeCatalog.FORMULA_DEFINITIONS[c.formulaId].sha256
-            })),
+            components: expectation.components,
+            masks: expectation.masks,
+            rootName: expectation.rootName,
             dataFolder: job.dataFolderNative,
             deadlineEpochMs: attempt.deadlineEpochMs
         });
@@ -1021,16 +1034,12 @@ function createSkinTextureJobs({
         if (!r || typeof r !== 'object' || r.jobId !== job.id) {
             return { state: 'unknown', code: 'ANSWER_INVALID', message: 'Photoshop answered, but not with the result of this write.' };
         }
-        const rect = job.request.rect;
         if (r.ok === true) {
             const structure = r.structure;
             const layers = Array.isArray(r.layers) ? r.layers : [];
-            const consistent = structure && structure.mainGroup && structure.mainGroup.hasUserMask
-                && Array.isArray(structure.subgroups) && structure.subgroups.length === 3
-                && layers.length === recipeCatalog.RECIPE_COMPONENTS.length
-                && layers.every(layer => Number.isInteger(layer.id) && layer.bounds
-                    && layer.bounds.left === rect.x && layer.bounds.top === rect.y
-                    && layer.bounds.right === rect.x + rect.width && layer.bounds.bottom === rect.y + rect.height);
+            // One group per formula or areola variant, one layer per component at its own
+            // rectangle, and the cut-out on every formula group when there is one (task20).
+            const consistent = areolaJob.writeIsConsistent(job, structure, layers);
             if (!consistent) {
                 return { state: 'unknown', code: 'ANSWER_INCONSISTENT', message: 'Photoshop reported a recipe write whose structure does not match the request.', structure, layers };
             }
@@ -1378,6 +1387,7 @@ function createSkinTextureJobs({
             case 'applying':
                 return 'The write was sent to Photoshop. Call ps_skin_texture_status in a few seconds. Calling apply again does not write a second time.';
             case 'applied':
+                if (job.request.layout && job.request.layout.areolas) return `Skin texture recipe applied. ${areolaJob.appliedText(job)}`;
                 return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Dermis) and hidden Formula 3 (Pores, Furrows), with one common mask. All five layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. Compare by showing exactly one formula group; adjust strength with layer opacity using the returned IDs.';
             case 'apply_unknown':
                 return `The outcome of the write is unknown. Before anything else look at the document (ps_get_document) `
@@ -1435,8 +1445,15 @@ function createSkinTextureJobs({
         out.outputs = job.request.outputs;
 
         out.recipe_id = job.request.recipe || recipeCatalog.DEFAULT_RECIPE;
-        out.core = recipeView.publicCore(formulasCore);
-        out.formulas = recipeView.describeFormulas(job, formulasCore, withParams);
+        // An areola-only job computes no skin formula, so it does not list their identities.
+        const skin = !job.request.layout || job.request.layout.skin;
+        if (skin) {
+            out.core = recipeView.publicCore(formulasCore);
+            out.formulas = recipeView.describeFormulas(job, formulasCore, withParams);
+        }
+        const areolas = areolaJob.describeAreolas(job);
+        if (areolas) out.areolas = areolas;
+        if (job.request.sources) out.sources = job.request.sources;
         if (job.request.fields) out.fields = job.request.fields;
         if (job.request.params) out.recipe_params = job.request.params;
 
@@ -1493,11 +1510,22 @@ function createSkinTextureJobs({
         return out;
     }
 
+    /**
+     * task20: measure areolas on the task's document (ps_skin_texture_find_areolas). It keeps no
+     * job and writes nothing; it lives here so the installed build's refusing stand-in refuses it
+     * together with the other skin texture tools.
+     */
+    async function findAreolas(task, args, transport) {
+        if (disposed) throw new adapter.SkinRequestError('SHUTTING_DOWN', 'Helper is quitting.');
+        return areolaFind.findAreolas(transport, args);
+    }
+
     return {
         start,
         status,
         apply,
         cancel,
+        findAreolas,
         dispose,
         describe,
         options,

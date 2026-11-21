@@ -9,6 +9,8 @@
 const { Worker } = require('node:worker_threads');
 const path = require('node:path');
 const { DEFAULT_RECIPE, FORMULA_DEFINITIONS } = require('./formula-definitions');
+const { AREOLA_RECIPE } = require('./areola-definitions');
+const { computeAreolas } = require('./areola-engine');
 
 /** Wait for one result, then wait for worker termination before releasing the next slot. */
 async function computeFormula(formulaId, request, meta, postProgress) {
@@ -36,9 +38,22 @@ async function computeFormula(formulaId, request, meta, postProgress) {
 
 /** Run all three formulas sequentially and gather their final transferable buffers. */
 async function computeSkinThreeV2(workerData, postProgress = () => {}) {
-    if (workerData.recipe !== DEFAULT_RECIPE) throw new Error(`Unsupported recipe: ${workerData.recipe}`);
+    if (workerData.recipe !== DEFAULT_RECIPE && workerData.recipe !== AREOLA_RECIPE) throw new Error(`Unsupported recipe: ${workerData.recipe}`);
     const files = {}, checksums = {}, stats = {}, timings = {}, cores = {}, memory = {};
     const transfer = [];
+    // task20: areolas first. They take seconds, so a failing areola request is reported before
+    // minutes of skin computation; the skin formulas below are unchanged.
+    if (workerData.areola) {
+        const areola = await computeAreolas(workerData.areola, workerData.meta, postProgress);
+        Object.assign(files, areola.files);
+        Object.assign(checksums, areola.checksums);
+        Object.assign(stats, areola.stats);
+        Object.assign(timings, areola.timings);
+        Object.assign(cores, areola.cores);
+        Object.assign(memory, areola.memory);
+        transfer.push(...areola.transfer);
+    }
+    if (workerData.recipe === AREOLA_RECIPE) return { files, checksums, stats, timings, cores, memory, transfer };
     for (const formula of Object.values(FORMULA_DEFINITIONS)) {
         const request = workerData.formulaParams[formula.id];
         if (!request) throw new Error(`Missing request for ${formula.id}`);

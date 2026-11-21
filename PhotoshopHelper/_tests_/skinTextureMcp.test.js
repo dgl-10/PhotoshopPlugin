@@ -73,11 +73,11 @@ async function startServer(context, skinTexture = {}) {
     return { rpc, callTool, fake, service };
 }
 
-test('tools/list publishes the four skin texture tools next to the existing ones', async context => {
+test('tools/list publishes the skin texture tools next to the existing ones', async context => {
     const { rpc } = await startServer(context);
     const { tools } = await rpc('tools/list', {});
     const names = tools.map(tool => tool.name);
-    for (const name of ['ps_skin_texture_start', 'ps_skin_texture_status', 'ps_skin_texture_apply', 'ps_skin_texture_cancel']) {
+    for (const name of ['ps_skin_texture_start', 'ps_skin_texture_status', 'ps_skin_texture_apply', 'ps_skin_texture_cancel', 'ps_skin_texture_find_areolas']) {
         assert.ok(names.includes(name), name);
         const tool = tools.find(t => t.name === name);
         assert.ok(tool.inputSchema.required.includes('task_id'), `${name} needs the task id`);
@@ -93,12 +93,17 @@ test('tools/list publishes the four skin texture tools next to the existing ones
     assert.deepEqual(start.inputSchema.required, ['task_id', 'request_id', 'rect', 'px_per_mm']);
     assert.equal('outputs' in start.inputSchema.properties, false, 'outputs must not be in published start schema');
     assert.ok('recipe' in start.inputSchema.properties, 'recipe is in start schema');
-    assert.deepEqual(start.inputSchema.properties.recipe.enum, ['skin_three_v2']);
-    assert.deepEqual(Object.keys(start.inputSchema.properties.params.properties).sort(), ['azimuthDeg', 'elevationDeg', 'seed']);
+    // task20: the areola-only recipe, the areola strength, the areola records and their sources.
+    assert.deepEqual(start.inputSchema.properties.recipe.enum, ['skin_three_v2', 'areola_three_v1']);
+    assert.deepEqual(Object.keys(start.inputSchema.properties.params.properties).sort(), ['areolaStrength', 'azimuthDeg', 'elevationDeg', 'seed']);
     assert.equal(start.inputSchema.properties.params.additionalProperties, false);
     assert.deepEqual(start.inputSchema.properties.params.properties.seed, { type: 'integer', minimum: 0, maximum: 4294967295 });
     const fields = start.inputSchema.properties.fields;
-    assert.deepEqual(fields.required, ['face']);
+    assert.equal(fields.required, undefined, 'face and areolas are each optional');
+    assert.deepEqual(fields.properties.areolas.items.required, ['areola']);
+    assert.equal(fields.properties.areolas.maxItems, 2);
+    assert.deepEqual(Object.keys(start.inputSchema.properties.sources.properties), ['geometry', 'nipple', 'scale', 'light']);
+    assert.match(start.description, /areola_three_v1/);
     assert.equal(fields.additionalProperties, false);
     assert.deepEqual(fields.properties.face.required, ['eyes', 'noseTip', 'mouth', 'chin']);
     assert.equal(fields.properties.face.additionalProperties, false);

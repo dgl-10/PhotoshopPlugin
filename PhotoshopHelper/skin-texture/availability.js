@@ -46,6 +46,8 @@ function createRefusingJobs({ code, message, limits = {} }) {
         status: () => refuse(),
         apply: async () => refuse(),
         cancel: async () => refuse(),
+        // task20: the areola measurement tool is refused together with the others.
+        findAreolas: async () => refuse(),
         dispose: () => Promise.resolve()
     };
 }

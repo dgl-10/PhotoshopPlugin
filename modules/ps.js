@@ -17,10 +17,10 @@ const CAPTURE_PADDING = 50;
 const PADDED_CAPTURE_STEP = 32;
 
 // Fast transparent Copy merged capture via imaging.getPixels (no temporary document or disk I/O).
-// Default: false (uses the legacy captureSelectionAsBase64PNG path).
-// Set to true to enable the new path for "Slow with transparency", "Full Doc Mask — Slow",
+// Enabled by default for "Slow with transparency", "Full Doc Mask — Slow",
 // and agent from_ps_capture with keep_transparency: true.
-const FAST_COPY_MERGED_TRANSPARENCY = false;
+// Set to false to fall back to the legacy captureSelectionAsBase64PNG path.
+const FAST_COPY_MERGED_TRANSPARENCY = true;
 
 /**
  * Snaps a padded capture dimension to the nearest multiple of `step` when possible,

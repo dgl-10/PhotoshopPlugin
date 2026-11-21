@@ -7,6 +7,7 @@
  */
 const catalog = require('./recipe-catalog');
 const adapter = require('./core-adapter');
+const { AREOLA_DEFINITIONS } = require('./areola-definitions');
 
 /** Translate internal camelCase identity fields to the MCP response convention. */
 function publicCore(core) {
@@ -34,6 +35,18 @@ function describeFormulas(job, identity, withParams) {
 /** Preserve each variant's diagnostics while showing a common small layer summary. */
 function buildDiagnostics(job) {
     const layers = {}, formulas = {}, notes = [];
+    // task20: areola variants report their layer statistics next to the formulas; their bands and
+    // geometry are in the job's "areolas" view. An areola-only job lists no skin formula here.
+    const layout = job.request && job.request.layout;
+    if (layout && layout.areolas) {
+        for (const id of Object.keys(AREOLA_DEFINITIONS)) {
+            const stats = (job.stats && job.stats[id]) || {};
+            for (const [output, layer] of Object.entries(stats.layers || {})) {
+                layers[`${id}_${output}`] = { ...layer, mean: Math.round(layer.mean * 1000) / 1000 };
+            }
+        }
+        if (!layout.skin) return { layers, formulas, notes };
+    }
     for (const formula of Object.values(catalog.FORMULA_DEFINITIONS)) {
         const stats = (job.stats && job.stats[formula.id]) || {};
         for (const [output, layer] of Object.entries(stats.layers || {})) {

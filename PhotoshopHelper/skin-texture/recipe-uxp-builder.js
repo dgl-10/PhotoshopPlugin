@@ -10,6 +10,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { CREATE_HIERARCHY, DESCRIBE_GROUPS } = require('./recipe-hierarchy-script');
 const { SCENE_GUARD } = require('./recipe-scene-guard-script');
+const { CUTOUT_MASKS } = require('./areola-uxp-script');
 
 const EXCHANGE_SOURCE_FILE = path.join(__dirname, 'exchange.js');
 let exchangeSource = null;
@@ -134,10 +135,11 @@ try {
         return skinRefuse('DATA_FOLDER_CHANGED', 'The plugin data folder is not the one the files were written to. Nothing was changed.');
     }
 
-    // 5. Read and decode all five exchange files
+    // 5. Read and decode every exchange file: the layer components and, with areolas (task20),
+    // the cut-out mask. Each file is checked against its own rectangle.
     let t = clock();
     const planes = {};
-    for (const item of EXPECT.components) {
+    for (const item of EXPECT.components.concat(EXPECT.masks || [])) {
         let bytes;
         try {
             const entry = await folder.getEntry(item.file);
@@ -152,7 +154,7 @@ try {
                 output: item.componentKey,
                 documentId: was.id,
                 document: { width: was.width, height: was.height },
-                rect: EXPECT.rect
+                rect: item.rect || EXPECT.rect
             });
             const h = decoded.header;
             if (h.recipe_id !== (item.recipeId || EXPECT.recipe)) {
@@ -164,7 +166,8 @@ try {
             if (h.formula_version !== item.formulaVersion) {
                 return skinRefuse('COMPONENT_HEADER_MISMATCH', 'Component ' + item.componentKey + ' has formula_version ' + h.formula_version + ' instead of ' + item.formulaVersion + '. Nothing was changed.');
             }
-            if (!h.core || h.core.name !== item.coreName || h.core.version !== item.coreVersion || h.core.sha256 !== item.coreSha256) {
+            // The cut-out is built by Helper itself from the variants' bands; it has no binary core.
+            if (item.kind !== 'mask' && (!h.core || h.core.name !== item.coreName || h.core.version !== item.coreVersion || h.core.sha256 !== item.coreSha256)) {
                 return skinRefuse('COMPONENT_HEADER_MISMATCH', 'Component ' + item.componentKey + ' core identity mismatch. Nothing was changed.');
             }
             planes[item.componentKey] = { item, gray: decoded.payload, bytes: bytes.length };
@@ -273,6 +276,8 @@ try {
     async function createTexturePixelLayer(componentKey) {
         const plane = planes[componentKey];
         if (!plane) throw new Error('MISSING_COMPONENT: component ' + componentKey + ' not prepared');
+        // An areola layer covers the region around the areolas (task20); a skin layer the rect.
+        const r = plane.item.rect || EXPECT.rect;
         const layerTimings = {};
         let lt = clock();
         const rgba = sixteen ? X.grayToRgba16(plane.gray) : X.grayToRgba8(plane.gray);
@@ -403,9 +408,16 @@ ${CREATE_HIERARCHY}
         if (vData.length !== expectedMaskBytes.length) {
             throw new Error('MASK_DATA_MISMATCH: Verified mask byte length ' + vData.length + ' does not match expected length ' + expectedMaskBytes.length);
         }
+        // In a 16-bit document Photoshop hands the selection over as 8-bit values (255 = selected)
+        // but reads the written layer mask back in its 16-bit range (32768 = white), measured on
+        // 21 November 2026 (task20). Compare both on the 8-bit scale: exactly when the source and
+        // the readback have the same depth, within one 8-bit step when Photoshop converted them.
+        const wideRead = vData instanceof Uint16Array, wideSource = expectedMaskBytes instanceof Uint16Array;
+        const tolerance = wideRead === wideSource ? 0 : 1;
+        const on8 = (values, wide, i) => (wide ? X.from16(values[i]) : values[i]);
         let mismatches = 0;
         for (let i = 0; i < vData.length; i++) {
-            if (vData[i] !== expectedMaskBytes[i]) {
+            if (Math.abs(on8(vData, wideRead, i) - on8(expectedMaskBytes, wideSource, i)) > tolerance) {
                 mismatches++;
                 if (mismatches > 10) break;
             }
@@ -435,8 +447,11 @@ ${CREATE_HIERARCHY}
         }
     }
 
-    // Verify that child groups have NO user mask attached
-    for (const childGroup of formulaGroups.map(item => item.group)) {
+    // task20: soft cut-out of the general skin under the areolas, one mask per formula group.
+${CUTOUT_MASKS}
+
+    // Verify that child groups have NO user mask attached, except the cut-out written above.
+    for (const childGroup of formulaGroups.map(item => item.group).filter(group => cutoutGroups.indexOf(group.id) === -1)) {
         let childMask = null;
         try {
             childMask = await imaging.getLayerMask({ documentID: doc.id, layerID: childGroup.id, kind: 'user' });
@@ -487,7 +502,8 @@ ${CREATE_HIERARCHY}
                     bounds: maskBounds ? { left: +maskBounds.left, top: +maskBounds.top, right: +maskBounds.right, bottom: +maskBounds.bottom } : null
                 }
             },
-            subgroups: ${DESCRIBE_GROUPS}
+            subgroups: ${DESCRIBE_GROUPS},
+            cutout: (EXPECT.masks || []).length ? { groups: cutoutGroups, rect: EXPECT.masks[0].rect } : null
         },
         layers: written,
         timings

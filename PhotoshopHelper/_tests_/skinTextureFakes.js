@@ -58,6 +58,15 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
         failPutPixelsOnCall: null,
         failCreateImageDataOnCall: null,
         failDeleteIds: new Set(),
+        // task20: fail the putLayerMask call with this 1-based number, or on a layer of this name.
+        failPutLayerMaskOnCall: null,
+        failPutLayerMaskOnLayerName: null,
+        // task20: synthetic RGB picture the Imaging getPixels reads: { width, height, data } chunky
+        // 8-bit RGB in document coordinates (origin 0,0), or null when a test supplies none.
+        documentPixels: null,
+        // task20: 8 or 16; 16 makes getSelection answer Photoshop's 0..32768 range as Uint16Array.
+        selectionComponentSize: 8,
+        getPixelsCalls: 0,
         failAllDeletes: false,
         // Optional one-shot host side effect used to test the original-scene mutation guard.
         mutateExistingLayerOnMaskRead: null,
@@ -448,6 +457,83 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
     }
 
     doc = makeDocument(document);
+
+    // task20: UXP's Selection API, doc.selection.bounds = {left, top, right, bottom} or null. The
+    // selection object stays the plain test spec ({x, y, width, height, data}); the getter hands
+    // the script a view of it with the tight bounds of the selected cells (the rectangle when the
+    // spec has no mask data). Tests still assign doc.selection = {...} as before.
+    let rawSelection = doc.selection;
+    const boundsCache = new WeakMap();
+    // task20, measured in Photoshop on 21 November 2026 (task20-output/live/23-format.json): in a
+    // 16-bit document getLayerMask answers Photoshop's 0..32768 range as Uint16Array, but
+    // getSelection still answers 8-bit values (Uint8Array, 255 = selected). 8-bit documents use
+    // Uint8Array for both. (state.selectionComponentSize = 16 makes getSelection answer 16-bit
+    // values, to exercise code that must accept either.)
+    const wideDocument = () => doc.bitsPerChannel === CONSTANTS.BitsPerChannelType.SIXTEEN;
+    const to16 = v => Math.round(v * 32768 / 255);
+    function selectionRect(s) {
+        const left = s.left !== undefined ? s.left : (s.x || 0);
+        const top = s.top !== undefined ? s.top : (s.y || 0);
+        return { left, top, width: s.width || doc.width, height: s.height || doc.height };
+    }
+    function selectionBounds(s) {
+        if (boundsCache.has(s)) return boundsCache.get(s);
+        const r = selectionRect(s);
+        let b = { left: r.left, top: r.top, right: r.left + r.width, bottom: r.top + r.height };
+        if (s.data) {
+            let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+            for (let y = 0; y < r.height; y++) {
+                for (let x = 0; x < r.width; x++) {
+                    if (!s.data[y * r.width + x]) continue;
+                    if (x < x0) x0 = x; if (x > x1) x1 = x;
+                    if (y < y0) y0 = y; if (y > y1) y1 = y;
+                }
+            }
+            b = x1 < 0 ? null : { left: r.left + x0, top: r.top + y0, right: r.left + x1 + 1, bottom: r.top + y1 + 1 };
+        }
+        boundsCache.set(s, b);
+        return b;
+    }
+    Object.defineProperty(doc, 'selection', {
+        enumerable: true,
+        configurable: true,
+        get() {
+            if (!rawSelection) return rawSelection;
+            return Object.create(rawSelection, {
+                bounds: { enumerable: true, get: () => (doc.hasSelection ? selectionBounds(rawSelection) : null) }
+            });
+        },
+        set(value) { rawSelection = value; }
+    });
+
+    /**
+     * Area-average resampling of a window of a source grid, the way Imaging's targetSize reads a
+     * region at a reduced size. Cells outside the source take `outside`.
+     *
+     * @param {(x: number, y: number, c: number) => number} at - Source value at document pixel x, y.
+     * @param {{left: number, top: number, right: number, bottom: number}} window - Source window.
+     * @param {{width: number, height: number}} target - Result grid.
+     * @param {number} components - Values per cell.
+     * @returns {Float64Array} Chunky averaged values.
+     */
+    function resampleWindow(at, window, target, components) {
+        const sw = window.right - window.left, sh = window.bottom - window.top;
+        const out = new Float64Array(target.width * target.height * components);
+        for (let ty = 0; ty < target.height; ty++) {
+            const ya = window.top + ty * sh / target.height, yb = window.top + (ty + 1) * sh / target.height;
+            const y0 = Math.floor(ya), y1 = Math.max(y0 + 1, Math.ceil(yb));
+            for (let tx = 0; tx < target.width; tx++) {
+                const xa = window.left + tx * sw / target.width, xb = window.left + (tx + 1) * sw / target.width;
+                const x0 = Math.floor(xa), x1 = Math.max(x0 + 1, Math.ceil(xb));
+                for (let c = 0; c < components; c++) {
+                    let sum = 0;
+                    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) sum += at(x, y, c);
+                    out[(ty * target.width + tx) * components + c] = sum / ((x1 - x0) * (y1 - y0));
+                }
+            }
+        }
+        return out;
+    }
     const other = makeDocument({ id: 99, name: 'another.psd', width: 300, height: 300 });
     const app = { documents: [doc, other], activeDocument: other };
 
@@ -458,13 +544,40 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             const s = doc.selection;
             const w = s.width || doc.width;
             const h = s.height || doc.height;
+            if (options && options.sourceBounds) {
+                // task20: a window of the selection, optionally reduced to targetSize (UXP Imaging
+                // getSelection). Cells outside the supplied mask are not selected.
+                const win = options.sourceBounds;
+                const r = selectionRect(s);
+                const target = options.targetSize || { width: win.right - win.left, height: win.bottom - win.top };
+                const avg = resampleWindow((x, y) => {
+                    const mx = x - r.left, my = y - r.top;
+                    if (mx < 0 || my < 0 || mx >= r.width || my >= r.height) return 0;
+                    return s.data ? s.data[my * r.width + mx] : 255;
+                }, win, target, 1);
+                const wide = state.selectionComponentSize === 16;
+                const values = wide ? new Uint16Array(avg.length) : new Uint8Array(avg.length);
+                for (let i = 0; i < avg.length; i++) values[i] = wide ? Math.round(avg[i] * 32768 / 255) : Math.round(avg[i]);
+                state.imageDataCreated += 1;
+                return {
+                    imageData: {
+                        width: target.width, height: target.height, components: 1, data: values,
+                        getData: async () => values,
+                        dispose() { state.imageDataDisposed += 1; }
+                    },
+                    sourceBounds: { left: win.left, top: win.top, right: win.right, bottom: win.bottom }
+                };
+            }
             state.imageDataCreated += 1;
+            let wholeData = s.data || new Uint8Array(w * h).fill(255);
+            if (state.selectionComponentSize === 16) wholeData = Uint16Array.from(wholeData, to16);
             return {
                 imageData: {
                     width: w,
                     height: h,
                     components: 1,
-                    data: s.data || new Uint8Array(w * h).fill(255),
+                    data: wholeData,
+                    getData: async () => wholeData,
                     dispose() { state.imageDataDisposed += 1; }
                 },
                 sourceBounds: {
@@ -473,6 +586,32 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
                     right: (s.left !== undefined ? s.left : (s.x || 0)) + w,
                     bottom: (s.top !== undefined ? s.top : (s.y || 0)) + h
                 }
+            };
+        },
+        // task20: the composite of a window of the synthetic picture in state.documentPixels as 8-bit
+        // RGB, optionally reduced to targetSize. Options it does not model (colour profile,
+        // applyAlpha) are accepted and ignored; componentSize other than 8 is refused.
+        async getPixels(options = {}) {
+            state.getPixelsCalls += 1;
+            const source = state.documentPixels;
+            if (!source) throw new Error('The fake has no synthetic picture: set fake.state.documentPixels');
+            if (options.componentSize !== undefined && options.componentSize !== 8) throw new Error('The fake reads 8-bit pixels only');
+            const win = options.sourceBounds || { left: 0, top: 0, right: doc.width, bottom: doc.height };
+            const target = options.targetSize || { width: win.right - win.left, height: win.bottom - win.top };
+            const avg = resampleWindow((x, y, c) => {
+                const cx = Math.min(source.width - 1, Math.max(0, x)), cy = Math.min(source.height - 1, Math.max(0, y));
+                return source.data[(cy * source.width + cx) * 3 + c];
+            }, win, target, 3);
+            const values = new Uint8Array(avg.length);
+            for (let i = 0; i < avg.length; i++) values[i] = Math.round(avg[i]);
+            state.imageDataCreated += 1;
+            return {
+                imageData: {
+                    width: target.width, height: target.height, components: 3, data: values,
+                    getData: async () => values,
+                    dispose() { state.imageDataDisposed += 1; }
+                },
+                sourceBounds: { left: win.left, top: win.top, right: win.right, bottom: win.bottom }
             };
         },
         async getLayerMask({ documentID, layerID, kind, sourceBounds }) {
@@ -524,13 +663,20 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             } else {
                 // Sample the mask like a canvas: the written patch inside m.bounds, m.outside elsewhere
                 // (255 by default: Photoshop leaves a new mask white outside a putLayerMask patch, live-11).
-                maskData = new Uint8Array(width * height);
+                const wideMask = wideDocument();
+                maskData = wideMask ? new Uint16Array(width * height) : new Uint8Array(width * height);
+                // Stored patch values are in the unit they were written in: 8-bit, or 0..32768 when
+                // the patch is a Uint16Array. Everything else is 8-bit and converted when read wide.
+                const patchIsWide = m.data instanceof Uint16Array;
+                const unit = v => (wideMask && !patchIsWide ? to16(v) : v);
                 const b = m.bounds;
                 for (let i = 0; i < maskData.length; i++) {
                     const x = returnedBounds.left + (i % width);
                     const y = returnedBounds.top + Math.floor(i / width);
                     const inPatch = b && x >= b.left && x < b.right && y >= b.top && y < b.bottom;
-                    maskData[i] = inPatch ? (m.data ? m.data[(y - b.top) * (b.right - b.left) + (x - b.left)] : 255) : (m.outside === undefined ? 255 : m.outside);
+                    maskData[i] = inPatch
+                        ? unit(m.data ? m.data[(y - b.top) * (b.right - b.left) + (x - b.left)] : 255)
+                        : (wideMask ? to16(m.outside === undefined ? 255 : m.outside) : (m.outside === undefined ? 255 : m.outside));
                 }
             }
 
@@ -551,7 +697,11 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             state.putLayerMaskCalls = (state.putLayerMaskCalls || 0) + 1;
             if (state.silentFailPutLayerMask) return;
             if (state.failPutLayerMask) throw new Error('putLayerMask simulated failure');
+            if (state.failPutLayerMaskOnCall === state.putLayerMaskCalls) throw new Error('putLayerMask simulated failure on call ' + state.putLayerMaskCalls);
             const layer = findLayerById(layerID);
+            if (state.failPutLayerMaskOnLayerName && layer && layer.name === state.failPutLayerMaskOnLayerName) {
+                throw new Error('putLayerMask simulated failure on ' + layer.name);
+            }
             if (!layer) throw new Error('Layer not found: ' + layerID);
             layer.layerMaskDensity = 100;
             layer.layerMaskFeather = 0;
@@ -615,6 +765,19 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
 
     const folderEntry = {
         get nativePath() { return dataFolder; },
+        // task20: storage Folder.createFile + File.write, as the areola read script uses them.
+        async createFile(name, { overwrite = false } = {}) {
+            const full = path.join(dataFolder, name);
+            if (!overwrite && fs.existsSync(full)) throw new Error(`File ${name} already exists`);
+            fs.writeFileSync(full, Buffer.alloc(0));
+            return {
+                async write(data, { format } = {}) {
+                    if (format !== 'binary') throw new Error('The fake writes binary data only');
+                    if (!(data instanceof ArrayBuffer)) throw new Error('A binary write needs an ArrayBuffer');
+                    fs.writeFileSync(full, Buffer.from(data));
+                }
+            };
+        },
         async getEntry(name) {
             const full = path.join(dataFolder, name);
             if (!fs.existsSync(full)) throw new Error(`Could not find an entry of ${name}`);

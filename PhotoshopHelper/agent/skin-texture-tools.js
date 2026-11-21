@@ -19,6 +19,8 @@
 
 const { SkinRequestError } = require('../skin-texture/core-adapter');
 const { buildToolDescriptions, buildFaceFieldsSchema } = require('../skin-texture/recipe-tool-contract');
+// task20: areolas extend the start schema and add ps_skin_texture_find_areolas.
+const areolaContract = require('../skin-texture/areola-tool-contract');
 
 /**
  * @param {string} text - Text for the agent.
@@ -65,7 +67,7 @@ function createSkinTextureTools({
     refuseWhileDialogPending,
     markers
 }) {
-    const descriptions = buildToolDescriptions(jobs.options);
+    const descriptions = areolaContract.extendDescriptions(buildToolDescriptions(jobs.options));
 
     const definitions = [
         {
@@ -102,11 +104,13 @@ function createSkinTextureTools({
                         properties: {
                             seed: { type: 'integer', minimum: 0, maximum: 4294967295 },
                             azimuthDeg: { type: 'number' },
-                            elevationDeg: { type: 'number', minimum: 5, maximum: 90 }
+                            elevationDeg: { type: 'number', minimum: 5, maximum: 90 },
+                            areolaStrength: { type: 'number', minimum: 0, maximum: 20 }
                         }, additionalProperties: false
                     },
-                    fields: buildFaceFieldsSchema(descriptions),
-                    recipe: { type: 'string', enum: ['skin_three_v2'], description: descriptions.recipe }
+                    fields: areolaContract.buildFieldsSchema(descriptions, buildFaceFieldsSchema(descriptions)),
+                    sources: areolaContract.SOURCES_SCHEMA,
+                    recipe: { type: 'string', enum: ['skin_three_v2', 'areola_three_v1'], description: descriptions.recipe }
                 },
                 required: ['task_id', 'request_id', 'rect', 'px_per_mm'],
                 additionalProperties: false
@@ -170,7 +174,8 @@ function createSkinTextureTools({
                 required: ['task_id', 'job_id'],
                 additionalProperties: false
             }
-        }
+        },
+        areolaContract.buildFindTool(descriptions.find)
     ];
 
     /**
@@ -308,13 +313,29 @@ function createSkinTextureTools({
         }
     }
 
+    /** task20: measure areolas locally in Helper; numbers only, nothing written to the document. */
+    async function findAreolas(args) {
+        const task = tasks.require(args.task_id);
+        const refused = refuseWhileDialogPending(task, 'ps_skin_texture_find_areolas');
+        if (refused) return refused;
+        if (!isChannelOpen()) return textResult(channelClosedMessage, true);
+        note(task.id, 'skin texture: measuring areolas', 'ps_skin_texture_find_areolas');
+        try {
+            return jsonResult(await jobs.findAreolas(task, args, transportFor(task)));
+        } catch (error) {
+            if (error instanceof SkinRequestError) return refusal(error);
+            throw error;
+        }
+    }
+
     return {
         definitions,
         handlers: {
             ps_skin_texture_start: start,
             ps_skin_texture_status: status,
             ps_skin_texture_apply: apply,
-            ps_skin_texture_cancel: cancel
+            ps_skin_texture_cancel: cancel,
+            ps_skin_texture_find_areolas: findAreolas
         }
     };
 }
