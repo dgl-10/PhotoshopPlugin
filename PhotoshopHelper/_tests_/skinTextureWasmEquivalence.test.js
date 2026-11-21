@@ -9,6 +9,8 @@ const { execFileSync } = require('node:child_process');
 const loader = require('../skin-texture/wasm-loader');
 const adapter = require('../skin-texture/core-adapter');
 const exchange = require('../skin-texture/exchange');
+const faceMap = require('../skin-texture/face-map');
+const { FORMULA_DEFINITIONS } = require('../skin-texture/formula-definitions');
 const { missingBinaryReason, runWorker } = require('./skinTextureTestSupport');
 const { FORMULAS, CASES, independentRequest } = require('./skinTextureEquivalenceCases');
 const FIXTURE_FILE = path.join(__dirname, 'fixtures', 'skin-three-v2-checksums.json');
@@ -19,7 +21,7 @@ const RUNNER_FILE = path.join(BENCH_ROOT, 'variants', 'runner.js');
 for (const formula of FORMULAS) {
     test(`${formula.fileName}: altered bytes fail with filename and pinned digest`, () => {
         assert.throws(() => loader.verifyWasmBytes(Buffer.from('altered private build'), formula.id), error =>
-            error.message.includes(formula.fileName) && error.message.includes(formula.sha256));
+            error.message.includes(formula.fileName) && error.message.includes(FORMULA_DEFINITIONS[formula.id].sha256));
     });
 }
 
@@ -57,8 +59,11 @@ test('all three local cores report pinned provenance', { skip: missingBinaryReas
         assert.equal(actual.name, formula.variant);
         assert.equal(actual.version, formula.version);
         assert.equal(actual.fileName, formula.fileName);
-        assert.equal(actual.sha256, formula.sha256);
-        assert.equal(actual.rawSha256, formula.sha256);
+        // The historical fixture identifies the binary that produced its frozen layer
+        // bytes. The currently installed binary has its own production integrity pin.
+        const expected = FORMULA_DEFINITIONS[formula.id].sha256;
+        assert.equal(actual.sha256, expected);
+        assert.equal(actual.rawSha256, expected);
         assert.equal(actual.matchesPinned, true);
     }
 });
@@ -76,6 +81,13 @@ test('worker matches pinned SkinBench CRC/FNV at four scales, offsets, seeds and
         for (const formula of FORMULAS) assert.deepEqual(normalized.coreParams[formula.id], independentRequest(config, formula.id));
         const actual = await runWorker(normalized.coreParams, config.rect, config.document);
         const pinned = fixture.cases.find(record => record.config.id === config.id);
+        if (config.fields && config.fields.face) {
+            const decoded = exchange.decode(actual.files[faceMap.OUTPUT], { faceMap: true, document: config.document });
+            assert.ok(faceMap.decode(decoded.payload, config.document));
+            assert.match(actual.checksums[faceMap.OUTPUT].sha256, /^[a-f\d]{64}$/);
+        } else {
+            assert.equal(actual.files[faceMap.OUTPUT], undefined);
+        }
         for (const formula of FORMULAS) for (const output of Object.keys(formula.layers)) {
             const decoded = exchange.decode(actual.files[output]);
             assert.deepEqual(exchange.checksums(decoded.payload), pinned.checksums[output], `${config.id}: ${output}`);

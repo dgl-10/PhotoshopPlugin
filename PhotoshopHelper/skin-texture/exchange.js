@@ -42,6 +42,7 @@
 'use strict';
 var SkinExchange = (function () {
     const FORMAT = 'skin-texture-gray8';
+    const FACE_MAP_FORMAT = 'skin-face-map-binary';
     const VERSION = 2;
     const MAGIC = 'SKTX0002';
     const TRAILER = 'SKTXEND!';
@@ -139,14 +140,17 @@ var SkinExchange = (function () {
 
     // meta: { jobId, taskId, output, document: { id, width, height }, rect, ...extra }.
     // Extra fields (core identity, timings) travel in the header but are not interpreted.
-    function encode(meta, gray) {
+    function encode(meta, gray, faceMap = false) {
         if (!(gray instanceof Uint8Array)) throw new Error('GRAY_TYPE: expected Uint8Array');
         if (!meta || !meta.document) throw new Error('EXCHANGE_META: document is required');
         checkRect(meta.rect, meta.document);
-        if (gray.length !== meta.rect.width * meta.rect.height)
+        // Face maps cover the document and have their own validated numeric layout. The
+        // exchange rect still binds them to this job, including when it writes only a crop.
+        if (!faceMap && gray.length !== meta.rect.width * meta.rect.height)
             throw new Error('EXCHANGE_LENGTH: payload length does not match rect');
         const header = Object.assign({}, meta, {
-            format: FORMAT, version: VERSION, components: 1, sampleBits: 8,
+            format: faceMap ? FACE_MAP_FORMAT : FORMAT, version: VERSION,
+            components: faceMap ? 0 : 1, sampleBits: faceMap ? 64 : 8,
             payloadLength: gray.length, payloadCrc32: hex(crc32(gray)), payloadFnv1a: hex(fnv1a(gray)) });
         const headerBytes = asciiBytes(JSON.stringify(header));
         if (headerBytes.length > MAX_HEADER) throw new Error('EXCHANGE_HEADER_TOO_LARGE');
@@ -178,10 +182,13 @@ var SkinExchange = (function () {
         catch (error) { throw new Error('EXCHANGE_BAD_HEADER: ' + error.message); }
         if (!header || typeof header !== 'object') throw new Error('EXCHANGE_BAD_HEADER: not an object');
         for (const key of REQUIRED) if (!(key in header)) throw new Error('EXCHANGE_HEADER_FIELD: missing ' + key);
-        if (header.format !== FORMAT || header.version !== VERSION || header.components !== 1 || header.sampleBits !== 8)
+        const faceMap = expect && expect.faceMap === true;
+        if (header.format !== (faceMap ? FACE_MAP_FORMAT : FORMAT) || header.version !== VERSION
+            || header.components !== (faceMap ? 0 : 1) || header.sampleBits !== (faceMap ? 64 : 8))
             throw new Error('EXCHANGE_UNSUPPORTED: ' + header.format + ' v' + header.version);
         checkRect(header.rect, header.document);
-        if (header.payloadLength !== header.rect.width * header.rect.height)
+        if (!Number.isSafeInteger(header.payloadLength) || header.payloadLength < 1
+            || (!faceMap && header.payloadLength !== header.rect.width * header.rect.height))
             throw new Error('EXCHANGE_LENGTH: header payloadLength ' + header.payloadLength + ' != rect area ' +
                 header.rect.width * header.rect.height);
         const expectedTotal = 12 + h + header.payloadLength + 16;
@@ -211,6 +218,7 @@ var SkinExchange = (function () {
     }
 
     return { format: FORMAT, version: VERSION, magic: MAGIC, crc32, fnv1a, hex, checksums, checkRect, sameRect,
-        grayToRgba8, grayToRgba16, to16, from16, toRelief16, fromRelief16, encode, decode };
+        grayToRgba8, grayToRgba16, to16, from16, toRelief16, fromRelief16, encode, decode,
+        encodeFaceMap: (meta, bytes) => encode(meta, bytes, true) };
 })();
 if (typeof module !== 'undefined') module.exports = SkinExchange;

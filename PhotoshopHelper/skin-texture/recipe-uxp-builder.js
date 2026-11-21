@@ -13,7 +13,9 @@ const { SCENE_GUARD } = require('./recipe-scene-guard-script');
 const { CUTOUT_MASKS } = require('./areola-uxp-script');
 
 const EXCHANGE_SOURCE_FILE = path.join(__dirname, 'exchange.js');
+const FACE_MAP_SOURCE_FILE = path.join(__dirname, 'face-map.js');
 let exchangeSource = null;
+let faceMapSource = null;
 
 function getExchangeSource() {
     if (exchangeSource === null) exchangeSource = fs.readFileSync(EXCHANGE_SOURCE_FILE, 'utf8');
@@ -69,10 +71,12 @@ function skinDocumentFacts(d) {
  * @returns {string} Executable UXP JavaScript code
  */
 function buildRecipeApplyScript(expect) {
+    if (expect.faceMap && faceMapSource === null) faceMapSource = fs.readFileSync(FACE_MAP_SOURCE_FILE, 'utf8');
     return `// Skin texture: write recipe ${expect.recipe} job ${expect.jobId} into the task document.
 // Built by PhotoshopHelper/skin-texture/recipe-uxp-builder.js. Do not edit or resend by hand.
 const EXPECT = ${JSON.stringify(expect)};
 const EXCHANGE_SOURCE = ${JSON.stringify(getExchangeSource())};
+const FACE_MAP_SOURCE = ${JSON.stringify(expect.faceMap ? faceMapSource : null)};
 ${DOCUMENT_FACTS}
 const clock = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? () => performance.now() : () => Date.now();
 const startedAt = clock();
@@ -139,7 +143,10 @@ try {
     // the cut-out mask. Each file is checked against its own rectangle.
     let t = clock();
     const planes = {};
-    for (const item of EXPECT.components.concat(EXPECT.masks || [])) {
+    const faceRenderer = EXPECT.faceMap
+        ? new Function('module', FACE_MAP_SOURCE + '\\nreturn SkinFaceMap;')(undefined) : null;
+    const inputs = EXPECT.components.concat(EXPECT.masks || [], EXPECT.faceMap || []);
+    for (const item of inputs) {
         let bytes;
         try {
             const entry = await folder.getEntry(item.file);
@@ -152,6 +159,7 @@ try {
                 jobId: EXPECT.jobId,
                 taskId: EXPECT.taskId,
                 output: item.componentKey,
+                faceMap: item.kind === 'face_map',
                 documentId: was.id,
                 document: { width: was.width, height: was.height },
                 rect: item.rect || EXPECT.rect
@@ -170,7 +178,9 @@ try {
             if (item.kind !== 'mask' && (!h.core || h.core.name !== item.coreName || h.core.version !== item.coreVersion || h.core.sha256 !== item.coreSha256)) {
                 return skinRefuse('COMPONENT_HEADER_MISMATCH', 'Component ' + item.componentKey + ' core identity mismatch. Nothing was changed.');
             }
-            planes[item.componentKey] = { item, gray: decoded.payload, bytes: bytes.length };
+            planes[item.componentKey] = item.kind === 'face_map'
+                ? faceRenderer.decode(decoded.payload, was)
+                : { item, gray: decoded.payload, bytes: bytes.length };
         } catch (error) {
             return skinRefuse(skinCodeOf(error), String(error.message) + '. Nothing was changed.');
         }
@@ -340,6 +350,44 @@ try {
 
 ${CREATE_HIERARCHY}
 
+    // Put the diagnostic layer above the formula groups inside Skin. Its own eye
+    // controls the map while Skin's visibility and mask apply to the whole group.
+    let faceMapLayer = null;
+    if (EXPECT.faceMap) {
+        const map = planes[EXPECT.faceMap.componentKey];
+        const layer = await doc.createPixelLayer({ name: faceRenderer.LAYER_NAME });
+        if (!layer || !Number.isInteger(layer.id)) throw new Error('LAYER_NOT_CREATED: face map');
+        created.push(layer.id);
+        await layer.move(skinGroup, C.ElementPlacement.PLACEINSIDE);
+        layer.blendMode = C.BlendMode.NORMAL;
+        layer.opacity = 100;
+        layer.visible = false;
+        let replace = true;
+        for (const rect of faceRenderer.tiles(map)) {
+            const { rgba, hasPixels } = faceRenderer.rasterize(map, rect);
+            if (!hasPixels) continue;
+            // The map contains ordinary sRGB color and straight alpha. For 16-bit
+            // Photoshop, scale every component to the reduced range, including alpha.
+            const pixels = sixteen ? Uint16Array.from(rgba, X.to16) : rgba;
+            const options = { width: rect.width, height: rect.height, components: 4, chunky: true,
+                colorSpace: 'RGB', colorProfile: 'sRGB IEC61966-2.1' };
+            if (sixteen) options.fullRange = false;
+            const imageData = await imaging.createImageDataFromBuffer(pixels, options);
+            try {
+                await imaging.putPixels({ documentID: doc.id, layerID: layer.id, imageData,
+                    targetBounds: { left: rect.x, top: rect.y }, replace });
+                replace = false;
+            } finally {
+                imageData.dispose();
+            }
+        }
+        layer.visible = false;
+        if (skinGroup.layers[0]?.id !== layer.id || layer.visible) {
+            throw new Error('HIERARCHY_MISMATCH: Face Map must be the first child of Skin and hidden');
+        }
+        faceMapLayer = { id: layer.id, name: layer.name, visible: Boolean(layer.visible) };
+    }
+
     // 8. Put single common mask onto Skin group
     // Initialize with hideAll mask so all pixels outside maskBounds are guaranteed hidden (black).
     let maskInit = null;
@@ -503,7 +551,8 @@ ${CUTOUT_MASKS}
                 }
             },
             subgroups: ${DESCRIBE_GROUPS},
-            cutout: (EXPECT.masks || []).length ? { groups: cutoutGroups, rect: EXPECT.masks[0].rect } : null
+            cutout: (EXPECT.masks || []).length ? { groups: cutoutGroups, rect: EXPECT.masks[0].rect } : null,
+            ...(faceMapLayer ? { faceMap: faceMapLayer } : {})
         },
         layers: written,
         timings

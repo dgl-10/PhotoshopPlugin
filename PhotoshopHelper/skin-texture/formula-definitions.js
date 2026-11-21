@@ -11,7 +11,7 @@ const FORMULA_DEFINITIONS = Object.freeze({
     formula_1: Object.freeze({
         id: 'formula_1', version: 2, name: 'Formula 1', visible: true,
         variant: 'fable_flecks_v2', variantVersion: '2.0.0', fileName: 'fable_flecks2.wasm',
-        sha256: 'cca4fe93625cbd8549bb4a28a8f4c5004e912632ab1e73d32790e6787abee824',
+        sha256: '182d5ffced5d9de556100a30d20c306956205a8328aab9088a1ef06a98ca672d',
         fields: Object.freeze({ face: true }),
         layers: Object.freeze([
             Object.freeze({ output: 'pores', sourceLayerId: 'flecks_pores', layerName: 'Pores', blendMode: 'linear_light', opacity: 0.5 }),

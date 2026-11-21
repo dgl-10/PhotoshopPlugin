@@ -186,6 +186,7 @@ test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
     const structure = applyAns.json.apply.structure;
     assert.ok(structure, 'Expected structure in apply result');
     assert.equal(structure.mainGroup.hasUserMask, true);
+    assert.equal(structure.faceMap, undefined);
     assert.equal(structure.subgroups.length, 3);
 
     const f2Group = structure.subgroups.find(g => g.name === 'Formula 2');
@@ -235,6 +236,49 @@ test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
     assert.equal(repeatAns.json.phase, 'applied');
     assert.equal(harness.fake.doc.layers.length, layerCountBeforeRepeat);
 });
+
+for (const depth of [8, 16]) {
+    test(`Face Map is hidden inside Skin and keeps document-space marks in RGB ${depth}-bit`, async t => {
+        const rect = { x: 120, y: 127, width: 163, height: 181 };
+        const harness = makeHarness(t, { document: {
+            width: 320, height: 384, bits: depth, hasSelection: true, selection: rect
+        } });
+        const taskId = await harness.startTask();
+        const points = [[105.25, 113.5], [214.75, 113.5], [160, 176.25],
+            [116.75, 222.75], [203.25, 222.75], [160.25, 297.25]];
+        const [eye1, eye2, noseTip, mouth1, mouth2, chin] = points;
+        const started = await harness.call('ps_skin_texture_start', {
+            task_id: taskId, request_id: 'offset-face', rect, px_per_mm: 1.75, params: { seed: 19 },
+            fields: { face: { eyes: [eye1, eye2], noseTip, mouth: [mouth1, mouth2], chin } }
+        });
+        assert.equal(started.isError, false, started.text);
+        const jobId = started.json.job_id;
+        const ready = await harness.waitForPhase(taskId, jobId, 'ready');
+        assert.equal(ready.result.checksums.face_map.sha256, '55bf0393e5658405241134eef9b3e6202f200b40276e4c6221bba501ff124bfa');
+
+        const applied = await harness.call('ps_skin_texture_apply', {
+            task_id: taskId, job_id: jobId, mask_source: { kind: 'selection' }
+        });
+        assert.equal(applied.json.phase, 'applied', applied.text);
+        const { structure, layers } = applied.json.apply;
+        assert.equal(layers.length, 5);
+        assert.equal(structure.mainGroup.hasUserMask, true);
+        const skin = harness.fake.findLayerById(structure.mainGroup.id);
+        const map = harness.fake.findLayerById(structure.faceMap.id);
+        assert.equal(skin.layers[0], map);
+        assert.deepEqual(skin.layers.map(layer => layer.name), ['Face Map', 'Formula 1', 'Formula 2', 'Formula 3']);
+        assert.equal(map.visible, false);
+        assert.equal(map.blendMode, 'normal');
+        const { data, width, left, top, componentSize } = map.pixels;
+        assert.equal(componentSize, depth);
+        const alpha = (x, y) => data[((Math.floor(y) - top) * width + Math.floor(x) - left) * 4 + 3];
+        const max = depth === 8 ? 255 : 32768;
+        // Both eyes and one lip corner lie outside the relief rectangle.
+        assert.deepEqual(points.map(p => alpha(...p)), Array(6).fill(max));
+        assert.equal(alpha(0, 0), 0);
+        assert.ok(alpha(160, 138) > 0 && alpha(160, 138) < max);
+    });
+}
 
 test('recipe skin_three_v2 explicitly builds at the root without changing a hidden existing group', async t => {
     const harness = makeHarness(t, { document: protectedSceneDocument() });

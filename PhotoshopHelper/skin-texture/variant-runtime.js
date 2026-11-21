@@ -127,6 +127,7 @@ function executeWasm(formulaId, request, targetInstance = null) {
         if (!Array.isArray(header.layers)) throw new Error(`${fileName}: missing response layers.`);
         const layers = {};
         const payloadStart = 4 + headerLen;
+        let layerEnd = 0;
         for (const layer of header.layers) {
             if (typeof layer.id !== 'string' || Object.hasOwn(layers, layer.id)
                 || !Number.isInteger(layer.byteOffset) || layer.byteOffset < 0
@@ -135,8 +136,19 @@ function executeWasm(formulaId, request, targetInstance = null) {
                 throw new Error(`${fileName}: invalid response layer bounds or identifier.`);
             }
             layers[layer.id] = bytes.slice(payloadStart + layer.byteOffset, payloadStart + layer.byteOffset + layer.byteLength);
+            layerEnd = Math.max(layerEnd, layer.byteOffset + layer.byteLength);
         }
-        return { status: header.status, header, layers, diagnostics: header.diagnostics || {}, computeMs,
+        // The optional common map follows the unchanged grayscale layer payload.
+        let faceMap;
+        if (header.faceMap !== undefined) {
+            const slot = header.faceMap;
+            if (!slot || slot.byteOffset !== layerEnd || !Number.isSafeInteger(slot.byteLength)
+                || slot.byteLength <= 0 || payloadStart + layerEnd + slot.byteLength !== responseLen) {
+                throw new Error(`${fileName}: invalid numeric face map bounds.`);
+            }
+            faceMap = bytes.slice(payloadStart + layerEnd);
+        }
+        return { status: header.status, header, layers, faceMap, diagnostics: header.diagnostics || {}, computeMs,
             wasmMemoryBytes: memory.byteLength };
     } finally {
         exports.skinbench_dealloc(ptr, input.length);

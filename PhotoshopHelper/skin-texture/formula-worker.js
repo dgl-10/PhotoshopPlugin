@@ -7,16 +7,21 @@
  * before the recipe coordinator is allowed to start the next formula.
  */
 const { parentPort, workerData } = require('node:worker_threads');
+const { createHash } = require('node:crypto');
 const runtime = require('./wasm-loader');
 const { FORMULA_DEFINITIONS, RECIPE_COMPONENTS } = require('./formula-definitions');
 const exchange = require('./exchange');
+const faceMap = require('./face-map');
 
 try {
     const { formulaId, request, meta } = workerData;
     const formula = FORMULA_DEFINITIONS[formulaId];
     if (!formula) throw new Error(`Unknown formulaId: ${formulaId}`);
     const core = runtime.getWasmCoreIdentity().formulas.find(item => item.formulaId === formulaId);
-    const result = runtime.executeWasm(formulaId, request);
+    // Fable produces the shared map alongside its relief. Other formulas remain
+    // consumers of their own requests, including when a future version supports a map.
+    const wantsFaceMap = formulaId === 'formula_1' && Boolean(request.fields && request.fields.face);
+    const result = runtime.executeWasm(formulaId, wantsFaceMap ? { ...request, includeFaceMap: true } : request);
     const components = RECIPE_COMPONENTS.filter(item => item.formulaId === formulaId);
     if (result.header.layers.length !== components.length) throw new Error(`${formula.fileName}: unexpected layer count.`);
     const files = {}, checksums = {}, layers = {}, transfer = [];
@@ -38,6 +43,20 @@ try {
         files[component.componentKey] = bytes;
         checksums[component.componentKey] = exchange.checksums(gray);
         layers[component.output] = layer.stats;
+        transfer.push(bytes.buffer);
+    }
+    if (wantsFaceMap) {
+        // Hand Photoshop the actual numeric map Fable used. Keep render pixels out of the
+        // inter-process payload so its size stays bounded even in large documents.
+        const numeric = result.faceMap;
+        faceMap.decode(numeric, meta.document);
+        const bytes = exchange.encodeFaceMap({ ...meta, output: faceMap.OUTPUT,
+            formula_id: formulaId, formula_version: formula.version,
+            core: { name: core.name, version: core.version, sha256: core.sha256 }
+        }, numeric);
+        files[faceMap.OUTPUT] = bytes;
+        checksums[faceMap.OUTPUT] = { ...exchange.checksums(numeric),
+            sha256: createHash('sha256').update(numeric).digest('hex') };
         transfer.push(bytes.buffer);
     }
     parentPort.postMessage({ type: 'result', files, checksums,

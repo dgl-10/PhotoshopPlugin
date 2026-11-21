@@ -23,7 +23,7 @@ const { IN_DEVELOPMENT_CODE, CORE_UNAVAILABLE_CODE } = require('../skin-texture/
 const SKIN_TOOLS = ['ps_skin_texture_start', 'ps_skin_texture_status', 'ps_skin_texture_apply', 'ps_skin_texture_cancel'];
 // Match every private asset so installed-build tests catch even an unexpected lookup.
 const isWasmFile = file => String(file).endsWith('.wasm');
-const formulas = require('./skinTextureEquivalenceCases').FORMULAS;
+const formulas = Object.values(require('../skin-texture/formula-definitions').FORMULA_DEFINITIONS);
 const missingReason = require('./skinTextureTestSupport').missingBinaryReason();
 
 /**

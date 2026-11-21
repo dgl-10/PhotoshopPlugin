@@ -80,12 +80,16 @@ const exchangeFiles = require('./exchange-files');
 const scripts = require('./uxp-scripts');
 const recipeCatalog = require('./recipe-catalog');
 const recipeView = require('./recipe-job-view');
+const faceMap = require('./face-map');
 // task20: areola variants; a job without areolas takes exactly the task15 values from these.
 const areolaCores = require('./areola-cores');
 const areolaJob = require('./areola-job');
 const areolaFind = require('./areola-find');
 
 const WORKER_FILE = path.join(__dirname, 'worker.js');
+
+// A face map is a diagnostic attachment, independent of the recipe's texture outputs.
+const hasFaceMap = job => Boolean(job.request.fields && job.request.fields.face);
 
 const DEFAULT_OPTIONS = {
     // No MCP call of these tools waits longer than this. Clients cut tool calls at their own
@@ -702,7 +706,7 @@ function createSkinTextureJobs({
 
     function onComputed(job, message) {
         if (job.phase !== 'computing') return;
-        const outputs = job.request.outputs;
+        const outputs = hasFaceMap(job) ? [...job.request.outputs, faceMap.OUTPUT] : job.request.outputs;
         const filesByOutput = message.files || {};
         if (outputs.some(output => !(filesByOutput[output] instanceof Uint8Array))) {
             failJob(job, 'COMPUTE_FAILED', 'The computation returned an incomplete result.');
@@ -935,6 +939,7 @@ function createSkinTextureJobs({
         // task20: the files follow the job's layout (areola layers and the cut-out, if any);
         // a skin job without areolas has exactly the five task15 outputs here.
         const outputs = areolaJob.fileOutputs(job);
+        if (hasFaceMap(job)) outputs.push(faceMap.OUTPUT);
         const names = outputs.map(output => exchangeFiles.fileNameFor(job.id, attempt.number, output));
         const fileByOutput = Object.fromEntries(outputs.map((output, i) => [output, names[i]]));
         attempt.files = names;
@@ -974,6 +979,14 @@ function createSkinTextureJobs({
         }
         attempt.deadlineEpochMs = now() + options.applyStartDeadlineMs;
         const expectation = areolaJob.applyExpectation(job, recipe, fileByOutput);
+        // The map goes inside Skin and uses the same pinned Fable identity as its relief.
+        const faceMapFile = fileByOutput[faceMap.OUTPUT];
+        const fable = recipeCatalog.FORMULA_DEFINITIONS.formula_1;
+        const mapExpectation = faceMapFile ? {
+            kind: 'face_map', componentKey: faceMap.OUTPUT, file: faceMapFile,
+            formulaId: fable.id, formulaVersion: fable.version,
+            coreName: fable.variant, coreVersion: fable.variantVersion, coreSha256: fable.sha256
+        } : null;
         const code = scripts.buildRecipeApplyScript({
             jobId: job.id,
             taskId: job.taskId,
@@ -991,6 +1004,7 @@ function createSkinTextureJobs({
             maskSource: attempt.maskSource,
             components: expectation.components,
             masks: expectation.masks,
+            faceMap: mapExpectation,
             rootName: expectation.rootName,
             dataFolder: job.dataFolderNative,
             deadlineEpochMs: attempt.deadlineEpochMs
@@ -1039,7 +1053,11 @@ function createSkinTextureJobs({
             const layers = Array.isArray(r.layers) ? r.layers : [];
             // One group per formula or areola variant, one layer per component at its own
             // rectangle, and the cut-out on every formula group when there is one (task20).
-            const consistent = areolaJob.writeIsConsistent(job, structure, layers);
+            const map = structure && structure.faceMap;
+            const mapMatches = hasFaceMap(job)
+                ? map && Number.isInteger(map.id) && map.name === faceMap.LAYER_NAME && map.visible === false
+                : !map;
+            const consistent = mapMatches && areolaJob.writeIsConsistent(job, structure, layers);
             if (!consistent) {
                 return { state: 'unknown', code: 'ANSWER_INCONSISTENT', message: 'Photoshop reported a recipe write whose structure does not match the request.', structure, layers };
             }
@@ -1386,9 +1404,12 @@ function createSkinTextureJobs({
                     + 'ps_skin_texture_status in a moment. Calling apply again does not start a second write.';
             case 'applying':
                 return 'The write was sent to Photoshop. Call ps_skin_texture_status in a few seconds. Calling apply again does not write a second time.';
-            case 'applied':
-                if (job.request.layout && job.request.layout.areolas) return `Skin texture recipe applied. ${areolaJob.appliedText(job)}`;
-                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Dermis) and hidden Formula 3 (Pores, Furrows), with one common mask. All five layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. Compare by showing exactly one formula group; adjust strength with layer opacity using the returned IDs.';
+            case 'applied': {
+                const map = hasFaceMap(job)
+                    ? ` The hidden ${faceMap.LAYER_NAME} layer is inside Skin above the formula groups.` : '';
+                if (job.request.layout && job.request.layout.areolas) return `Skin texture recipe applied. ${areolaJob.appliedText(job)}${map}`;
+                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Dermis) and hidden Formula 3 (Pores, Furrows), with one common mask. All five layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. Compare by showing exactly one formula group; adjust strength with layer opacity using the returned IDs.' + map;
+            }
             case 'apply_unknown':
                 return `The outcome of the write is unknown. Before anything else look at the document (ps_get_document) `
                     + `for layers whose names contain "${markerOf(job)}". Do not repeat the write: apply will not send it `
