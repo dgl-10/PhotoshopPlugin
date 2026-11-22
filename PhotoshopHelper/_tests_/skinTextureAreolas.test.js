@@ -89,9 +89,9 @@ test('areola request: accepted values are canonical and carry the areola groups 
     assert.deepEqual(request.fields.areolas, [{ areola: { center: [50, 50], radii: [10, 8], angleDeg: 0 }, nipple: [50, 50], nippleRadiusPx: 3 }]);
     assert.deepEqual(request.outputs, [
         'areola_fable_nipple', 'areola_fable_tubercles', 'areola_fable_skin',
-        'areola_astra_nipple', 'areola_astra_tubercles', 'areola_astra_skin',
         'areola_gemini_nipple', 'areola_gemini_tubercles', 'areola_gemini_skin',
-        'formula_1_pores', 'formula_1_unevenness', 'formula_2_dermis', 'formula_3_pores', 'formula_3_furrows',
+        'areola_astra_nipple', 'areola_astra_tubercles', 'areola_astra_skin',
+        'formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows', 'formula_3_dermis',
         'areola_cutout'
     ]);
     const only = adapter.checkRequestShape({ ...BASE, recipe: 'areola_three_v1', fields: { areolas: [GOOD] }, params: { areolaStrength: 20 } });
@@ -113,7 +113,7 @@ test('a request without areolas yields exactly the old key, outputs and paramete
     // Transcribed by hand from the task15 contract, not produced by the code under test.
     assert.equal(plain.key, '{"recipe":"skin_three_v2","rect":{"x":0,"y":0,"width":100,"height":100},"pxPerMm":5,'
         + '"params":{"seed":7,"azimuthDeg":200,"elevationDeg":30},"fields":null}');
-    assert.deepEqual(plain.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_dermis', 'formula_3_pores', 'formula_3_furrows']);
+    assert.deepEqual(plain.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows', 'formula_3_dermis']);
     assert.deepEqual(plain.params, { seed: 7, azimuthDeg: 200, elevationDeg: 30 });
     assert.equal(plain.fields, null);
     assert.equal(plain.recipe, 'skin_three_v2');

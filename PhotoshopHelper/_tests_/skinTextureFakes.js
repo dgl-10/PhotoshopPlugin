@@ -175,6 +175,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
                 opacity: layer.opacity,
                 fillOpacity: layer.fillOpacity,
                 blendMode: layer.blendMode,
+                layerSectionExpanded: layer.layerSectionExpanded,
                 mask: layer.mask ? {
                     width: layer.mask.width,
                     height: layer.mask.height,
@@ -224,6 +225,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             layer.opacity = saved.opacity;
             layer.fillOpacity = saved.fillOpacity;
             layer.blendMode = saved.blendMode;
+            layer.layerSectionExpanded = saved.layerSectionExpanded;
             layer.parent = parent;
             layer.mask = saved.mask ? {
                 width: saved.mask.width,
@@ -281,6 +283,7 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
             opacity: 100,
             fillOpacity: 100,
             visible: true,
+            layerSectionExpanded: kind === 'group' ? (props.layerSectionExpanded !== undefined ? props.layerSectionExpanded : true) : undefined,
             parent: null,
             pixels: null,
             mask: props.mask ? {
@@ -817,6 +820,18 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
                     if (target && !state.skipMaskInit) target.mask = { bounds: null, data: null, outside: cmd.using._value === 'hideAll' ? 0 : 255 };
                     return {};
                 }
+                if (cmd && cmd._obj === 'set' && Array.isArray(cmd._target)
+                    && cmd._target[0] && cmd._target[0]._ref === 'property'
+                    && cmd._target[0]._property === 'layerSectionExpanded'
+                    && cmd._target[1] && cmd._target[1]._ref === 'layer') {
+                    if (state.failGroupCollapse) return { _obj: 'error', message: 'collapse group failed', result: -1 };
+                    const target = findLayerById(cmd._target[1]._id, doc.layers);
+                    if (target && target.kind === 'group') {
+                        target.layerSectionExpanded = Boolean(cmd.to);
+                        doc.changedInScript = true;
+                    }
+                    return {};
+                }
                 if (cmd && cmd._obj === 'get' && Array.isArray(cmd._target)) {
                     const layerRef = cmd._target.find(t => t._ref === 'layer');
                     if (layerRef && layerRef._id !== undefined) {
@@ -826,7 +841,8 @@ function createFakePhotoshop({ dataFolder, document = {} }) {
                                 hasUserMask: Boolean(l.mask),
                                 userMaskEnabled: l._userMaskEnabled !== false,
                                 userMaskDensity: l.layerMaskDensity !== undefined ? l.layerMaskDensity : 100,
-                                userMaskFeather: l.layerMaskFeather !== undefined ? l.layerMaskFeather : 0
+                                userMaskFeather: l.layerMaskFeather !== undefined ? l.layerMaskFeather : 0,
+                                layerSectionExpanded: l.kind === 'group' ? l.layerSectionExpanded !== false : undefined
                             };
                         }
                     }

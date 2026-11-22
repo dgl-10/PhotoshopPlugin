@@ -19,7 +19,7 @@ test('three-formula defaults, lighting, fields and canonical identity', () => {
     const explicit = adapter.checkRequestShape({ ...good, recipe: 'skin_three_v2' });
     assert.equal(implicit.recipe, 'skin_three_v2');
     assert.equal(implicit.key, explicit.key);
-    assert.deepEqual(implicit.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_dermis', 'formula_3_pores', 'formula_3_furrows']);
+    assert.deepEqual(implicit.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows', 'formula_3_dermis']);
     const withFace = adapter.checkRequestShape({ ...good, fields: { face } });
     assert.notEqual(withFace.key, implicit.key);
     const reordered = { chin: face.chin, mouth: face.mouth, noseTip: face.noseTip, eyes: face.eyes, pitchDeg: -5, yawDeg: 12 };
@@ -35,8 +35,8 @@ test('three-formula defaults, lighting, fields and canonical identity', () => {
         assert.deepEqual(request.rect, good.rect);
         assert.equal(request.seed, 1);
         assert.deepEqual(request.lighting, { azimuthDeg: 315, elevationDeg: 45 });
-        if (id === 'formula_1') assert.deepEqual(request.fields, { face });
-        else assert.equal(request.fields, undefined);
+        // task25: all three v2 formulas receive the same canonical fields.face object.
+        assert.deepEqual(request.fields, { face });
     }
     assert.equal(normalized.work.rectPixels, 480);
     assert.ok(Number.isFinite(normalized.work.retainedOutputBytes));
@@ -44,6 +44,8 @@ test('three-formula defaults, lighting, fields and canonical identity', () => {
     // Normalization must copy fields so a caller cannot mutate a worker request afterwards.
     normalized.coreParams.formula_1.fields.face.chin[0] = 999;
     assert.equal(face.chin[0], 35);
+    assert.equal(normalized.coreParams.formula_2.fields.face.chin[0], 35);
+    assert.equal(normalized.coreParams.formula_3.fields.face.chin[0], 35);
 });
 
 // Every rejected argument is caught before a Photoshop probe or a Wasm allocation is needed.
@@ -193,9 +195,9 @@ test('each real formula worker exits before the next formula starts', { skip: mi
 test('the exchange file round-trips and refuses every kind of damage', () => {
     const rect = { x: 3, y: 4, width: 20, height: 10 };
     const gray = new Uint8Array(200).map((_, i) => (i * 37) & 255);
-    const meta = { jobId: 'skt-0123456789ab', taskId: 'task-1', output: 'formula_2_dermis', document: { id: 5, width: 50, height: 40 }, rect };
+    const meta = { jobId: 'skt-0123456789ab', taskId: 'task-1', output: 'formula_3_dermis', document: { id: 5, width: 50, height: 40 }, rect };
     const bytes = SkinExchange.encode(meta, gray);
-    const expect = { jobId: meta.jobId, taskId: 'task-1', output: 'formula_2_dermis', documentId: 5, document: { width: 50, height: 40 }, rect };
+    const expect = { jobId: meta.jobId, taskId: 'task-1', output: 'formula_3_dermis', documentId: 5, document: { width: 50, height: 40 }, rect };
     assert.deepEqual(Buffer.from(SkinExchange.decode(bytes, expect).payload), Buffer.from(gray));
 
     const cases = {

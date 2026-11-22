@@ -80,6 +80,7 @@ const exchangeFiles = require('./exchange-files');
 const scripts = require('./uxp-scripts');
 const recipeCatalog = require('./recipe-catalog');
 const recipeView = require('./recipe-job-view');
+const { postApplyComparisonGuidance } = require('./recipe-tool-contract');
 const faceMap = require('./face-map');
 // task20: areola variants; a job without areolas takes exactly the task15 values from these.
 const areolaCores = require('./areola-cores');
@@ -1408,7 +1409,7 @@ function createSkinTextureJobs({
                 const map = hasFaceMap(job)
                     ? ` The hidden ${faceMap.LAYER_NAME} layer is inside Skin above the formula groups.` : '';
                 if (job.request.layout && job.request.layout.areolas) return `Skin texture recipe applied. ${areolaJob.appliedText(job)}${map}`;
-                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Dermis) and hidden Formula 3 (Pores, Furrows), with one common mask. All five layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. Compare by showing exactly one formula group; adjust strength with layer opacity using the returned IDs.' + map;
+                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Pores, Furrows) and hidden Formula 3 (Dermis), with one common mask. All five layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. ' + postApplyComparisonGuidance() + map;
             }
             case 'apply_unknown':
                 return `The outcome of the write is unknown. Before anything else look at the document (ps_get_document) `

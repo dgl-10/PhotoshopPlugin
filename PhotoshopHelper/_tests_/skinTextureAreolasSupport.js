@@ -13,19 +13,19 @@ const path = require('node:path');
 const SKIN_TEXTURE_DIR = path.join(__dirname, '../skin-texture');
 
 /**
- * The three areola variants, top to bottom, transcribed from the author's decision of 21 November
- * 2026: "Areola Formula 1/2/3" in the order of the face formulas (Fable, GPT-6 "Astra", Gemini).
+ * The three areola variants, top to bottom, updated by the author's decision of 22 November
+ * 2026: "Areola Formula 1/2/3" in the order of the face formulas (Fable, Gemini, GPT-6 "Astra").
  */
 const AREOLA_VARIANTS = Object.freeze([
     { id: 'areola_fable', label: 'Fable', group: 'Areola Formula 1', visible: true, variant: 'fable_areola_v1',
         fileName: 'fable_areola.wasm', layers: ['Nipple', 'Areola Tubercles', 'Areola Skin'],
         outputs: ['areola_fable_nipple', 'areola_fable_tubercles', 'areola_fable_skin'] },
-    { id: 'areola_astra', label: 'Astra', group: 'Areola Formula 2', visible: false, variant: 'gpt6_areola_v1',
-        fileName: 'gpt6_areola.wasm', layers: ['Nipple Microrelief', 'Montgomery Tubercles', 'Areola Folds'],
-        outputs: ['areola_astra_nipple', 'areola_astra_tubercles', 'areola_astra_skin'] },
-    { id: 'areola_gemini', label: 'Gemini', group: 'Areola Formula 3', visible: false, variant: 'gemini4_areola_v1',
+    { id: 'areola_gemini', label: 'Gemini', group: 'Areola Formula 2', visible: false, variant: 'gemini4_areola_v1',
         fileName: 'gemini4_areola.wasm', layers: ['Nipple', 'Areola Tubercles', 'Areola Skin'],
-        outputs: ['areola_gemini_nipple', 'areola_gemini_tubercles', 'areola_gemini_skin'] }
+        outputs: ['areola_gemini_nipple', 'areola_gemini_tubercles', 'areola_gemini_skin'] },
+    { id: 'areola_astra', label: 'Astra', group: 'Areola Formula 3', visible: false, variant: 'gpt6_areola_v1',
+        fileName: 'gpt6_areola.wasm', layers: ['Nipple Microrelief', 'Montgomery Tubercles', 'Areola Folds'],
+        outputs: ['areola_astra_nipple', 'areola_astra_tubercles', 'areola_astra_skin'] }
 ]);
 
 /** Skip reason when a private areola binary is absent from this checkout; false when all are there. */

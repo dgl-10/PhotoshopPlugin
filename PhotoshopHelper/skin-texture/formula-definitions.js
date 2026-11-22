@@ -20,19 +20,23 @@ const FORMULA_DEFINITIONS = Object.freeze({
     }),
     formula_2: Object.freeze({
         id: 'formula_2', version: 2, name: 'Formula 2', visible: false,
-        variant: 'gpt6_dermis_v1', variantVersion: '1.0.0', fileName: 'dermis.wasm',
-        sha256: 'ac9807d1ca3b2b5c21153d7c561f952c85b34f39b1f0618bd89e3cce0c9253ec',
+        variant: 'gemini4_stratum_v2', variantVersion: '2.0.0', fileName: 'gemini4_stratum_v2.wasm',
+        sha256: '1619598688b10c986a098c5eb298378af4767f18ee8d46ef9c2da0f5bd49ed15',
+        // task25: all three face-aware v2 formulas receive the same six-point fields.face input.
+        fields: Object.freeze({ face: true }),
         layers: Object.freeze([
-            Object.freeze({ output: 'dermis', sourceLayerId: 'gpt6_dermis_texture', layerName: 'Dermis', blendMode: 'linear_light', opacity: 0.5 })
+            Object.freeze({ output: 'pores', sourceLayerId: 'gemini4_stratum_pores', layerName: 'Pores', blendMode: 'linear_light', opacity: 0.5 }),
+            Object.freeze({ output: 'furrows', sourceLayerId: 'gemini4_stratum_furrows', layerName: 'Furrows', blendMode: 'linear_light', opacity: 0.5 })
         ])
     }),
     formula_3: Object.freeze({
         id: 'formula_3', version: 2, name: 'Formula 3', visible: false,
-        variant: 'gemini4_stratum_v1', variantVersion: '1.0.0', fileName: 'gemini4_stratum.wasm',
-        sha256: '2e93b4bd889b1c8f553b3f843fed413a6bf435a541b6dab6bda5beeb2c51ebd8',
+        variant: 'gpt6_dermis_v2', variantVersion: '2.0.1', fileName: 'dermis.wasm',
+        sha256: '2053aaeecb5ff613b47ec92903f7f27478f0c18d400f461ffac541c196ece809',
+        // task25: all three face-aware v2 formulas receive the same six-point fields.face input.
+        fields: Object.freeze({ face: true }),
         layers: Object.freeze([
-            Object.freeze({ output: 'pores', sourceLayerId: 'gemini4_stratum_pores', layerName: 'Pores', blendMode: 'linear_light', opacity: 0.5 }),
-            Object.freeze({ output: 'furrows', sourceLayerId: 'gemini4_stratum_furrows', layerName: 'Furrows', blendMode: 'linear_light', opacity: 0.5 })
+            Object.freeze({ output: 'dermis', sourceLayerId: 'gpt6_dermis_texture', layerName: 'Dermis', blendMode: 'linear_light', opacity: 0.5 })
         ])
     })
 });

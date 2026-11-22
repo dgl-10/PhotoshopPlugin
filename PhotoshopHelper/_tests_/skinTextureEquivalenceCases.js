@@ -3,14 +3,14 @@
 /** Independent oracle mappings transcribed from SkinBench manifests, without product imports. */
 const FORMULAS = [
     { id: 'formula_1', variant: 'fable_flecks_v2', fileName: 'fable_flecks2.wasm', version: '2.0.0',
-        sha256: 'cca4fe93625cbd8549bb4a28a8f4c5004e912632ab1e73d32790e6787abee824',
+        sha256: '182d5ffced5d9de556100a30d20c306956205a8328aab9088a1ef06a98ca672d',
         layers: { formula_1_pores: 'flecks_pores', formula_1_unevenness: 'flecks_unevenness' } },
-    { id: 'formula_2', variant: 'gpt6_dermis_v1', fileName: 'dermis.wasm', version: '1.0.0',
-        sha256: 'ac9807d1ca3b2b5c21153d7c561f952c85b34f39b1f0618bd89e3cce0c9253ec',
-        layers: { formula_2_dermis: 'gpt6_dermis_texture' } },
-    { id: 'formula_3', variant: 'gemini4_stratum_v1', fileName: 'gemini4_stratum.wasm', version: '1.0.0',
-        sha256: '2e93b4bd889b1c8f553b3f843fed413a6bf435a541b6dab6bda5beeb2c51ebd8',
-        layers: { formula_3_pores: 'gemini4_stratum_pores', formula_3_furrows: 'gemini4_stratum_furrows' } }
+    { id: 'formula_2', variant: 'gemini4_stratum_v2', fileName: 'gemini4_stratum_v2.wasm', version: '2.0.0',
+        sha256: '1619598688b10c986a098c5eb298378af4767f18ee8d46ef9c2da0f5bd49ed15',
+        layers: { formula_2_pores: 'gemini4_stratum_pores', formula_2_furrows: 'gemini4_stratum_furrows' } },
+    { id: 'formula_3', variant: 'gpt6_dermis_v2', fileName: 'dermis.wasm', version: '2.0.1',
+        sha256: '2053aaeecb5ff613b47ec92903f7f27478f0c18d400f461ffac541c196ece809',
+        layers: { formula_3_dermis: 'gpt6_dermis_texture' } }
 ];
 
 // Each scale exercises both face paths; origins, lighting, seeds and pose also vary.
@@ -28,14 +28,15 @@ const CASES = [1.6, 2.7, 4, 8].flatMap((scale, index) => [false, true].map(withF
 })));
 
 /** Construct the reference contract directly, without product normalization or defaults. */
-function independentRequest(config, formulaId) {
+function independentRequest(config, _formulaId) {
     return {
         width: config.rect.width, height: config.rect.height,
         document: { ...config.document }, rect: { ...config.rect }, pxPerMm: config.pxPerMm,
         seed: config.params.seed,
         lighting: { azimuthDeg: config.params.azimuthDeg, elevationDeg: config.params.elevationDeg },
         zone: 'cheek',
-        ...(formulaId === 'formula_1' && config.fields ? { fields: JSON.parse(JSON.stringify(config.fields)) } : {})
+        // task25: all three face-aware v2 formulas receive the same fields.face payload.
+        ...(config.fields ? { fields: JSON.parse(JSON.stringify(config.fields)) } : {})
     };
 }
 

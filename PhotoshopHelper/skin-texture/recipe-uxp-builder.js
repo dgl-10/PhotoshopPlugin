@@ -522,6 +522,24 @@ ${CUTOUT_MASKS}
         }
     }
 
+    // Collapse every formula and areola subgroup after mask setup/verification so the
+    // Layers panel stays compact while the outer Skin/Areolas container remains expanded.
+    // Selecting skinGroup first ensures no child layer stays active and re-expands its folder.
+    const collapseCommands = [
+        { _obj: 'select', _target: [{ _ref: 'layer', _id: skinGroup.id }], makeVisible: false },
+        ...formulaGroups.map(({ group }) => ({
+            _obj: 'set',
+            _target: [
+                { _ref: 'property', _property: 'layerSectionExpanded' },
+                { _ref: 'layer', _id: group.id }
+            ],
+            to: false
+        }))
+    ];
+    const collapseResult = await action.batchPlay(collapseCommands, { synchronousExecution: true });
+    const collapseError = (collapseResult || []).find(item => item && item._obj === 'error');
+    if (collapseError) throw new Error('GROUP_COLLAPSE_FAILED: ' + collapseError.message);
+
     timings.createHierarchyMs = Math.round(clock() - t);
     timings.totalMs = Math.round(clock() - startedAt);
 

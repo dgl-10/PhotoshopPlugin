@@ -164,7 +164,7 @@ test('a full cycle: quick start, background computation, one exact write', async
     assert.match(started.json.job_id, /^skt-[0-9a-f]{12}$/);
     assert.ok(['checking_document', 'computing', 'ready'].includes(started.json.phase));
     assert.equal(started.json.recipe_id, 'skin_three_v2');
-    assert.deepEqual(started.json.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_dermis', 'formula_3_pores', 'formula_3_furrows']);
+    assert.deepEqual(started.json.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows', 'formula_3_dermis']);
 
     const ready = await h.waitForPhase(taskId, started.json.job_id, 'ready');
     assert.equal(applyScripts(h).length, 0, 'a finished computation writes nothing by itself');
@@ -310,10 +310,10 @@ test('face member order shares one request; changed landmarks conflict before an
     const changed = await h.call('ps_skin_texture_start', startArgs(taskId, { fields: { face: { ...face, noseTip: [51, 50] } } }));
     assert.equal(changed.json.error.code, 'REQUEST_ID_CONFLICT');
     assert.equal(workers.created.length, 1);
-    // Fields remain document coordinates and reach only the declared face-capable variant.
+    // Fields remain document coordinates and reach all three declared face-capable variants (task25).
     assert.deepEqual(workers.created[0].workerData.formulaParams.formula_1.fields, { face });
-    assert.equal(workers.created[0].workerData.formulaParams.formula_2.fields, undefined);
-    assert.equal(workers.created[0].workerData.formulaParams.formula_3.fields, undefined);
+    assert.deepEqual(workers.created[0].workerData.formulaParams.formula_2.fields, { face });
+    assert.deepEqual(workers.created[0].workerData.formulaParams.formula_3.fields, { face });
 });
 
 test('simultaneous applies send one write', async context => {
@@ -825,10 +825,10 @@ test('when its own layers cannot be removed the outcome is reported as unknown, 
     const remainingIds = scriptResult.leftover.slice().sort((a, b) => a - b);
     const createdIds = scriptResult.createdLayerIds.slice().sort((a, b) => a - b);
 
-    // The new explicit hierarchy is already Skin + Formula 3 + two components when the
-    // second pixel write fails. A failed cleanup must name every remaining object from this
-    // attempt and must never classify the pre-existing document layer as an orphan.
-    assert.equal(answer.json.apply.leftover_layer_ids.length, 4);
+    // The new explicit hierarchy is already Skin + Formula 3 (Dermis) + Formula 2 + one
+    // component (Furrows) when the second pixel write fails. A failed cleanup must name every
+    // remaining object from this attempt and must never classify the pre-existing document layer as an orphan.
+    assert.equal(answer.json.apply.leftover_layer_ids.length, 5);
     assert.deepEqual(remainingIds, createdIds);
     assert.deepEqual(answer.json.apply.leftover_layer_ids.slice().sort((a, b) => a - b), createdIds);
     assert.ok(remainingIds.every(id => !originalIds.has(id)));

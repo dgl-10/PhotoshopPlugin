@@ -10,6 +10,7 @@
 const { FORMULA_DEFINITIONS, RECIPE_COMPONENTS } = require('./formula-definitions');
 const { AREOLA_DEFINITIONS, CUTOUT_OUTPUT, groupNameOf } = require('./areola-definitions');
 const { CUTOUT_VERSION } = require('./areola-engine');
+const { ALLOW_AGENT_FORMULA_COMPARISON } = require('./recipe-tool-contract');
 
 const SKIN_LAYOUT = Object.freeze({ components: RECIPE_COMPONENTS, cutout: false, skin: true, areolas: false });
 
@@ -113,21 +114,35 @@ function writeIsConsistent(job, structure, layers) {
     return true;
 }
 
-/** Sentence for the agent after a successful write: what is in the document now. */
-function appliedText(job) {
+/**
+ * Sentence for the agent after a successful write: what is in the document now.
+ * Optional allowAgentComparison parameter exists for unit tests verifying both states.
+ */
+function appliedText(job, allowAgentComparison = ALLOW_AGENT_FORMULA_COMPARISON) {
     const layout = layoutOf(job);
     const parts = [];
     if (layout.areolas) {
-        const names = Object.values(AREOLA_DEFINITIONS).map(d => `"${groupNameOf(d)}" (${d.visible ? 'visible' : 'hidden'})`);
-        parts.push(`${layout.skin ? 'Skin' : 'Areolas'} contains the areola groups ${names.join(', ')}, each with the variant's own Nipple, Tubercles and Skin layers at the variant's opacity. Compare them by showing exactly one areola group.`);
+        const ordered = Object.values(AREOLA_DEFINITIONS);
+        const visibleGroup = groupNameOf(ordered.find(d => d.visible));
+        const names = ordered.map(d => `"${groupNameOf(d)}" (${d.visible ? 'visible' : 'hidden'})`);
+        const areolaAction = allowAgentComparison
+            ? 'Compare them by showing exactly one areola group.'
+            : `Leave "${visibleGroup}" visible and the other areola groups hidden; do not toggle or compare areola variants yourself — let the person compare them.`;
+        parts.push(`${layout.skin ? 'Skin' : 'Areolas'} contains the areola groups ${names.join(', ')}, each with the variant's own Nipple, Tubercles and Skin layers at the variant's opacity. ${areolaAction}`);
     }
     if (layout.skin) {
-        parts.push('Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Dermis) and hidden Formula 3 (Pores, Furrows). All five layers use Linear Light at 50% opacity. Compare by showing exactly one formula group.');
+        const skinAction = allowAgentComparison
+            ? 'Compare by showing exactly one formula group.'
+            : 'Leave Formula 1 visible and Formula 2 and Formula 3 hidden; do not toggle or compare formula variants yourself — let the person compare them.';
+        parts.push(`Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Pores, Furrows) and hidden Formula 3 (Dermis). All five layers use Linear Light at 50% opacity. ${skinAction}`);
     }
     if (layout.cutout) {
         parts.push('Each formula group has a soft mask that removes the general skin texture under the areolas across the band the areola variants reported; outside that band the mask is white.');
     }
-    parts.push('One common mask from mask_source is on the outer group. One Undo removes the complete History step. Repeated apply never writes again. Adjust strength with layer opacity using the returned IDs.');
+    const tailAction = allowAgentComparison
+        ? 'Adjust strength with layer opacity using the returned IDs.'
+        : 'Do not switch variants or tune opacity yourself unless the person explicitly asked.';
+    parts.push(`One common mask from mask_source is on the outer group. One Undo removes the complete History step. Repeated apply never writes again. ${tailAction}`);
     return parts.join(' ');
 }
 

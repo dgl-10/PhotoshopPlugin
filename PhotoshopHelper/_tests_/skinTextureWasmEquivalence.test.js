@@ -33,7 +33,7 @@ test('private formulas stay outside Git and the installer', () => {
     assert.ok(require('../package.json').build.files.includes('!skin-texture/*.wasm'));
 });
 
-test('pinned face fixtures exercise changed Formula 1 bytes and unchanged other variants', () => {
+test('pinned face fixtures exercise changed bytes across all three formulas', () => {
     const fixture = JSON.parse(fs.readFileSync(FIXTURE_FILE, 'utf8'));
     // This runs without binaries or SkinBench and prevents replacing the matrix with
     // neutral or duplicate samples that would no longer detect face-routing regressions.
@@ -41,8 +41,7 @@ test('pinned face fixtures exercise changed Formula 1 bytes and unchanged other 
         const uniform = fixture.cases.find(record => record.config.id === `scale_${scale}_uniform`);
         const face = fixture.cases.find(record => record.config.id === `scale_${scale}_face`);
         for (const formula of FORMULAS) for (const output of Object.keys(formula.layers)) {
-            if (formula.id === 'formula_1') assert.notDeepEqual(face.checksums[output], uniform.checksums[output], output);
-            else assert.deepEqual(face.checksums[output], uniform.checksums[output], output);
+            assert.notDeepEqual(face.checksums[output], uniform.checksums[output], output);
         }
     }
 });
@@ -112,6 +111,80 @@ test('actual product worker bytes equal SkinBench runVariant on independent requ
                 assert.ok(reference, sourceId);
                 const decoded = exchange.decode(actual.files[output]);
                 assert.deepEqual(Buffer.from(decoded.payload), Buffer.from(reference.data), `${config.id}: ${output} actual bytes`);
+            }
+        }
+    }
+});
+
+// task25: verify SkinBench face-map/examples.json (front and turn, full and offset rect, with and without points)
+// through Helper's real adapter + worker against SkinBench v2 variants and v1 backward compatibility.
+const EXAMPLES_FILE = path.join(BENCH_ROOT, 'face-map', 'examples.json');
+test('examples.json frontal and turn match SkinBench v2, v1 without points, and exact Face Map SHA-256', {
+    skip: missingBinaryReason() || (!fs.existsSync(RUNNER_FILE) && `SkinBench runner missing: ${RUNNER_FILE}`)
+        || (!fs.existsSync(EXAMPLES_FILE) && `SkinBench examples missing: ${EXAMPLES_FILE}`)
+}, async () => {
+    const { runVariant } = require(RUNNER_FILE);
+    const examples = JSON.parse(fs.readFileSync(EXAMPLES_FILE, 'utf8'));
+    const expectedMapSha = {
+        front: '55bf0393e5658405241134eef9b3e6202f200b40276e4c6221bba501ff124bfa',
+        turn: '3f4b97be4689f397d9e5d58e16e6f95a43798e0832d3e95a54e86a92018fba06'
+    };
+    const v1Dirs = {
+        formula_2: path.join(BENCH_ROOT, 'variants', 'gemini4_stratum_v1'),
+        formula_3: path.join(BENCH_ROOT, 'variants', 'gpt6_dermis_v1')
+    };
+    const offsetRect = { x: 120, y: 127, width: 163, height: 181 };
+
+    for (const [poseName, example] of Object.entries(examples)) {
+        const rects = [
+            { label: 'full', rect: { x: 0, y: 0, ...example.document } },
+            { label: 'offset', rect: offsetRect }
+        ];
+        for (const { label, rect } of rects) {
+            for (const withFace of [true, false]) {
+                const args = {
+                    rect,
+                    px_per_mm: example.pxPerMm,
+                    params: { seed: example.seed, azimuthDeg: example.azimuthDeg, elevationDeg: example.elevationDeg },
+                    ...(withFace ? { fields: { face: example.face } } : {})
+                };
+                const checked = adapter.checkRequestShape(args);
+                const normalized = adapter.normalizeForDocument(checked, example.document);
+                const actual = await runWorker(normalized.coreParams, rect, example.document);
+                const tag = `${poseName}/${label}/${withFace ? 'face' : 'uniform'}`;
+
+                if (withFace) {
+                    assert.equal(actual.checksums[faceMap.OUTPUT].sha256, expectedMapSha[poseName], `${tag} Face Map SHA-256`);
+                } else {
+                    assert.equal(actual.files[faceMap.OUTPUT], undefined, `${tag} must omit Face Map`);
+                }
+
+                for (const formula of FORMULAS) {
+                    const req = {
+                        width: rect.width, height: rect.height,
+                        document: example.document, rect, pxPerMm: example.pxPerMm,
+                        seed: example.seed,
+                        lighting: { azimuthDeg: example.azimuthDeg, elevationDeg: example.elevationDeg },
+                        zone: 'cheek',
+                        ...(withFace ? { fields: { face: example.face } } : {})
+                    };
+                    const expectedV2 = await runVariant(path.join(BENCH_ROOT, 'variants', formula.variant), req);
+                    for (const [output, sourceId] of Object.entries(formula.layers)) {
+                        const refV2 = expectedV2.layers.find(layer => layer.id === sourceId);
+                        assert.ok(refV2, `${tag} ${sourceId}`);
+                        const decoded = exchange.decode(actual.files[output]);
+                        assert.deepEqual(Buffer.from(decoded.payload), Buffer.from(refV2.data), `${tag} ${output} v2 bytes`);
+                    }
+                    if (!withFace && v1Dirs[formula.id]) {
+                        const expectedV1 = await runVariant(v1Dirs[formula.id], req);
+                        for (const [output, sourceId] of Object.entries(formula.layers)) {
+                            const refV1 = expectedV1.layers.find(layer => layer.id === sourceId);
+                            assert.ok(refV1, `${tag} v1 ${sourceId}`);
+                            const decoded = exchange.decode(actual.files[output]);
+                            assert.deepEqual(Buffer.from(decoded.payload), Buffer.from(refV1.data), `${tag} ${output} v1 compatibility bytes`);
+                        }
+                    }
+                }
             }
         }
     }

@@ -160,6 +160,7 @@ test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
     assert.equal(startAns.json.recipe_id, 'skin_three_v2');
     assert.ok(startAns.json.formulas.formula_1);
     assert.ok(startAns.json.formulas.formula_2);
+    assert.ok(startAns.json.formulas.formula_3);
 
     // Wait for ready
     const readyStatus = await harness.waitForPhase(taskId, jobId, 'ready');
@@ -167,8 +168,9 @@ test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
     assert.equal(readyStatus.recipe_id, 'skin_three_v2');
     assert.ok(readyStatus.result.checksums.formula_1_pores);
     assert.ok(readyStatus.result.checksums.formula_1_unevenness);
-    assert.ok(readyStatus.result.checksums.formula_2_dermis);
-    assert.ok(readyStatus.result.checksums.formula_3_furrows);
+    assert.ok(readyStatus.result.checksums.formula_2_pores);
+    assert.ok(readyStatus.result.checksums.formula_2_furrows);
+    assert.ok(readyStatus.result.checksums.formula_3_dermis);
 
     // Verify before apply that no layers were added to the document
     assert.equal(harness.fake.doc.layers.length, 1); // Background only
@@ -200,10 +202,12 @@ test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
 
     // Inspect actual DOM order and per-formula layer names, independently of the report.
     const docSkinGroup = harness.fake.findLayerById(structure.mainGroup.id);
+    assert.equal(docSkinGroup.layerSectionExpanded, true);
     assert.deepEqual(docSkinGroup.layers.map(group => group.name), ['Formula 1', 'Formula 2', 'Formula 3']);
+    assert.deepEqual(docSkinGroup.layers.map(group => group.layerSectionExpanded), [false, false, false]);
     assert.deepEqual(harness.fake.findLayerById(f1Group.id).layers.map(layer => layer.name), ['Pores', 'Unevenness']);
-    assert.deepEqual(harness.fake.findLayerById(f2Group.id).layers.map(layer => layer.name), ['Dermis']);
-    assert.deepEqual(harness.fake.findLayerById(f3Group.id).layers.map(layer => layer.name), ['Pores', 'Furrows']);
+    assert.deepEqual(harness.fake.findLayerById(f2Group.id).layers.map(layer => layer.name), ['Pores', 'Furrows']);
+    assert.deepEqual(harness.fake.findLayerById(f3Group.id).layers.map(layer => layer.name), ['Dermis']);
 
     assert.equal(applyAns.json.apply.layers.length, 5);
     for (const layer of applyAns.json.apply.layers) {
@@ -333,8 +337,8 @@ test('recipe skin_three_v2 explicitly builds at the root without changing a hidd
     // with no texture object nested under the original hidden group.
     assert.deepEqual(skin.layers.map(group => group.name), ['Formula 1', 'Formula 2', 'Formula 3']);
     assert.deepEqual(skin.layers[0].layers.map(layer => layer.name), ['Pores', 'Unevenness']);
-    assert.deepEqual(skin.layers[1].layers.map(layer => layer.name), ['Dermis']);
-    assert.deepEqual(skin.layers[2].layers.map(layer => layer.name), ['Pores', 'Furrows']);
+    assert.deepEqual(skin.layers[1].layers.map(layer => layer.name), ['Pores', 'Furrows']);
+    assert.deepEqual(skin.layers[2].layers.map(layer => layer.name), ['Dermis']);
     assert.equal(skin.layers.length, 3);
     assert.equal(skin.layers.reduce((total, group) => total + group.layers.length, 0), 5);
     assert.equal(harness.fake.doc.activeLayers[0], skin);
@@ -801,7 +805,7 @@ test('R2: individual component header mismatches and swapped components are reje
         });
         harness.fake.state.beforeScript = async payload => {
             if (!payload.code.includes('Skin texture: write recipe')) return;
-            const name = harness.ownFiles().find(n => n.endsWith('-formula_2_dermis.sktx'));
+            const name = harness.ownFiles().find(n => n.endsWith('-formula_3_dermis.sktx'));
             const file = path.join(harness.dataFolder, name);
             const decoded = X.decode(new Uint8Array(fs.readFileSync(file)));
             fs.writeFileSync(file, X.encode({
@@ -855,14 +859,14 @@ test('R2: individual component header mismatches and swapped components are reje
         harness.fake.state.beforeScript = async payload => {
             if (!payload.code.includes('Skin texture: write recipe')) return;
             const f1PoresName = harness.ownFiles().find(n => n.endsWith('-formula_1_pores.sktx'));
-            const f2PoresName = harness.ownFiles().find(n => n.endsWith('-formula_2_dermis.sktx'));
+            const f3DermisName = harness.ownFiles().find(n => n.endsWith('-formula_3_dermis.sktx'));
             const f1File = path.join(harness.dataFolder, f1PoresName);
-            const f2File = path.join(harness.dataFolder, f2PoresName);
+            const f3File = path.join(harness.dataFolder, f3DermisName);
             const f1Bytes = fs.readFileSync(f1File);
-            const f2Bytes = fs.readFileSync(f2File);
+            const f3Bytes = fs.readFileSync(f3File);
             // Actually swap component files on disk
-            fs.writeFileSync(f1File, f2Bytes);
-            fs.writeFileSync(f2File, f1Bytes);
+            fs.writeFileSync(f1File, f3Bytes);
+            fs.writeFileSync(f3File, f1Bytes);
         };
         const taskId = await harness.startTask();
         const startAns = await harness.call('ps_skin_texture_start', {
@@ -917,13 +921,19 @@ test('R3: next_step messages for ready and applied skin_three_v2 include Undo an
     assert.equal(rApply.json.phase, 'applied');
     const nextStep = rApply.json.next_step;
     assert.ok(nextStep.includes('Skin texture recipe applied'));
-    assert.match(nextStep, /visible Formula 1/);
-    assert.match(nextStep, /hidden Formula 2/);
-    assert.match(nextStep, /hidden Formula 3/);
+    assert.match(nextStep, /visible Formula 1 \(Pores, Unevenness\)/);
+    assert.match(nextStep, /hidden Formula 2 \(Pores, Furrows\)/);
+    assert.match(nextStep, /hidden Formula 3 \(Dermis\)/);
     assert.match(nextStep, /All five layers use Linear Light at 50% opacity/);
     assert.match(nextStep, /One Undo removes the complete History step/);
     assert.match(nextStep, /Repeated apply never writes again/);
-    assert.match(nextStep, /adjust strength with layer opacity using the returned IDs/);
+    const { ALLOW_AGENT_FORMULA_COMPARISON } = require('../skin-texture/recipe-tool-contract');
+    if (ALLOW_AGENT_FORMULA_COMPARISON) {
+        assert.match(nextStep, /adjust strength with layer opacity using the returned IDs/);
+    } else {
+        assert.match(nextStep, /Leave Formula 1 visible and Formula 2 and Formula 3 hidden as created/);
+        assert.match(nextStep, /do not toggle, compare, or choose between formula variants yourself/);
+    }
 
 });
 

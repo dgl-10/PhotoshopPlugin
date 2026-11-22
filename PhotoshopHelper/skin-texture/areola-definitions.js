@@ -12,9 +12,9 @@
  * The first trial uses the builds named in task19.01. A rebuilt variant gets a new pin here,
  * never a silent replacement: a different file on disk is refused by its SHA-256.
  *
- * Group names follow the face formulas, by the author's decision of 21 November 2026: "Areola
- * Formula 1/2/3" in the same order and with the same authors as Formula 1/2/3 of the skin recipe
- * (formula-definitions.js): 1 is Fable (Claude), 2 is GPT-6 ("Astra" to the author), 3 is Gemini 4.
+ * Group names follow the face formulas, updated by the author's decision of 22 November 2026:
+ * "Areola Formula 1/2/3" in the same order and with the same authors as Formula 1/2/3 of the skin
+ * recipe (formula-definitions.js): 1 is Fable (Claude), 2 is Gemini 4, 3 is GPT-6 ("Astra" to the author).
  * Variant, version and SHA-256 of each group are in the job result and the job log. Labels name the
  * models in messages, in Latin letters like the layer names.
  */
@@ -45,8 +45,17 @@ const AREOLA_DEFINITIONS = Object.freeze({
         sha256: 'ab076519d68e83631322db439fefce090701aa95785bf784e8625fb9d372a864',
         layers: STANDARD_LAYERS
     }),
+    areola_gemini: Object.freeze({
+        id: 'areola_gemini', version: AREOLA_GENERATION, name: 'Areola Formula 2', label: 'Gemini', visible: false,
+        variant: 'gemini4_areola_v1', variantVersion: '1.0.0', fileName: 'gemini4_areola.wasm',
+        // The author's tubercle fix of 20 November 2026 (SkinBench working tree, not committed yet;
+        // rebuilt from that source with the same SHA-256), chosen by the author on 21 November in
+        // place of the task19.01 build 6b51977f.... The manifest still says 1.0.0.
+        sha256: 'ff544bfe40dc2899a2fbfbc177ed668cc5088c0cacd28f09bd3600f74cfb7085',
+        layers: STANDARD_LAYERS
+    }),
     areola_astra: Object.freeze({
-        id: 'areola_astra', version: AREOLA_GENERATION, name: 'Areola Formula 2', label: 'Astra', visible: false,
+        id: 'areola_astra', version: AREOLA_GENERATION, name: 'Areola Formula 3', label: 'Astra', visible: false,
         variant: 'gpt6_areola_v1', variantVersion: '1.0.0', fileName: 'gpt6_areola.wasm',
         sha256: '169179c3f435debc8d1b6eeb98c6da9feff8c52ae12a3893b1d2218866878d0e',
         layers: Object.freeze([
@@ -54,15 +63,6 @@ const AREOLA_DEFINITIONS = Object.freeze({
             Object.freeze({ output: 'tubercles', sourceLayerId: 'gpt6_areola_tubercles', layerName: 'Montgomery Tubercles', blendMode: 'linear_light', opacity: 0.5 }),
             Object.freeze({ output: 'skin', sourceLayerId: 'gpt6_areola_skin', layerName: 'Areola Folds', blendMode: 'linear_light', opacity: 0.5 })
         ])
-    }),
-    areola_gemini: Object.freeze({
-        id: 'areola_gemini', version: AREOLA_GENERATION, name: 'Areola Formula 3', label: 'Gemini', visible: false,
-        variant: 'gemini4_areola_v1', variantVersion: '1.0.0', fileName: 'gemini4_areola.wasm',
-        // The author's tubercle fix of 20 November 2026 (SkinBench working tree, not committed yet;
-        // rebuilt from that source with the same SHA-256), chosen by the author on 21 November in
-        // place of the task19.01 build 6b51977f.... The manifest still says 1.0.0.
-        sha256: 'ff544bfe40dc2899a2fbfbc177ed668cc5088c0cacd28f09bd3600f74cfb7085',
-        layers: STANDARD_LAYERS
     })
 });
 

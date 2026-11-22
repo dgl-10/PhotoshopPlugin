@@ -16,16 +16,16 @@ module.exports = {
       "sha256": "ab076519d68e83631322db439fefce090701aa95785bf784e8625fb9d372a864"
     },
     {
-      "id": "areola_astra",
-      "variant": "gpt6_areola_v1",
-      "fileName": "gpt6_areola.wasm",
-      "sha256": "169179c3f435debc8d1b6eeb98c6da9feff8c52ae12a3893b1d2218866878d0e"
-    },
-    {
       "id": "areola_gemini",
       "variant": "gemini4_areola_v1",
       "fileName": "gemini4_areola.wasm",
       "sha256": "ff544bfe40dc2899a2fbfbc177ed668cc5088c0cacd28f09bd3600f74cfb7085"
+    },
+    {
+      "id": "areola_astra",
+      "variant": "gpt6_areola_v1",
+      "fileName": "gpt6_areola.wasm",
+      "sha256": "169179c3f435debc8d1b6eeb98c6da9feff8c52ae12a3893b1d2218866878d0e"
     }
   ],
   "cases": [

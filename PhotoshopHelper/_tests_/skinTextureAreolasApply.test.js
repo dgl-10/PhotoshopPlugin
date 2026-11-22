@@ -107,6 +107,8 @@ for (const bits of [8, 16]) {
         assert.deepEqual(namesOf(root), [...AREOLA_VARIANTS.map(v => v.group), ...FORMULA_GROUP_NAMES]);
         assert.deepEqual(root.layers.map(group => group.visible), [true, false, false, true, false, false]);
         assert.ok(root.layers.every(group => group.kind === 'group'));
+        assert.equal(root.layerSectionExpanded, true, 'outer Skin group stays expanded');
+        assert.ok(root.layers.every(group => group.layerSectionExpanded === false), 'all areola and skin formula folders start collapsed');
         for (const variant of AREOLA_VARIANTS) {
             const group = fake.findLayerByName(variant.group);
             assert.deepEqual(namesOf(group), variant.layers, `${variant.group} layers`);
@@ -215,6 +217,8 @@ test('areola_three_v1: an "Areolas" root with the three areola groups only, no f
     assert.equal(fake.findLayerByName(`Skin [${jobId}]`), null);
     assert.deepEqual(namesOf(root), AREOLA_VARIANTS.map(v => v.group));
     assert.deepEqual(root.layers.map(group => group.visible), [true, false, false]);
+    assert.equal(root.layerSectionExpanded, true, 'outer Areolas group stays expanded');
+    assert.ok(root.layers.every(group => group.layerSectionExpanded === false), 'all areola folders start collapsed');
     for (const name of FORMULA_GROUP_NAMES) assert.equal(fake.findLayerByName(name), null, `${name} must not exist`);
     const region = expectedRegion(twoAreolas(), { width: 800, height: 600 });
     for (const variant of AREOLA_VARIANTS) {
