@@ -7,7 +7,60 @@
     //   - { "id": "<shared id>", "disabled": true } hides a shared model.
     // Response handlers here replace shared ones of the same name.
     // See Providers_Configuration_Guide.md for the provider format.
-    "response_handlers": {},
+    "response_handlers": {
+        // Self-hosted Google Colab async job queue (poll status_url, then GET response_url)
+        "collab": {
+            "type": "async_poll_and_get",
+            "polling": {
+                "url_template": "{{status_url}}",
+                "variables_from_submit": {
+                    "request_id": "request_id",
+                    "status_url": "status_url",
+                    "response_url": "response_url"
+                },
+                "method": "GET",
+                "use_request_headers": true,
+                "interval_ms": 4000,
+                "timeout_ms": 600000,
+                "status": {
+                    "path": "status",
+                    "in_progress": [
+                        "IN_QUEUE",
+                        "IN_PROGRESS"
+                    ],
+                    "completed": [
+                        "COMPLETED"
+                    ],
+                    "failed": [
+                        "FAILED",
+                        "ERROR"
+                    ]
+                },
+                "error_path": "error"
+            },
+            "result": {
+                "source": "separate_request",
+                "url_template": "{{response_url}}",
+                "method": "GET",
+                "use_request_headers": true,
+                "images": {
+                    "format": "url",
+                    "extract": [
+                        {
+                            "path": "images",
+                            "mode": "array",
+                            "item_path": "url"
+                        },
+                        {
+                            "path": "image",
+                            "mode": "single",
+                            "item_path": "url"
+                        }
+                    ]
+                }
+            }
+        }
+    },
     "providers": [
         {
             "id": "civitai_krea2",
@@ -814,127 +867,60 @@
             ]
         },
         {
-            "id": "google_nano_banana_lite",
+            "id": "qwen_image_2_1_colab",
             "generation_modes": [
                 "t2i",
                 "i2i"
             ],
-            "name": "Nano Banana 2 Lite via Google API Key ($0.0336/image)",
+            "name": "Qwen-Image-2.1 via Google Colab GPU",
             "tags": {
-                "provider": "google",
-                "family": "nano-banana"
+                "provider": "colab",
+                "family": [
+                    "alibaba",
+                    "qwen"
+                ]
             },
-            "nice_name": "Nano Banana 2 Lite (Google Key)",
-            "filename_suffix": "nano_banana_2_lite",
-            "image_format": "base64_raw",
-            "max_reference_images": 14,
+            "nice_name": "Qwen-Image-2.1 (Colab GPU)",
+            "filename_suffix": "qwen_image_2_1_colab",
+            "image_format": "data_uri",
+            "max_reference_images": 10,
             "supports_negative_prompt": false,
             "english_only": false,
             "mask_handling": {
-                "supported": true,
-                "type": "first_referential",
-                "field_name": "parts"
+                "supported": false,
+                "required": false
             },
-            "remarks": "<b>Pricing:</b> $0.0336 per 1K output image (1120 tokens @ $30/1M) + ~$0.00028 per input image (1120 tokens @ $0.25/1M).<br>• <b>Resolution:</b> 1K only.<br>• <b>Reference images:</b> API accepts up to 14 object images, but according to Google docs Lite is optimized for single-turn generation/editing and is not optimized for multiple reference inputs, character consistency, or multi-turn sequential editing.",
+            "allowed_aspect_ratios": [
+                "16:9",
+                "3:2",
+                "4:3",
+                "1:1",
+                "4:5",
+                "3:4",
+                "2:3",
+                "9:16"
+            ],
+            "remarks": "<b>Self-hosted on Google Colab GPU.</b><br>• Paste the active Cloudflare tunnel base URL (without a trailing slash or <i>/qwen/jobs</i>) into <b>Colab Base URL</b>.<br>• Supports T2I and I2I with up to 10 images total.",
             "request_config": {
                 "single_image_per_request": true,
-                "endpoint_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent",
+                "endpoint_url": "{{colab_url}}/qwen/jobs",
                 "method": "POST",
                 "headers": {
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": "{{env:GOOGLE_API_KEY}}"
-                },
-                "reference_item_template": {
-                    "inlineData": {
-                        "mimeType": "{{item_mime}}",
-                        "data": "{{item}}"
-                    }
+                    "Authorization": "Bearer {{env:COLLAB_WEBHELPER_TOKEN}}",
+                    "Content-Type": "application/json"
                 },
                 "body_template": {
-                    "{{?system_instruction}}system_instruction": {
-                        "parts": [
-                            {
-                                "text": "{{system_instruction}}"
-                            }
-                        ]
-                    },
-                    "contents": [
-                        {
-                            "{{?!source_image}}parts": [
-                                {
-                                    "text": "{{prompt}}"
-                                }
-                            ],
-                            "{{?source_image}}parts": [
-                                {
-                                    "text": "{{prompt}}"
-                                },
-                                {
-                                    "inlineData": {
-                                        "mimeType": "{{source_image_mime}}",
-                                        "data": "{{source_image}}"
-                                    }
-                                },
-                                "{{resolved_references}}"
-                            ]
-                        }
-                    ],
-                    "safetySettings": [
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "OFF"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "OFF"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "OFF"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "OFF"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
-                            "threshold": "OFF"
-                        }
-                    ],
-                    "generationConfig": {
-                        "responseModalities": [
-                            "IMAGE"
-                        ],
-                        "imageConfig": {
-                            "imageSize": "1K",
-                            "{{?aspect_ratio}}aspectRatio": "{{aspect_ratio}}"
-                        },
-                        "thinkingConfig": {
-                            "thinkingLevel": "{{thinking_level}}"
-                        }
-                    }
+                    "prompt": "{{prompt}}",
+                    "resolution": "{{resolution}}",
+                    "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                    "{{?source_image}}images": [
+                        "{{source_image}}",
+                        "{{resolved_image_array}}"
+                    ]
                 }
             },
             "response_config": {
-                "$ref": "sync",
-                "params": {
-                    "format": "base64_raw",
-                    "extract": [
-                        {
-                            "path": "candidates.0.content.parts",
-                            "mode": "array",
-                            "item_path": "inlineData.data"
-                        }
-                    ],
-                    "error_paths": [
-                        "error.message",
-                        "promptFeedback.blockReasonMessage",
-                        "promptFeedback.blockReason",
-                        "candidates.0.finishMessage",
-                        "candidates.0.content.parts.0.text",
-                        "candidates.0.finishReason"
-                    ]
-                }
+                "$ref": "collab"
             },
             "parameters": [
                 {
@@ -945,242 +931,13 @@
                     "default": ""
                 },
                 {
-                    "name": "thinking_level",
-                    "type": "dropdown",
-                    "alias": "thinking_level",
-                    "label": "Thinking Level",
-                    "options": [
-                        {
-                            "value": "minimal",
-                            "label": "Minimal (faster, default)"
-                        },
-                        {
-                            "value": "high",
-                            "label": "High (complex composition)"
-                        }
-                    ],
-                    "default": "minimal"
-                },
-                {
-                    "name": "system_instruction",
+                    "name": "colab_url",
                     "type": "string",
-                    "multiline": true,
-                    "alias": "system_instruction",
-                    "label": "System Instruction (optional style/rules)",
-                    "default": ""
-                }
-            ]
-        },
-        {
-            "id": "google_nano_banana",
-            "generation_modes": [
-                "t2i",
-                "i2i"
-            ],
-            "name": "Nano Banana 2.1 / Pro / 2 via Google API Key (from $0.0336/image)",
-            "tags": {
-                "provider": "google",
-                "family": "nano-banana"
-            },
-            "nice_name": {
-                "default": "Nano Banana 2.1 (Google Key)",
-                "depends_on": "model",
-                "values": {
-                    "gemini-nano-banana-2.1": "Nano Banana 2.1 (Google Key)",
-                    "gemini-3-pro-image": "Nano Banana Pro (Google Key)",
-                    "gemini-3.1-flash-image": "Nano Banana 2 (Google Key)"
-                }
-            },
-            "filename_suffix": {
-                "default": "nano_banana_2_1_{{image_size}}",
-                "depends_on": "model",
-                "values": {
-                    "gemini-nano-banana-2.1": "nano_banana_2_1",
-                    "gemini-3-pro-image": "nano_banana_pro",
-                    "gemini-3.1-flash-image": "nano_banana_2"
-                }
-            },
-            "image_format": "base64_raw",
-            "max_reference_images": 14,
-            "supports_negative_prompt": false,
-            "english_only": false,
-            "mask_handling": {
-                "supported": true,
-                "type": "first_referential",
-                "field_name": "parts"
-            },
-            "remarks": "<b>Pricing per output image:</b><br><table style='width:100%; font-size:0.8em; border-top:1px solid #555; margin-top:4px; border-collapse:collapse;'><tr><td><b>Model</b></td><td><b>1K</b></td><td><b>2K</b></td><td><b>4K</b></td><td><b>Input image</b></td></tr><tr><td><b>Nano Banana 2.1</b></td><td>$0.0336</td><td>$0.0504</td><td>$0.113</td><td>~$0.00056</td></tr><tr><td><b>Nano Banana Pro</b></td><td>$0.134</td><td>$0.134</td><td>$0.240</td><td>~$0.00112</td></tr><tr><td><b>Nano Banana 2 (depr.)</b></td><td>$0.0672</td><td>$0.1008</td><td>$0.1512</td><td>~$0.00028</td></tr></table><br>• <b>References (up to 14):</b> 2.1 & 2 support up to 10 objects + 4 characters; Pro supports up to 6 objects + 5 characters.<br>• <b>Google Search Grounding:</b> 5,000 free search queries/month shared on Gemini 3+, then $14/1,000 queries (billed per search query executed by the model). Image Search is supported on 2.1 and 2 only (skipped on Pro; Web + Image runs Web only on Pro) and cannot be used to search for people.",
-            "request_config": {
-                "single_image_per_request": true,
-                "{{?model == 'gemini-nano-banana-2.1'}}endpoint_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-nano-banana-2.1:generateContent",
-                "{{?model == 'gemini-3-pro-image'}}endpoint_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent",
-                "{{?model == 'gemini-3.1-flash-image'}}endpoint_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent",
-                "method": "POST",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": "{{env:GOOGLE_API_KEY}}"
-                },
-                "reference_item_template": {
-                    "inlineData": {
-                        "mimeType": "{{item_mime}}",
-                        "data": "{{item}}"
-                    }
-                },
-                "body_template": {
-                    "{{?system_instruction}}system_instruction": {
-                        "parts": [
-                            {
-                                "text": "{{system_instruction}}"
-                            }
-                        ]
-                    },
-                    "contents": [
-                        {
-                            "{{?!source_image}}parts": [
-                                {
-                                    "text": "{{prompt}}"
-                                }
-                            ],
-                            "{{?source_image}}parts": [
-                                {
-                                    "text": "{{prompt}}"
-                                },
-                                {
-                                    "inlineData": {
-                                        "mimeType": "{{source_image_mime}}",
-                                        "data": "{{source_image}}"
-                                    }
-                                },
-                                "{{resolved_references}}"
-                            ]
-                        }
-                    ],
-                    "{{?(model == 'gemini-nano-banana-2.1' || model == 'gemini-3.1-flash-image') && google_search == 'web'}}tools": [
-                        {
-                            "google_search": {
-                                "searchTypes": {
-                                    "webSearch": {}
-                                }
-                            }
-                        }
-                    ],
-                    "{{?(model == 'gemini-nano-banana-2.1' || model == 'gemini-3.1-flash-image') && google_search == 'image'}}tools": [
-                        {
-                            "google_search": {
-                                "searchTypes": {
-                                    "imageSearch": {}
-                                }
-                            }
-                        }
-                    ],
-                    "{{?(model == 'gemini-nano-banana-2.1' || model == 'gemini-3.1-flash-image') && google_search == 'web_image'}}tools": [
-                        {
-                            "google_search": {
-                                "searchTypes": {
-                                    "webSearch": {},
-                                    "imageSearch": {}
-                                }
-                            }
-                        }
-                    ],
-                    "{{?model == 'gemini-3-pro-image' && (google_search == 'web' || google_search == 'web_image')}}tools": [
-                        {
-                            "google_search": {}
-                        }
-                    ],
-                    "safetySettings": [
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "OFF"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "OFF"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "OFF"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "OFF"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
-                            "threshold": "OFF"
-                        }
-                    ],
-                    "generationConfig": {
-                        "responseModalities": [
-                            "IMAGE"
-                        ],
-                        "imageConfig": {
-                            "imageSize": "{{image_size}}",
-                            "{{?aspect_ratio}}aspectRatio": "{{aspect_ratio}}"
-                        },
-                        "{{?model == 'gemini-nano-banana-2.1'}}thinkingConfig": {
-                            "thinkingLevel": "{{thinking_level}}"
-                        },
-                        "{{?model == 'gemini-3.1-flash-image' && thinking_level == 'high'}}thinkingConfig": {
-                            "thinkingLevel": "high"
-                        },
-                        "{{?model == 'gemini-3.1-flash-image' && thinking_level != 'high'}}thinkingConfig": {
-                            "thinkingLevel": "minimal"
-                        }
-                    }
-                }
-            },
-            "response_config": {
-                "$ref": "sync",
-                "params": {
-                    "format": "base64_raw",
-                    "extract": [
-                        {
-                            "path": "candidates.0.content.parts",
-                            "mode": "array",
-                            "item_path": "inlineData.data"
-                        }
-                    ],
-                    "error_paths": [
-                        "error.message",
-                        "promptFeedback.blockReasonMessage",
-                        "promptFeedback.blockReason",
-                        "candidates.0.finishMessage",
-                        "candidates.0.content.parts.0.text",
-                        "candidates.0.finishReason"
-                    ]
-                }
-            },
-            "parameters": [
-                {
-                    "name": "prompt",
-                    "type": "string",
-                    "alias": "prompt",
-                    "label": "Text Prompt",
+                    "label": "Colab Base URL (no trailing /, e.g. https://....trycloudflare.com)",
                     "default": ""
                 },
                 {
-                    "name": "model",
-                    "type": "dropdown",
-                    "label": "Model",
-                    "options": [
-                        {
-                            "value": "gemini-nano-banana-2.1",
-                            "label": "Nano Banana 2.1 (1K: $0.034 | 2K: $0.050 | 4K: $0.113)"
-                        },
-                        {
-                            "value": "gemini-3-pro-image",
-                            "label": "Nano Banana Pro (1K/2K: $0.134 | 4K: $0.240)"
-                        },
-                        {
-                            "value": "gemini-3.1-flash-image",
-                            "label": "Nano Banana 2 [Deprecated] (1K: $0.067 | 2K: $0.101 | 4K: $0.151)"
-                        }
-                    ],
-                    "default": "gemini-nano-banana-2.1"
-                },
-                {
-                    "name": "image_size",
+                    "name": "resolution",
                     "type": "dropdown",
                     "alias": "output_resolution",
                     "label": "Output Resolution",
@@ -1196,65 +953,12 @@
                             "label": "2K"
                         },
                         {
-                            "value": "4K",
+                            "value": "2K",
                             "alias": "ultra",
-                            "label": "4K"
+                            "hidden": true
                         }
                     ],
                     "default": "1K"
-                },
-                {
-                    "name": "thinking_level",
-                    "type": "dropdown",
-                    "alias": "thinking_level",
-                    "label": "Thinking Level (2.1 & 2 only)",
-                    "options": [
-                        {
-                            "value": "minimal",
-                            "label": "Minimal (fastest)"
-                        },
-                        {
-                            "value": "medium",
-                            "label": "Medium (2.1 default; maps to Minimal on 2)"
-                        },
-                        {
-                            "value": "high",
-                            "label": "High (deep reasoning)"
-                        }
-                    ],
-                    "default": "medium"
-                },
-                {
-                    "name": "google_search",
-                    "type": "dropdown",
-                    "label": "Google Search Grounding",
-                    "options": [
-                        {
-                            "value": "off",
-                            "label": "Off"
-                        },
-                        {
-                            "value": "web",
-                            "label": "Web Search (facts / weather / news)"
-                        },
-                        {
-                            "value": "image",
-                            "label": "Image Search (visual refs — 2.1 & 2 only)"
-                        },
-                        {
-                            "value": "web_image",
-                            "label": "Web + Image Search (2.1 & 2; Pro -> Web only)"
-                        }
-                    ],
-                    "default": "off"
-                },
-                {
-                    "name": "system_instruction",
-                    "type": "string",
-                    "multiline": true,
-                    "alias": "system_instruction",
-                    "label": "System Instruction (optional style/rules)",
-                    "default": ""
                 }
             ]
         }
