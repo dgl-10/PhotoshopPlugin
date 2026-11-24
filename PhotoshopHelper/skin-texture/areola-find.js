@@ -25,7 +25,7 @@ const { SkinRequestError } = require('./core-adapter');
 const exchangeFiles = require('./exchange-files');
 const scripts = require('./uxp-scripts');
 const readScript = require('./areola-read-script');
-const { fitSelection } = require('./areola-detect');
+const { fitSelection, hasAmbiguousHoles } = require('./areola-detect');
 const { MAX_AREOLAS } = require('./areola-geometry');
 
 const MAX_SIDE = { image: 1600, selection: 2048 };
@@ -113,9 +113,12 @@ function decide(found, source, hinted) {
     }
     for (const [i, a] of areolas.entries()) {
         const name = areolas.length > 1 ? `areola ${i + 1}` : 'the areola';
-        if (a.confidence.level === 'low') {
+        if (hasAmbiguousHoles(a)) {
+            lower('ask_for_selection');
+            why.push(`${name}: ${a.confidence.reasons.join('; ')}`);
+        } else if (a.confidence.level === 'low') {
             lower(source === 'selection' ? 'ask_first' : 'ask_for_selection');
-            why.push(`${name}: ${a.confidence.reasons.filter(r => r.endsWith('(low)')).join('; ') || 'low confidence'}`);
+            why.push(`${name}: ${a.confidence.reasons.filter(r => r.endsWith('(low)')).join('; ') || a.confidence.reasons.join('; ') || 'low confidence'}`);
         } else if (a.confidence.level === 'medium') {
             lower('apply_then_check');
             why.push(`${name}: ${a.confidence.reasons.join('; ')}`);
@@ -130,17 +133,17 @@ function decide(found, source, hinted) {
         if (Math.max(p, q) / Math.min(p, q) > 1.5) { lower('ask_first'); why.push('the two areolas differ in size more than 1.5 times'); }
     }
     // A nipple that was not found clearly gets the areola centre; the result must be looked at.
-    if (areolas.some(a => !a.nipple.found)) {
+    const missingNipple = areolas.some(a => !a.nipple.found && !hasAmbiguousHoles(a));
+    if (missingNipple) {
         lower('apply_then_check');
-        why.push(source === 'selection' ? 'the nipple was not marked (cut it out of the selection with Alt to mark it)' : 'a nipple was not found clearly');
+        why.push(source === 'selection' ? 'the nipple was not found inside the selection (optionally erase/subtract a hole covering the nipple to mark it)' : 'a nipple was not found clearly');
     }
     if (source === 'image' && !hinted && areolas.length) {
         lower('apply_then_check');
         why.push('found without hints: a first result found without your own look is always checked');
     }
-    const missingNipple = areolas.some(a => !a.nipple.found);
     const tail = [];
-    if (missingNipple) {
+    if (missingNipple && recommendation !== 'ask_for_selection') {
         tail.push('Where the nipple was not found, its record uses the centre of the areola: after applying, hide the nipple layers of the areola groups (output "nipple" in the apply result) and say so, rather than show a nipple in the wrong place.');
     }
     tail.push(found.light.kind === 'estimated'
@@ -148,11 +151,14 @@ function decide(found, source, hinted) {
         : 'The light is the default 315/45 (the picture gave no reliable direction); mention it only if the person asks about the light.');
     tail.push('px_per_mm is an estimate from a typical areola: if the person knows a measure, use it instead and mark scale as measured or given. If the result\'s details look too large or too small, the person can say "larger" or "smaller" and you recompute with px_per_mm divided or multiplied by about 1.3.');
     tail.push('If the person has already corrected the areolas twice, work from their selection instead of searching again.');
+    const ambiguousHoles = areolas.some(hasAmbiguousHoles);
     const lead = {
         apply: 'Confident. Pass fields and sources to ps_skin_texture_start and apply; afterwards tell the person in one line what was found and what was estimated.',
         apply_then_check: `Probably right (${why.join('; ')}). Compute and apply, then ask the person to look at the areolas before going on; one Undo removes the write. If the same job also computes the general skin over a large area (minutes), ask first instead.`,
-        ask_first: `Not certain (${why.join('; ')}). Before computing, tell the person in one sentence what was found and ask one question: compute like this, or select the areola (Elliptical Marquee or Lasso) for an exact outline.`,
-        ask_for_selection: `No reliable areola (${why.join('; ')}). Ask the person to select each areola with the Elliptical Marquee or Lasso as separate parts (cutting the nipple out of the selection with Alt marks it), then call this tool again with source "selection".`
+        ask_first: `Not certain (${why.join('; ')}). Before computing, tell the person in one sentence what was found and ask one question: compute like this, or roughly select the areola with any convenient tool (e.g., painting in Quick Mask, Selection Brush, or Lasso — no need to draw a precise ellipse, Helper fits one automatically).`,
+        ask_for_selection: ambiguousHoles
+            ? `Selection needs cleanup (${why.join('; ')}). Ask the person to fill accidental gaps inside the selection (leaving at most one clear hole covering the nipple, or none so Helper detects it), then call this tool again with source "selection".`
+            : `No reliable areola (${why.join('; ')}). Ask the person to roughly select each areola as a separate solid shape using any convenient tool (e.g., painting in Quick Mask, Selection Brush, or Lasso — an exact ellipse is not needed, Helper fits one automatically; leaving a hole over the nipple is optional, otherwise Helper tries to detect it), then call this tool again with source "selection".`
     }[recommendation];
     return { recommendation, next_step: [lead, ...tail].join(' ') };
 }
@@ -220,7 +226,7 @@ async function findAreolas(transport, args) {
         // The outline is the person's; the nipple (unless they cut it out) and the light are
         // measured on the document pixels around the selected outlines. If that second read fails,
         // the selection result stands with the default light and the nipple as marked or missing.
-        if (found.areolas.length) {
+        if (found.areolas.length && found.areolas.some(a => !hasAmbiguousHoles(a))) {
             try {
                 const given = await measureAroundSelection(transport, document, found.areolas, probe.result.dataFolder);
                 found.areolas = given.areolas;
@@ -264,7 +270,7 @@ async function findAreolas(transport, args) {
         recommendation: decision.recommendation,
         next_step: decision.next_step
     };
-    if (records.length) {
+    if (records.length && !found.areolas.some(hasAmbiguousHoles)) {
         out.fields = { areolas: records };
         out.sources = sources;
     }

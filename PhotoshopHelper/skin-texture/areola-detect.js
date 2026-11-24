@@ -15,6 +15,11 @@
 
 const { MAX_AREOLAS, DEFAULT_NIPPLE_SHARE } = require('./areola-geometry');
 
+// Hole qualification thresholds: ignore semi-transparent brush dips and tiny pinholes inside a selection.
+const HOLE_BLACK_SHARE = 0.15; // Max relative mask value (<= 15% of full) counted as true black core.
+const HOLE_MIN_DARK_SHARE = 0.05; // At least 5% of a hole's cells must fall inside that black core.
+const HOLE_MIN_AREA_SHARE = 0.004; // Minimum hole area relative to the filled areola (~6.3% of radius).
+
 /**
  * Label 8-connected components of the cells where `inside(i)` is true.
  *
@@ -124,7 +129,8 @@ const round2 = value => Math.round(value * 100) / 100;
  * @returns {{ areolas: object[], notes: string[] }} Each areola: record, nipple info, confidence.
  */
 function fitSelection(mask, width, height, map) {
-    const half = (map.full || 255) / 2;
+    const full = map.full || 255;
+    const half = full / 2;
     const selected = i => mask[i] >= half;
     const { labels, sizes } = labelComponents(width, height, selected, 8);
     const notes = [];
@@ -138,6 +144,7 @@ function fitSelection(mask, width, height, map) {
         notes.push(`The selection has ${parts.length} separate parts; the ${MAX_AREOLAS} largest were taken as areolas.`);
         parts = parts.slice(0, MAX_AREOLAS);
     }
+    let ignoredHoles = 0;
     const areolas = parts.map(part => {
         // Background reachable from outside the part's box is outside; the rest are its holes.
         let x0 = width, y0 = height, x1 = -1, y1 = -1;
@@ -169,28 +176,52 @@ function fitSelection(mask, width, height, map) {
             if (x < x0 || x > x1 || y < y0 || y > y1) return false;
             return !outside[(y - y0 + 1) * bw + (x - x0 + 1)];
         };
-        const outline = ellipseFromMoments(momentsOf(width, height, filledAt), map);
+        const filledMoments = momentsOf(width, height, filledAt);
+        const outline = ellipseFromMoments(filledMoments, map);
         const agreement = ellipseAgreement(width, height, filledAt, outline, map);
 
-        // Holes: cells filled but not in the part, grouped 4-connected; the largest is the nipple.
+        // Holes: cells filled but not in the part, grouped 4-connected. Only holes with a real
+        // unselected (black) core and non-trivial area count, so semi-transparent brush dips and
+        // tiny pinholes do not override automatic nipple detection.
         const holeCell = i => filledAt(i) && labels[i] !== part.id;
         const holes = labelComponents(width, height, holeCell, 4);
+        const darkCounts = new Int32Array(holes.sizes.length);
+        if (holes.sizes.length) {
+            const blackLimit = HOLE_BLACK_SHARE * full;
+            for (let y = y0; y <= y1; y++) {
+                const row = y * width;
+                for (let x = x0; x <= x1; x++) {
+                    const hid = holes.labels[row + x];
+                    if (hid !== -1 && mask[row + x] <= blackLimit) darkCounts[hid]++;
+                }
+            }
+        }
+        const minHoleCells = Math.max(3, Math.ceil(HOLE_MIN_AREA_SHARE * filledMoments.n));
+        const seriousHoles = [];
+        for (let hid = 0; hid < holes.sizes.length; hid++) {
+            const size = holes.sizes[hid];
+            if (size >= minHoleCells && darkCounts[hid] >= Math.max(2, Math.ceil(HOLE_MIN_DARK_SHARE * size))) {
+                seriousHoles.push({ id: hid, size });
+            }
+        }
+        ignoredHoles += holes.sizes.length - seriousHoles.length;
         const reasons = [];
         let nipple = null;
-        if (holes.sizes.length) {
-            const biggest = holes.sizes.indexOf(Math.max(...holes.sizes));
-            if (holes.sizes[biggest] >= 3) {
-                const m = momentsOf(width, height, i => holes.labels[i] === biggest);
-                const area = m.n * map.scaleX * map.scaleY;
-                nipple = { center: [map.left + (m.sx / m.n + 0.5) * map.scaleX, map.top + (m.sy / m.n + 0.5) * map.scaleY],
-                    radius: Math.sqrt(area / Math.PI) };
-            }
-            if (holes.sizes.length > 1) reasons.push(`${holes.sizes.length} holes in the selected part; the largest was taken as the nipple`);
+        if (seriousHoles.length === 1) {
+            const m = momentsOf(width, height, i => holes.labels[i] === seriousHoles[0].id);
+            const area = m.n * map.scaleX * map.scaleY;
+            nipple = {
+                center: [map.left + (m.sx / m.n + 0.5) * map.scaleX, map.top + (m.sy / m.n + 0.5) * map.scaleY],
+                radius: Math.sqrt(area / Math.PI)
+            };
+        } else if (seriousHoles.length > 1) {
+            reasons.push(`${seriousHoles.length} clear holes in the selected part; fill accidental gaps or leave at most one hole for the nipple`);
         }
         let level = 'high';
         if (agreement < 0.9) { level = 'medium'; reasons.push(`the selected shape is not elliptical (agreement ${agreement.toFixed(2)}); the ellipse approximates it`); }
         if (agreement < 0.75) level = 'low';
         if (Math.min(outline.radii[0], outline.radii[1]) < 6) { level = 'low'; reasons.push('the selected part is tiny'); }
+        if (seriousHoles.length > 1) level = 'low';
         const record = {
             areola: { center: outline.center.map(round2), radii: outline.radii.map(round2), angleDeg: round2(outline.angleDeg) },
             nipple: (nipple ? nipple.center : outline.center).map(round2),
@@ -199,10 +230,23 @@ function fitSelection(mask, width, height, map) {
         return {
             record,
             nipple: nipple ? { found: true, source: 'hole in the selection' } : { found: false, source: 'not marked: centre of the areola and 0.3 of the long half-axis' },
-            confidence: { level, reasons, agreement: round2(agreement) }
+            confidence: {
+                level,
+                reasons,
+                agreement: round2(agreement),
+                ...(seriousHoles.length > 1 ? { holes: seriousHoles.length } : {})
+            }
         };
     });
+    if (ignoredHoles > 0) {
+        notes.push(`${ignoredHoles} faint or tiny gap(s) inside the selection were ignored as uneven brushing.`);
+    }
     return { areolas, notes };
 }
 
-module.exports = { labelComponents, ellipseFromMoments, ellipseAgreement, fitSelection };
+/** Whether a fitted selection part has multiple clear holes and must be sent back to the user. */
+function hasAmbiguousHoles(areola) {
+    return Boolean(areola && areola.confidence && areola.confidence.holes > 1);
+}
+
+module.exports = { labelComponents, ellipseFromMoments, ellipseAgreement, fitSelection, hasAmbiguousHoles };

@@ -9,6 +9,7 @@
  */
 
 const image = require('./areola-detect-image');
+const { hasAmbiguousHoles } = require('./areola-detect');
 
 const I = image._internals;
 const round2 = value => Math.round(value * 100) / 100;
@@ -30,6 +31,8 @@ function measureGiven(rgb, w, h, channels, map, areolas) {
     const scale = Math.sqrt(map.scaleX * map.scaleY);
     const lights = [];
     const out = areolas.map(item => {
+        // Ambiguous multi-hole selections are sent back to the user rather than having a nipple measured.
+        if (hasAmbiguousHoles(item)) return item;
         const r = item.record;
         const e = { cx: (r.areola.center[0] - map.left) / map.scaleX, cy: (r.areola.center[1] - map.top) / map.scaleY,
             a: r.areola.radii[0] / scale, b: r.areola.radii[1] / scale, t: (r.areola.angleDeg * Math.PI) / 180 };

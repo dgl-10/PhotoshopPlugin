@@ -158,6 +158,142 @@ test('selection: an empty selection (no bounds) is refused with NO_SELECTION', a
     assert.equal(answer.json.error.code, 'NO_SELECTION');
 });
 
+/** Paint a circular region inside a mask with a fixed value or radial falloff callback. */
+function paintCircle(mask, width, height, cx, cy, radius, valueAt) {
+    const reach = Math.ceil(radius) + 1;
+    for (let y = Math.max(0, Math.floor(cy) - reach); y < Math.min(height, Math.ceil(cy) + reach); y++) {
+        for (let x = Math.max(0, Math.floor(cx) - reach); x < Math.min(width, Math.ceil(cx) + reach); x++) {
+            const dist = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+            if (dist <= radius) mask[y * width + x] = typeof valueAt === 'function' ? valueAt(dist) : valueAt;
+        }
+    }
+}
+
+test('selection: semi-transparent brush dip is ignored as a hole and lets Helper measure the nipple', async t => {
+    const pic = { width: 1200, height: 900, center: [600, 450], radii: [160, 110], angleDeg: 25, nipple: [612, 440], nippleRadius: 30, lightAzimuthDeg: 315 };
+    const mask = support.ellipseMask(pic.width, pic.height, [{ center: pic.center, radii: pic.radii, angleDeg: pic.angleDeg }]);
+    paintCircle(mask, pic.width, pic.height, 560, 430, 22, 90);
+    const harness = makeHarness(t, { document: { width: pic.width, height: pic.height, selection: { x: 0, y: 0, width: pic.width, height: pic.height, data: mask } } });
+    harness.fake.state.documentPixels = support.areolaPicture(pic);
+
+    const taskId = await harness.startTask();
+    const answer = await harness.call(FIND, { task_id: taskId, source: 'selection' });
+    assert.equal(answer.isError, false, answer.text);
+    const found = answer.json.areolas[0];
+    assert.equal(found.confidence.level, 'high');
+    assert.equal(found.confidence.holes, undefined);
+    assert.equal(found.nipple.found, true);
+    assert.equal(found.nipple.source, 'measured by Helper inside the selected outline');
+    assert.ok(Math.hypot(found.record.nipple[0] - pic.nipple[0], found.record.nipple[1] - pic.nipple[1]) <= 3);
+    assert.match(answer.json.notes.join(' '), /ignored as uneven brushing/);
+});
+
+test('selection: tiny pure-black pinhole is ignored as a hole', async t => {
+    const mask = support.ellipseMask(1200, 800, [{ center: [600, 400], radii: [200, 150], angleDeg: 0 }]);
+    paintCircle(mask, 1200, 800, 560, 390, 4, 0);
+    const harness = makeHarness(t, { document: { width: 1200, height: 800, selection: { x: 0, y: 0, width: 1200, height: 800, data: mask } } });
+
+    const taskId = await harness.startTask();
+    const answer = await harness.call(FIND, { task_id: taskId, source: 'selection' });
+    assert.equal(answer.isError, false, answer.text);
+    const found = answer.json.areolas[0];
+    assert.equal(found.confidence.level, 'high');
+    assert.equal(found.confidence.holes, undefined);
+    assert.equal(found.nipple.found, false);
+});
+
+test('selection: soft-edged real nipple hole wins over a semi-transparent dip and a tiny pinhole', async t => {
+    const mask = support.ellipseMask(1200, 900, [{ center: [600, 450], radii: [220, 170], angleDeg: 15 }]);
+    // Real nipple hole: black core (0 up to r=15), smooth ramp to 50% at r=35 and 255 at r=55.
+    paintCircle(mask, 1200, 900, 615, 440, 55, dist => (dist <= 15 ? 0 : Math.round(255 * (dist - 15) / 40)));
+    // Accidental semi-transparent dip (< 50%, > 15%) and tiny black pinhole.
+    paintCircle(mask, 1200, 900, 520, 470, 25, 90);
+    paintCircle(mask, 1200, 900, 680, 480, 4, 0);
+    const harness = makeHarness(t, { document: { width: 1200, height: 900, selection: { x: 0, y: 0, width: 1200, height: 900, data: mask } } });
+
+    const taskId = await harness.startTask();
+    const answer = await harness.call(FIND, { task_id: taskId, source: 'selection' });
+    assert.equal(answer.isError, false, answer.text);
+    const found = answer.json.areolas[0];
+    assert.equal(found.confidence.level, 'high');
+    assert.equal(found.nipple.found, true);
+    assert.equal(found.nipple.source, 'hole in the selection');
+    assert.ok(Math.hypot(found.record.nipple[0] - 615, found.record.nipple[1] - 440) <= 1.5, `nipple ${found.record.nipple}`);
+    assert.ok(Math.abs(found.record.nippleRadiusPx - 35) <= 1.5, `nipple radius ${found.record.nippleRadiusPx}`);
+    assert.equal(answer.json.recommendation, 'apply');
+});
+
+test('selection: multiple serious black holes inside one areola ask the person to fix the selection', async t => {
+    const mask = support.ellipseMask(1200, 900, [{ center: [600, 450], radii: [200, 160], angleDeg: 0 }]);
+    paintCircle(mask, 1200, 900, 550, 450, 25, 0);
+    paintCircle(mask, 1200, 900, 650, 450, 25, 0);
+    const harness = makeHarness(t, { document: { width: 1200, height: 900, selection: { x: 0, y: 0, width: 1200, height: 900, data: mask } } });
+
+    const taskId = await harness.startTask();
+    const answer = await harness.call(FIND, { task_id: taskId, source: 'selection' });
+    assert.equal(answer.isError, false, answer.text);
+    assert.equal(answer.json.recommendation, 'ask_for_selection');
+    assert.equal(answer.json.fields, undefined);
+    assert.equal(answer.json.sources, undefined);
+    assert.equal(answer.json.areolas[0].confidence.level, 'low');
+    assert.equal(answer.json.areolas[0].confidence.holes, 2);
+    assert.equal(answer.json.areolas[0].nipple.found, false);
+    assert.match(answer.json.next_step, /Selection needs cleanup/);
+    assert.match(answer.json.next_step, /2 clear holes/);
+    assert.match(answer.json.next_step, /fill accidental gaps/);
+    assert.doesNotMatch(answer.json.next_step, /hide the nipple layers/);
+    assert.equal(harness.fake.state.getPixelsCalls, 0);
+});
+
+test('selection: two areolas where one is valid and the other has multiple serious holes asks for cleanup without returning fields', async t => {
+    const mask = support.ellipseMask(1200, 900, [
+        { center: [350, 450], radii: [140, 120], angleDeg: 0, hole: { center: [355, 445], radius: 25 } },
+        { center: [850, 450], radii: [140, 120], angleDeg: 0 }
+    ]);
+    paintCircle(mask, 1200, 900, 815, 450, 22, 0);
+    paintCircle(mask, 1200, 900, 885, 450, 22, 0);
+    const harness = makeHarness(t, { document: { width: 1200, height: 900, selection: { x: 0, y: 0, width: 1200, height: 900, data: mask } } });
+
+    const taskId = await harness.startTask();
+    const answer = await harness.call(FIND, { task_id: taskId, source: 'selection' });
+    assert.equal(answer.isError, false, answer.text);
+    assert.equal(answer.json.areolas.length, 2);
+    assert.equal(answer.json.areolas[0].confidence.level, 'high');
+    assert.equal(answer.json.areolas[0].nipple.found, true);
+    assert.equal(answer.json.areolas[1].confidence.level, 'low');
+    assert.equal(answer.json.areolas[1].confidence.holes, 2);
+    assert.equal(answer.json.areolas[1].nipple.found, false);
+    assert.equal(answer.json.recommendation, 'ask_for_selection');
+    assert.equal(answer.json.fields, undefined);
+    assert.equal(answer.json.sources, undefined);
+    assert.match(answer.json.next_step, /Selection needs cleanup/);
+    assert.match(answer.json.next_step, /areola 2: 2 clear holes/);
+    assert.doesNotMatch(answer.json.next_step, /hide the nipple layers/);
+});
+
+test('selection: 16-bit mask applies the same black-core and area thresholds to holes and dips', async t => {
+    const mask = support.ellipseMask(1200, 900, [{ center: [600, 450], radii: [220, 170], angleDeg: 15 }]);
+    paintCircle(mask, 1200, 900, 615, 440, 55, dist => (dist <= 15 ? 0 : Math.round(255 * (dist - 15) / 40)));
+    paintCircle(mask, 1200, 900, 520, 470, 25, 90);
+    paintCircle(mask, 1200, 900, 680, 480, 4, 0);
+    const harness = makeHarness(t, { document: { width: 1200, height: 900, bits: 16, selection: { x: 0, y: 0, width: 1200, height: 900, data: mask } } });
+    harness.fake.state.selectionComponentSize = 16;
+
+    const taskId = await harness.startTask();
+    const answer = await harness.call(FIND, { task_id: taskId, source: 'selection' });
+    assert.equal(answer.isError, false, answer.text);
+    assert.equal(answer.json.areolas.length, 1);
+    const found = answer.json.areolas[0];
+    assert.equal(found.confidence.level, 'high');
+    assert.equal(found.confidence.holes, undefined);
+    assert.equal(found.nipple.found, true);
+    assert.equal(found.nipple.source, 'hole in the selection');
+    assert.ok(Math.hypot(found.record.nipple[0] - 615, found.record.nipple[1] - 440) <= 1.5, `nipple ${found.record.nipple}`);
+    assert.ok(Math.abs(found.record.nippleRadiusPx - 35) <= 1.5, `nipple radius ${found.record.nippleRadiusPx}`);
+    assert.equal(answer.json.recommendation, 'apply');
+    assert.match(answer.json.notes.join(' '), /2 faint or tiny gap/);
+});
+
 // ---- Image --------------------------------------------------------------------------------
 
 const PICTURE = { width: 1200, height: 900, center: [600, 450], radii: [160, 110], angleDeg: 25, nipple: [612, 440], nippleRadius: 30, lightAzimuthDeg: 315 };
@@ -239,7 +375,8 @@ test('image: a picture without an areola finds nothing and asks for a selection'
     assert.equal(answer.json.recommendation, 'ask_for_selection');
     assert.equal(answer.json.fields, undefined, 'nothing to hand to ps_skin_texture_start');
     assert.equal(answer.json.sources, undefined);
-    assert.match(answer.json.next_step, /Elliptical Marquee/);
+    assert.match(answer.json.next_step, /Quick Mask/);
+    assert.doesNotMatch(answer.json.next_step, /Elliptical Marquee/);
     assert.deepEqual(readFilesIn(harness.dataFolder), []);
 });
 
