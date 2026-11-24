@@ -6,7 +6,7 @@ const FORMULAS = [
         sha256: '182d5ffced5d9de556100a30d20c306956205a8328aab9088a1ef06a98ca672d',
         layers: { formula_1_pores: 'flecks_pores', formula_1_unevenness: 'flecks_unevenness' } },
     { id: 'formula_2', variant: 'gemini4_stratum_v2', fileName: 'gemini4_stratum_v2.wasm', version: '2.0.0',
-        sha256: '1619598688b10c986a098c5eb298378af4767f18ee8d46ef9c2da0f5bd49ed15',
+        sha256: 'aa6579d2d0810246e00201b4bcf62a7bf7f3936b9f23cfa14f8cfafbb03e9ac1',
         layers: { formula_2_pores: 'gemini4_stratum_pores', formula_2_furrows: 'gemini4_stratum_furrows' } },
     { id: 'formula_3', variant: 'gpt6_dermis_v2', fileName: 'dermis.wasm', version: '2.0.1',
         sha256: '2053aaeecb5ff613b47ec92903f7f27478f0c18d400f461ffac541c196ece809',

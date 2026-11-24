@@ -21,7 +21,7 @@ const FORMULA_DEFINITIONS = Object.freeze({
     formula_2: Object.freeze({
         id: 'formula_2', version: 2, name: 'Formula 2', visible: false,
         variant: 'gemini4_stratum_v2', variantVersion: '2.0.0', fileName: 'gemini4_stratum_v2.wasm',
-        sha256: '1619598688b10c986a098c5eb298378af4767f18ee8d46ef9c2da0f5bd49ed15',
+        sha256: 'aa6579d2d0810246e00201b4bcf62a7bf7f3936b9f23cfa14f8cfafbb03e9ac1',
         // task25: all three face-aware v2 formulas receive the same six-point fields.face input.
         fields: Object.freeze({ face: true }),
         layers: Object.freeze([
