@@ -32,6 +32,33 @@ function describeFormulas(job, identity, withParams) {
     }));
 }
 
+/** How far the face points' scale may stray from px_per_mm before the job says so. */
+const FACE_SCALE_TOLERANCE = 0.25;
+
+/**
+ * The face map sizes its zones by the face points alone; px_per_mm sizes only the skin's
+ * elements. A large disagreement means misplaced points (a guessed hidden eye, a wrong chin)
+ * or a wrong px_per_mm, and it is better said before apply. All formulas share one face fit;
+ * Fable reports it under fields.faces, Gemini under gemini4_stratum.fits.
+ */
+function faceScaleNotes(job) {
+    for (const formula of Object.values(catalog.FORMULA_DEFINITIONS)) {
+        const params = job.coreParams && job.coreParams[formula.id];
+        const diagnostics = (job.stats && job.stats[formula.id] && job.stats[formula.id].diagnostics) || {};
+        const fits = (diagnostics.fields && diagnostics.fields.faces)
+            || (diagnostics.gemini4_stratum && diagnostics.gemini4_stratum.fits);
+        if (!params || !(params.pxPerMm > 0) || !Array.isArray(fits) || !fits.length) continue;
+        return fits.flatMap((fit, index) => {
+            const implied = fit && fit.impliedPxPerMm;
+            if (!(implied > 0) || Math.abs(implied / params.pxPerMm - 1) <= FACE_SCALE_TOLERANCE) return [];
+            const which = fits.length > 1 ? ` (face ${index + 1})` : '';
+            return [`Face map${which}: the face points imply ${implied.toFixed(2)} px/mm, but px_per_mm is `
+                + `${params.pxPerMm}; the face zones are sized by the points. Check the eye and chin points or px_per_mm.`];
+        });
+    }
+    return [];
+}
+
 /** Preserve each variant's diagnostics while showing a common small layer summary. */
 function buildDiagnostics(job) {
     const layers = {}, formulas = {}, notes = [];
@@ -57,6 +84,7 @@ function buildDiagnostics(job) {
         formulas[formula.id] = { variant: formula.variant, diagnostics: stats.diagnostics || {}, notes: formulaNotes };
         notes.push(...formulaNotes.map(note => `${formula.name}: ${note}`));
     }
+    notes.push(...faceScaleNotes(job));
     return { layers, formulas, notes };
 }
 

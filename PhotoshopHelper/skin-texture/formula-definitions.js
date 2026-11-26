@@ -11,7 +11,7 @@ const FORMULA_DEFINITIONS = Object.freeze({
     formula_1: Object.freeze({
         id: 'formula_1', version: 2, name: 'Formula 1', visible: true,
         variant: 'fable_flecks_v2', variantVersion: '2.0.0', fileName: 'fable_flecks2.wasm',
-        sha256: '182d5ffced5d9de556100a30d20c306956205a8328aab9088a1ef06a98ca672d',
+        sha256: '1c62615bfd94decceabd025561c4967645e05905f8ff12b0b36bb1cba17d12ad',
         fields: Object.freeze({ face: true }),
         layers: Object.freeze([
             Object.freeze({ output: 'pores', sourceLayerId: 'flecks_pores', layerName: 'Pores', blendMode: 'linear_light', opacity: 0.5 }),
@@ -21,7 +21,7 @@ const FORMULA_DEFINITIONS = Object.freeze({
     formula_2: Object.freeze({
         id: 'formula_2', version: 2, name: 'Formula 2', visible: false,
         variant: 'gemini4_stratum_v2', variantVersion: '2.0.0', fileName: 'gemini4_stratum_v2.wasm',
-        sha256: 'aa6579d2d0810246e00201b4bcf62a7bf7f3936b9f23cfa14f8cfafbb03e9ac1',
+        sha256: '819d5cb9c8f6ae3ab1084d21762c7101188063007446764ed9372f1ef6eb5899',
         // task25: all three face-aware v2 formulas receive the same six-point fields.face input.
         fields: Object.freeze({ face: true }),
         layers: Object.freeze([
@@ -32,7 +32,7 @@ const FORMULA_DEFINITIONS = Object.freeze({
     formula_3: Object.freeze({
         id: 'formula_3', version: 2, name: 'Formula 3', visible: false,
         variant: 'gpt6_dermis_v2', variantVersion: '2.0.1', fileName: 'dermis.wasm',
-        sha256: '2053aaeecb5ff613b47ec92903f7f27478f0c18d400f461ffac541c196ece809',
+        sha256: '7ad7e2c9d2497513a0a07636ac2c3345deda7b410d90de055a2ed59d518394e7',
         // task25: all three face-aware v2 formulas receive the same six-point fields.face input.
         fields: Object.freeze({ face: true }),
         layers: Object.freeze([

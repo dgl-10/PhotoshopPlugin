@@ -21,7 +21,7 @@
                 "method": "GET",
                 "use_request_headers": true,
                 "interval_ms": 4000,
-                "timeout_ms": 600000,
+                "timeout_ms": 1200000,
                 "status": {
                     "path": "status",
                     "in_progress": [
@@ -881,7 +881,7 @@
                 ]
             },
             "nice_name": "Qwen-Image-2.1 (Colab GPU)",
-            "filename_suffix": "qwen_image_2_1_colab",
+            "filename_suffix": "qwen_v2_1",
             "image_format": "data_uri",
             "max_reference_images": 10,
             "supports_negative_prompt": false,
@@ -900,9 +900,9 @@
                 "2:3",
                 "9:16"
             ],
-            "remarks": "<b>Self-hosted on Google Colab GPU.</b><br>• Paste the active Cloudflare tunnel base URL (without a trailing slash or <i>/qwen/jobs</i>) into <b>Colab Base URL</b>.<br>• Supports T2I and I2I with up to 10 images total.",
+            "remarks": "<b>Self-hosted on Google Colab GPU.</b><br>• Paste the active Cloudflare tunnel base URL (without a trailing slash or <i>/qwen/jobs</i>) into <b>Colab Base URL</b>.<br>• Supports T2I and I2I with up to 10 images total, and 1–2 images per batch request (for 3+, enable <b>Each image in a separate request</b>).<br>• <b>Prompt Enhance</b> (optional, uses <i>XAI_API_KEY</i> or <i>GOOGLE_API_KEY</i> in Colab Secrets): <i>Enhance</i> translates/refines the prompt; <i>Instructions</i> authors a new prompt from your instructions.",
             "request_config": {
-                "single_image_per_request": true,
+                "single_image_per_request": false,
                 "endpoint_url": "{{colab_url}}/qwen/jobs",
                 "method": "POST",
                 "headers": {
@@ -912,7 +912,13 @@
                 "body_template": {
                     "prompt": "{{prompt}}",
                     "resolution": "{{resolution}}",
+                    "num_images": "{{num_images}}",
                     "{{?aspect_ratio}}aspect_ratio": "{{aspect_ratio}}",
+                    "{{?!prompt_enhance_mode || prompt_enhance_mode == 'no'}}prompt_enhance": "no",
+                    "{{?prompt_enhance_mode == 'enhance_xai' || prompt_enhance_mode == 'enhance_google'}}prompt_enhance": "enhance",
+                    "{{?prompt_enhance_mode == 'instructions_xai' || prompt_enhance_mode == 'instructions_google'}}prompt_enhance": "instructions",
+                    "{{?prompt_enhance_mode == 'enhance_xai' || prompt_enhance_mode == 'instructions_xai'}}prompt_provider": "xai",
+                    "{{?prompt_enhance_mode == 'enhance_google' || prompt_enhance_mode == 'instructions_google'}}prompt_provider": "google",
                     "{{?source_image}}images": [
                         "{{source_image}}",
                         "{{resolved_image_array}}"
@@ -959,6 +965,34 @@
                         }
                     ],
                     "default": "1K"
+                },
+                {
+                    "name": "prompt_enhance_mode",
+                    "type": "dropdown",
+                    "label": "Prompt Enhance",
+                    "default": "no",
+                    "options": [
+                        {
+                            "value": "no",
+                            "label": "No"
+                        },
+                        {
+                            "value": "enhance_xai",
+                            "label": "Enhance (Grok)"
+                        },
+                        {
+                            "value": "enhance_google",
+                            "label": "Enhance (Google Gemini)"
+                        },
+                        {
+                            "value": "instructions_xai",
+                            "label": "Instructions (Grok)"
+                        },
+                        {
+                            "value": "instructions_google",
+                            "label": "Instructions (Google Gemini)"
+                        }
+                    ]
                 }
             ]
         }

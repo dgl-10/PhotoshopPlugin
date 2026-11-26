@@ -6,7 +6,7 @@
       "variant": "fable_flecks_v2",
       "fileName": "fable_flecks2.wasm",
       "version": "2.0.0",
-      "sha256": "182d5ffced5d9de556100a30d20c306956205a8328aab9088a1ef06a98ca672d",
+      "sha256": "1c62615bfd94decceabd025561c4967645e05905f8ff12b0b36bb1cba17d12ad",
       "layers": {
         "formula_1_pores": "flecks_pores",
         "formula_1_unevenness": "flecks_unevenness"
@@ -17,7 +17,7 @@
       "variant": "gemini4_stratum_v2",
       "fileName": "gemini4_stratum_v2.wasm",
       "version": "2.0.0",
-      "sha256": "1619598688b10c986a098c5eb298378af4767f18ee8d46ef9c2da0f5bd49ed15",
+      "sha256": "819d5cb9c8f6ae3ab1084d21762c7101188063007446764ed9372f1ef6eb5899",
       "layers": {
         "formula_2_pores": "gemini4_stratum_pores",
         "formula_2_furrows": "gemini4_stratum_furrows"
@@ -28,7 +28,7 @@
       "variant": "gpt6_dermis_v2",
       "fileName": "dermis.wasm",
       "version": "2.0.1",
-      "sha256": "2053aaeecb5ff613b47ec92903f7f27478f0c18d400f461ffac541c196ece809",
+      "sha256": "7ad7e2c9d2497513a0a07636ac2c3345deda7b410d90de055a2ed59d518394e7",
       "layers": {
         "formula_3_dermis": "gpt6_dermis_texture"
       }
@@ -150,13 +150,13 @@
         },
         "formula_2_pores": {
           "length": 1280,
-          "crc32": "3be7e268",
-          "fnv1a": "692859dc"
+          "crc32": "ea1f660e",
+          "fnv1a": "682392ed"
         },
         "formula_2_furrows": {
           "length": 1280,
-          "crc32": "a94b217e",
-          "fnv1a": "c5c70f87"
+          "crc32": "a00e5365",
+          "fnv1a": "67d8744d"
         },
         "formula_3_dermis": {
           "length": 1280,
@@ -280,13 +280,13 @@
         },
         "formula_2_pores": {
           "length": 1280,
-          "crc32": "ad1fd31b",
-          "fnv1a": "374850b4"
+          "crc32": "4ffee79f",
+          "fnv1a": "125f7446"
         },
         "formula_2_furrows": {
           "length": 1280,
-          "crc32": "aa8c3c5d",
-          "fnv1a": "81ca236a"
+          "crc32": "1f90c7c4",
+          "fnv1a": "f18e2275"
         },
         "formula_3_dermis": {
           "length": 1280,
@@ -410,13 +410,13 @@
         },
         "formula_2_pores": {
           "length": 1280,
-          "crc32": "801856de",
-          "fnv1a": "9e6e832a"
+          "crc32": "56585510",
+          "fnv1a": "07792c42"
         },
         "formula_2_furrows": {
           "length": 1280,
-          "crc32": "c4a98df2",
-          "fnv1a": "9cd75e1c"
+          "crc32": "fa12b119",
+          "fnv1a": "1b3342eb"
         },
         "formula_3_dermis": {
           "length": 1280,
@@ -540,13 +540,13 @@
         },
         "formula_2_pores": {
           "length": 1280,
-          "crc32": "c40ba661",
-          "fnv1a": "bf29d8b1"
+          "crc32": "7faac869",
+          "fnv1a": "ab6afb46"
         },
         "formula_2_furrows": {
           "length": 1280,
-          "crc32": "6f72be9f",
-          "fnv1a": "099bef26"
+          "crc32": "9076ddac",
+          "fnv1a": "ba817f02"
         },
         "formula_3_dermis": {
           "length": 1280,

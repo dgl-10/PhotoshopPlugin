@@ -127,7 +127,7 @@ test('examples.json frontal and turn match SkinBench v2, v1 without points, and 
     const examples = JSON.parse(fs.readFileSync(EXAMPLES_FILE, 'utf8'));
     const expectedMapSha = {
         front: '55bf0393e5658405241134eef9b3e6202f200b40276e4c6221bba501ff124bfa',
-        turn: '3f4b97be4689f397d9e5d58e16e6f95a43798e0832d3e95a54e86a92018fba06'
+        turn: 'efc9dddf9dbe0dc7e4b43739eee60a5b5c7bd77b9b6933aa2f9d1914b8532570'
     };
     const v1Dirs = {
         formula_2: path.join(BENCH_ROOT, 'variants', 'gemini4_stratum_v1'),

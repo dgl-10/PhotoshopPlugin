@@ -3,13 +3,13 @@
 /** Independent oracle mappings transcribed from SkinBench manifests, without product imports. */
 const FORMULAS = [
     { id: 'formula_1', variant: 'fable_flecks_v2', fileName: 'fable_flecks2.wasm', version: '2.0.0',
-        sha256: '182d5ffced5d9de556100a30d20c306956205a8328aab9088a1ef06a98ca672d',
+        sha256: '1c62615bfd94decceabd025561c4967645e05905f8ff12b0b36bb1cba17d12ad',
         layers: { formula_1_pores: 'flecks_pores', formula_1_unevenness: 'flecks_unevenness' } },
     { id: 'formula_2', variant: 'gemini4_stratum_v2', fileName: 'gemini4_stratum_v2.wasm', version: '2.0.0',
-        sha256: 'aa6579d2d0810246e00201b4bcf62a7bf7f3936b9f23cfa14f8cfafbb03e9ac1',
+        sha256: '819d5cb9c8f6ae3ab1084d21762c7101188063007446764ed9372f1ef6eb5899',
         layers: { formula_2_pores: 'gemini4_stratum_pores', formula_2_furrows: 'gemini4_stratum_furrows' } },
     { id: 'formula_3', variant: 'gpt6_dermis_v2', fileName: 'dermis.wasm', version: '2.0.1',
-        sha256: '2053aaeecb5ff613b47ec92903f7f27478f0c18d400f461ffac541c196ece809',
+        sha256: '7ad7e2c9d2497513a0a07636ac2c3345deda7b410d90de055a2ed59d518394e7',
         layers: { formula_3_dermis: 'gpt6_dermis_texture' } }
 ];
 
