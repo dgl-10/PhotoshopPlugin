@@ -18,6 +18,7 @@
  */
 
 const { SkinRequestError } = require('../skin-texture/core-adapter');
+const { RECIPES, DEFAULT_RECIPE } = require('../skin-texture/recipe-catalog');
 const { buildToolDescriptions, buildFaceFieldsSchema } = require('../skin-texture/recipe-tool-contract');
 // task20: areolas extend the start schema and add ps_skin_texture_find_areolas.
 const areolaContract = require('../skin-texture/areola-tool-contract');
@@ -110,7 +111,7 @@ function createSkinTextureTools({
                     },
                     fields: areolaContract.buildFieldsSchema(descriptions, buildFaceFieldsSchema(descriptions)),
                     sources: areolaContract.SOURCES_SCHEMA,
-                    recipe: { type: 'string', enum: ['skin_three_v2', 'areola_three_v1'], description: descriptions.recipe }
+                    recipe: { type: 'string', enum: [...RECIPES], description: descriptions.recipe }
                 },
                 required: ['task_id', 'request_id', 'rect', 'px_per_mm'],
                 additionalProperties: false
@@ -280,7 +281,7 @@ function createSkinTextureTools({
             const newAttempt = !job.apply || job.apply.state === 'not_applied';
             if (newAttempt && job.phase === 'ready' && !isChannelOpen()) return textResult(channelClosedMessage, true);
             if (!job.apply || job.apply.state === 'not_applied') {
-                const writingDesc = 'recipe skin_three_v2';
+                const writingDesc = `recipe ${(job.request && job.request.recipe) || DEFAULT_RECIPE}`;
                 note(task.id, `skin texture: writing ${writingDesc}`, 'ps_skin_texture_apply');
             }
             outcome = await jobs.apply(task, args.job_id, transportFor(task), args.mask_source);

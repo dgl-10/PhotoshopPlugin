@@ -27,7 +27,7 @@ function softSelection(width, height) {
     return data;
 }
 
-test('skin_three_v2 without areolas applies on a 16-bit document with a soft 8-bit selection', { skip }, async t => {
+test('skin_v2 without areolas applies on a 16-bit document with a soft 8-bit selection', { skip }, async t => {
     const selection = { x: 40, y: 30, width: 96, height: 96, data: softSelection(96, 96) };
     const harness = makeHarness(t, { limits: { responseBudgetMs: 10_000 },
         document: { width: 200, height: 160, bits: 16, hasSelection: true, selection } });

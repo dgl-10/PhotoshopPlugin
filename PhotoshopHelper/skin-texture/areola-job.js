@@ -127,14 +127,14 @@ function appliedText(job, allowAgentComparison = ALLOW_AGENT_FORMULA_COMPARISON)
         const names = ordered.map(d => `"${groupNameOf(d)}" (${d.visible ? 'visible' : 'hidden'})`);
         const areolaAction = allowAgentComparison
             ? 'Compare them by showing exactly one areola group.'
-            : `Leave "${visibleGroup}" visible and the other areola groups hidden; do not toggle or compare areola variants yourself — let the person compare them.`;
+            : `Leave "${visibleGroup}" visible and the other areola group hidden; do not toggle or compare areola variants yourself — let the person compare them.`;
         parts.push(`${layout.skin ? 'Skin' : 'Areolas'} contains the areola groups ${names.join(', ')}, each with the variant's own Nipple, Tubercles and Skin layers at the variant's opacity. ${areolaAction}`);
     }
     if (layout.skin) {
         const skinAction = allowAgentComparison
             ? 'Compare by showing exactly one formula group.'
-            : 'Leave Formula 1 visible and Formula 2 and Formula 3 hidden; do not toggle or compare formula variants yourself — let the person compare them.';
-        parts.push(`Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Pores, Furrows) and hidden Formula 3 (Dermis). All five layers use Linear Light at 50% opacity. ${skinAction}`);
+            : 'Leave Formula 1 visible and Formula 2 hidden; do not toggle or compare formula variants yourself — let the person compare them.';
+        parts.push(`Skin contains visible Formula 1 (Pores, Unevenness) and hidden Formula 2 (Pores, Furrows). All four layers use Linear Light at 50% opacity. ${skinAction}`);
     }
     if (layout.cutout) {
         parts.push('Each formula group has a soft mask that removes the general skin texture under the areolas across the band the areola variants reported; outside that band the mask is white.');

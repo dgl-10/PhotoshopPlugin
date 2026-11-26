@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Build the single-history-step apply script for three generation-two skin formulas.
- * All five exchange files and the common mask are validated before hierarchy creation.
+ * Build the single-history-step apply script for two generation-two skin formulas.
+ * All four exchange files and the common mask are validated before hierarchy creation.
  * Document checks, mask verification and rollback remain shared across all formulas.
  */
 
@@ -55,12 +55,12 @@ function skinDocumentFacts(d) {
 `;
 
 /**
- * Build the UXP script for writing recipe skin_three_v2 into Photoshop.
+ * Build the UXP script for writing recipe skin_v2 into Photoshop.
  *
  * @param {object} expect
  * @param {string} expect.jobId - Job identifier
  * @param {string} expect.taskId - Task identifier
- * @param {string} expect.recipe - Recipe identifier ('skin_three_v2')
+ * @param {string} expect.recipe - Recipe identifier ('skin_v2')
  * @param {string} expect.marker - Marker for unique job tracking
  * @param {object} expect.document - Expected document state at start
  * @param {object} expect.rect - Texture target rectangle { x, y, width, height }
@@ -279,7 +279,7 @@ try {
         return skinRefuse(maskSrc.kind === 'selection' ? 'SELECTION_READ_FAILED' : 'LAYER_MASK_READ_FAILED', 'Could not read the mask source pixels for verification. Nothing was changed.');
     }
 
-    // 7. Write all three formula groups inside Skin; only Formula 1 starts visible.
+    // 7. Write both formula groups inside Skin; only Formula 1 starts visible.
     const sixteen = was.bitsPerChannel === 16;
     const r = EXPECT.rect;
 

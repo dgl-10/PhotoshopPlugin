@@ -6,7 +6,7 @@
  * Component order is the Photoshop panel order, from top to bottom, and sourceLayerId
  * connects each product component to the unchanged SkinBench ABI response.
  */
-const DEFAULT_RECIPE = 'skin_three_v2';
+const DEFAULT_RECIPE = 'skin_v2';
 const FORMULA_DEFINITIONS = Object.freeze({
     formula_1: Object.freeze({
         id: 'formula_1', version: 2, name: 'Formula 1', visible: true,
@@ -22,21 +22,11 @@ const FORMULA_DEFINITIONS = Object.freeze({
         id: 'formula_2', version: 2, name: 'Formula 2', visible: false,
         variant: 'gemini4_stratum_v2', variantVersion: '2.0.0', fileName: 'gemini4_stratum_v2.wasm',
         sha256: '819d5cb9c8f6ae3ab1084d21762c7101188063007446764ed9372f1ef6eb5899',
-        // task25: all three face-aware v2 formulas receive the same six-point fields.face input.
+        // task25: both face-aware v2 formulas receive the same six-point fields.face input.
         fields: Object.freeze({ face: true }),
         layers: Object.freeze([
             Object.freeze({ output: 'pores', sourceLayerId: 'gemini4_stratum_pores', layerName: 'Pores', blendMode: 'linear_light', opacity: 0.5 }),
             Object.freeze({ output: 'furrows', sourceLayerId: 'gemini4_stratum_furrows', layerName: 'Furrows', blendMode: 'linear_light', opacity: 0.5 })
-        ])
-    }),
-    formula_3: Object.freeze({
-        id: 'formula_3', version: 2, name: 'Formula 3', visible: false,
-        variant: 'gpt6_dermis_v2', variantVersion: '2.0.1', fileName: 'dermis.wasm',
-        sha256: '7ad7e2c9d2497513a0a07636ac2c3345deda7b410d90de055a2ed59d518394e7',
-        // task25: all three face-aware v2 formulas receive the same six-point fields.face input.
-        fields: Object.freeze({ face: true }),
-        layers: Object.freeze([
-            Object.freeze({ output: 'dermis', sourceLayerId: 'gpt6_dermis_texture', layerName: 'Dermis', blendMode: 'linear_light', opacity: 0.5 })
         ])
     })
 });

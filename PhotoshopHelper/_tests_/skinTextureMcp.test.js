@@ -94,7 +94,7 @@ test('tools/list publishes the skin texture tools next to the existing ones', as
     assert.equal('outputs' in start.inputSchema.properties, false, 'outputs must not be in published start schema');
     assert.ok('recipe' in start.inputSchema.properties, 'recipe is in start schema');
     // task20: the areola-only recipe, the areola strength, the areola records and their sources.
-    assert.deepEqual(start.inputSchema.properties.recipe.enum, ['skin_three_v2', 'areola_three_v1']);
+    assert.deepEqual(start.inputSchema.properties.recipe.enum, ['skin_v2', 'areola_v1']);
     assert.deepEqual(Object.keys(start.inputSchema.properties.params.properties).sort(), ['areolaStrength', 'azimuthDeg', 'elevationDeg', 'seed']);
     assert.equal(start.inputSchema.properties.params.additionalProperties, false);
     assert.deepEqual(start.inputSchema.properties.params.properties.seed, { type: 'integer', minimum: 0, maximum: 4294967295 });
@@ -103,7 +103,7 @@ test('tools/list publishes the skin texture tools next to the existing ones', as
     assert.deepEqual(fields.properties.areolas.items.required, ['areola']);
     assert.equal(fields.properties.areolas.maxItems, 2);
     assert.deepEqual(Object.keys(start.inputSchema.properties.sources.properties), ['geometry', 'nipple', 'scale', 'light']);
-    assert.match(start.description, /areola_three_v1/);
+    assert.match(start.description, /areola_v1/);
     assert.equal(fields.additionalProperties, false);
     assert.deepEqual(fields.properties.face.required, ['eyes', 'noseTip', 'mouth', 'chin']);
     assert.equal(fields.properties.face.additionalProperties, false);
@@ -112,11 +112,11 @@ test('tools/list publishes the skin texture tools next to the existing ones', as
     assert.equal(fields.properties.face.properties.eyes.items.minItems, 2);
     assert.equal(fields.properties.face.properties.eyes.items.maxItems, 2);
     assert.match(start.description, /Formula 1 is visible/);
-    assert.match(start.description, /Formula 2 is hidden and contains "Pores" and "Furrows"; Formula 3 is hidden and contains "Dermis"/);
-    assert.match(start.description, /Areola Formula 1 is Fable \(fable_areola_v1 1\.0\.0\), Areola Formula 2 is Gemini \(gemini4_areola_v1 1\.0\.0\), Areola Formula 3 is Astra \(gpt6_areola_v1 1\.0\.0\)/);
+    assert.match(start.description, /Formula 2 is hidden and contains "Pores" and "Furrows"\. All four texture layers/);
+    assert.match(start.description, /Areola Formula 1 is Fable \(fable_areola_v1 1\.0\.0\), Areola Formula 2 is Gemini \(gemini4_areola_v1 1\.0\.0\)/);
 
     const apply = tools.find(t => t.name === 'ps_skin_texture_apply');
-    assert.match(apply.description, /Formula 2 is hidden with "Pores" and "Furrows"; Formula 3 is hidden with "Dermis"/);
+    assert.match(apply.description, /Formula 2 is hidden with "Pores" and "Furrows"\. All four layers/);
     assert.ok('mask_source' in apply.inputSchema.properties, 'mask_source is in apply schema');
     assert.deepEqual(apply.inputSchema.required, ['task_id', 'job_id'], 'mask_source is not unconditionally required for repeats');
 });
@@ -144,23 +144,23 @@ test('start, status and apply work end to end through the MCP router', async con
     assert.deepEqual(status.json.formulas.formula_1.params.fields, { face });
     assert.equal(status.json.formulas.formula_1.params.seed, 0);
     assert.deepEqual(status.json.formulas.formula_2.params.fields, { face });
-    assert.deepEqual(status.json.formulas.formula_3.params.fields, { face });
+    assert.equal(status.json.formulas.formula_3, undefined);
 
     // Applying without mask_source on first write is refused
     const noMask = await callTool('ps_skin_texture_apply', { task_id: taskId, job_id: job.json.job_id });
     assert.equal(noMask.result.isError, true);
     assert.equal(noMask.json.error.code, 'MASK_SOURCE_REQUIRED');
 
-    // Applying with selection mask_source writes Skin group with 5 components
+    // Applying with selection mask_source writes Skin group with 4 components
     const applied = await callTool('ps_skin_texture_apply', {
         task_id: taskId,
         job_id: job.json.job_id,
         mask_source: { kind: 'selection' }
     });
     assert.equal(applied.json.phase, 'applied', applied.text);
-    assert.equal(applied.json.recipe_id, 'skin_three_v2');
+    assert.equal(applied.json.recipe_id, 'skin_v2');
     assert.ok(fake.doc.layers.some(layer => layer.name.startsWith('Skin')));
-    assert.equal(applied.json.apply.layers.length, 5);
+    assert.equal(applied.json.apply.layers.length, 4);
 
     // Legacy outputs are refused before computing
     const legacyStart = await callTool('ps_skin_texture_start', {
@@ -227,11 +227,11 @@ test('ALLOW_AGENT_FORMULA_COMPARISON defaults to false and switches comparison g
     const { tools } = await rpc('tools/list', {});
     const startDesc = tools.find(tool => tool.name === 'ps_skin_texture_start').description;
     const applyDesc = tools.find(tool => tool.name === 'ps_skin_texture_apply').description;
-    assert.match(startDesc, /Leave Formula 1 visible and Formula 2 and Formula 3 hidden as created/);
+    assert.match(startDesc, /Leave Formula 1 visible and Formula 2 hidden as created/);
     assert.match(startDesc, /do not toggle formula groups, compare variants, or choose between them yourself/);
     assert.doesNotMatch(startDesc, /Compare formulas by showing exactly one formula group/);
-    assert.match(applyDesc, /Leave Formula 1 visible and Formula 2 and Formula 3 hidden as created/);
-    assert.match(applyDesc, /Leave "Areola Formula 1" visible and the other areola groups hidden as created/);
+    assert.match(applyDesc, /Leave Formula 1 visible and Formula 2 hidden as created/);
+    assert.match(applyDesc, /Leave "Areola Formula 1" visible and the other areola group hidden as created/);
     assert.doesNotMatch(applyDesc, /Compare areola variants by showing exactly one areola group/);
 
     // Both skin-only and areola/combined next_step messages respect the disabled default.
@@ -239,8 +239,8 @@ test('ALLOW_AGENT_FORMULA_COMPARISON defaults to false and switches comparison g
     assert.match(postApplyComparisonGuidance(), /do not toggle, compare, or choose between formula variants yourself/);
     const skinAndAreolaJob = { request: { layout: { skin: true, areolas: true, cutout: true } } };
     const areolaOnlyJob = { request: { layout: { skin: false, areolas: true, cutout: false } } };
-    assert.match(appliedText(skinAndAreolaJob), /Leave "Areola Formula 1" visible and the other areola groups hidden; do not toggle or compare areola variants yourself/);
-    assert.match(appliedText(skinAndAreolaJob), /Leave Formula 1 visible and Formula 2 and Formula 3 hidden; do not toggle or compare formula variants yourself/);
+    assert.match(appliedText(skinAndAreolaJob), /Leave "Areola Formula 1" visible and the other areola group hidden; do not toggle or compare areola variants yourself/);
+    assert.match(appliedText(skinAndAreolaJob), /Leave Formula 1 visible and Formula 2 hidden; do not toggle or compare formula variants yourself/);
     assert.match(appliedText(areolaOnlyJob), /Do not switch variants or tune opacity yourself unless the person explicitly asked/);
 
     // Flipping the toggle to true restores the original comparison wording verbatim.

@@ -7,10 +7,7 @@ const FORMULAS = [
         layers: { formula_1_pores: 'flecks_pores', formula_1_unevenness: 'flecks_unevenness' } },
     { id: 'formula_2', variant: 'gemini4_stratum_v2', fileName: 'gemini4_stratum_v2.wasm', version: '2.0.0',
         sha256: '819d5cb9c8f6ae3ab1084d21762c7101188063007446764ed9372f1ef6eb5899',
-        layers: { formula_2_pores: 'gemini4_stratum_pores', formula_2_furrows: 'gemini4_stratum_furrows' } },
-    { id: 'formula_3', variant: 'gpt6_dermis_v2', fileName: 'dermis.wasm', version: '2.0.1',
-        sha256: '7ad7e2c9d2497513a0a07636ac2c3345deda7b410d90de055a2ed59d518394e7',
-        layers: { formula_3_dermis: 'gpt6_dermis_texture' } }
+        layers: { formula_2_pores: 'gemini4_stratum_pores', formula_2_furrows: 'gemini4_stratum_furrows' } }
 ];
 
 // Each scale exercises both face paths; origins, lighting, seeds and pose also vary.
@@ -35,7 +32,7 @@ function independentRequest(config, _formulaId) {
         seed: config.params.seed,
         lighting: { azimuthDeg: config.params.azimuthDeg, elevationDeg: config.params.elevationDeg },
         zone: 'cheek',
-        // task25: all three face-aware v2 formulas receive the same fields.face payload.
+        // task25: both face-aware v2 formulas receive the same fields.face payload.
         ...(config.fields ? { fields: JSON.parse(JSON.stringify(config.fields)) } : {})
     };
 }

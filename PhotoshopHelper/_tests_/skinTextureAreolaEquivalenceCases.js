@@ -20,12 +20,6 @@ module.exports = {
       "variant": "gemini4_areola_v1",
       "fileName": "gemini4_areola.wasm",
       "sha256": "ff544bfe40dc2899a2fbfbc177ed668cc5088c0cacd28f09bd3600f74cfb7085"
-    },
-    {
-      "id": "areola_astra",
-      "variant": "gpt6_areola_v1",
-      "fileName": "gpt6_areola.wasm",
-      "sha256": "169179c3f435debc8d1b6eeb98c6da9feff8c52ae12a3893b1d2218866878d0e"
     }
   ],
   "cases": [
@@ -121,9 +115,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -143,21 +134,6 @@ module.exports = {
           "length": 75076,
           "crc32": "42b4ecb8",
           "fnv1a": "c1d89350"
-        },
-        "areola_astra_nipple": {
-          "length": 75076,
-          "crc32": "b3b232af",
-          "fnv1a": "4b796525"
-        },
-        "areola_astra_tubercles": {
-          "length": 75076,
-          "crc32": "2a889a1a",
-          "fnv1a": "d53db86b"
-        },
-        "areola_astra_skin": {
-          "length": 75076,
-          "crc32": "e021a916",
-          "fnv1a": "115bbfd6"
         },
         "areola_gemini_nipple": {
           "length": 75076,
@@ -268,9 +244,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -290,21 +263,6 @@ module.exports = {
           "length": 137052,
           "crc32": "f6933e78",
           "fnv1a": "95c86287"
-        },
-        "areola_astra_nipple": {
-          "length": 137052,
-          "crc32": "415bb4b4",
-          "fnv1a": "788b55c4"
-        },
-        "areola_astra_tubercles": {
-          "length": 137052,
-          "crc32": "919b5b3b",
-          "fnv1a": "8bea82ff"
-        },
-        "areola_astra_skin": {
-          "length": 137052,
-          "crc32": "16821dbd",
-          "fnv1a": "4c3bc7c4"
         },
         "areola_gemini_nipple": {
           "length": 137052,
@@ -451,9 +409,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -473,21 +428,6 @@ module.exports = {
           "length": 217056,
           "crc32": "55c14da1",
           "fnv1a": "4fb04a12"
-        },
-        "areola_astra_nipple": {
-          "length": 217056,
-          "crc32": "d60388c9",
-          "fnv1a": "a2224e4b"
-        },
-        "areola_astra_tubercles": {
-          "length": 217056,
-          "crc32": "55e521f9",
-          "fnv1a": "8a424b6c"
-        },
-        "areola_astra_skin": {
-          "length": 217056,
-          "crc32": "5b88544c",
-          "fnv1a": "7c715994"
         },
         "areola_gemini_nipple": {
           "length": 217056,
@@ -598,9 +538,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -620,21 +557,6 @@ module.exports = {
           "length": 121520,
           "crc32": "2e3f45fa",
           "fnv1a": "ea59640d"
-        },
-        "areola_astra_nipple": {
-          "length": 121520,
-          "crc32": "ffb2990a",
-          "fnv1a": "e5831aeb"
-        },
-        "areola_astra_tubercles": {
-          "length": 121520,
-          "crc32": "f7e331fc",
-          "fnv1a": "74fc2345"
-        },
-        "areola_astra_skin": {
-          "length": 121520,
-          "crc32": "737a8885",
-          "fnv1a": "6ab6cae5"
         },
         "areola_gemini_nipple": {
           "length": 121520,
@@ -745,9 +667,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -767,21 +686,6 @@ module.exports = {
           "length": 39804,
           "crc32": "bcb71210",
           "fnv1a": "381097c0"
-        },
-        "areola_astra_nipple": {
-          "length": 39804,
-          "crc32": "3cedebf5",
-          "fnv1a": "e2a35f06"
-        },
-        "areola_astra_tubercles": {
-          "length": 39804,
-          "crc32": "5dc16eac",
-          "fnv1a": "26907fff"
-        },
-        "areola_astra_skin": {
-          "length": 39804,
-          "crc32": "ca645668",
-          "fnv1a": "696ea60d"
         },
         "areola_gemini_nipple": {
           "length": 39804,
@@ -892,9 +796,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -914,21 +815,6 @@ module.exports = {
           "length": 89040,
           "crc32": "1dc9d948",
           "fnv1a": "6794f90b"
-        },
-        "areola_astra_nipple": {
-          "length": 89040,
-          "crc32": "98631f74",
-          "fnv1a": "85c2ea2a"
-        },
-        "areola_astra_tubercles": {
-          "length": 89040,
-          "crc32": "9d9c06f0",
-          "fnv1a": "e8bd8729"
-        },
-        "areola_astra_skin": {
-          "length": 89040,
-          "crc32": "6c047e71",
-          "fnv1a": "2302a68f"
         },
         "areola_gemini_nipple": {
           "length": 89040,
@@ -1039,9 +925,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -1061,21 +944,6 @@ module.exports = {
           "length": 183920,
           "crc32": "1c2b2ff1",
           "fnv1a": "826c4bb3"
-        },
-        "areola_astra_nipple": {
-          "length": 183920,
-          "crc32": "899232ee",
-          "fnv1a": "3f2de779"
-        },
-        "areola_astra_tubercles": {
-          "length": 183920,
-          "crc32": "0386feb3",
-          "fnv1a": "54e8ae53"
-        },
-        "areola_astra_skin": {
-          "length": 183920,
-          "crc32": "0d5cb995",
-          "fnv1a": "7da3993e"
         },
         "areola_gemini_nipple": {
           "length": 183920,
@@ -1186,9 +1054,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -1208,21 +1073,6 @@ module.exports = {
           "length": 274216,
           "crc32": "2c5c19ce",
           "fnv1a": "e8e08d65"
-        },
-        "areola_astra_nipple": {
-          "length": 274216,
-          "crc32": "83496897",
-          "fnv1a": "e9d286da"
-        },
-        "areola_astra_tubercles": {
-          "length": 274216,
-          "crc32": "6b68f8fd",
-          "fnv1a": "8af3be74"
-        },
-        "areola_astra_skin": {
-          "length": 274216,
-          "crc32": "a447e0bc",
-          "fnv1a": "56ac4d4e"
         },
         "areola_gemini_nipple": {
           "length": 274216,
@@ -1333,9 +1183,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -1355,21 +1202,6 @@ module.exports = {
           "length": 75096,
           "crc32": "414c6700",
           "fnv1a": "cc83d4da"
-        },
-        "areola_astra_nipple": {
-          "length": 75096,
-          "crc32": "925a9b4d",
-          "fnv1a": "a8bc6209"
-        },
-        "areola_astra_tubercles": {
-          "length": 75096,
-          "crc32": "e9555ccb",
-          "fnv1a": "d245fdb3"
-        },
-        "areola_astra_skin": {
-          "length": 75096,
-          "crc32": "bbe085f8",
-          "fnv1a": "9064dbe2"
         },
         "areola_gemini_nipple": {
           "length": 75096,
@@ -1480,9 +1312,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -1502,21 +1331,6 @@ module.exports = {
           "length": 65208,
           "crc32": "c7a2df20",
           "fnv1a": "2b836f41"
-        },
-        "areola_astra_nipple": {
-          "length": 65208,
-          "crc32": "0192a5fc",
-          "fnv1a": "8b7c6b8d"
-        },
-        "areola_astra_tubercles": {
-          "length": 65208,
-          "crc32": "3164f2ba",
-          "fnv1a": "e6599a56"
-        },
-        "areola_astra_skin": {
-          "length": 65208,
-          "crc32": "e2f33c71",
-          "fnv1a": "980a79ff"
         },
         "areola_gemini_nipple": {
           "length": 65208,
@@ -1627,9 +1441,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -1649,21 +1460,6 @@ module.exports = {
           "length": 27334,
           "crc32": "612842a8",
           "fnv1a": "d103aa21"
-        },
-        "areola_astra_nipple": {
-          "length": 27334,
-          "crc32": "5be428cb",
-          "fnv1a": "f923177f"
-        },
-        "areola_astra_tubercles": {
-          "length": 27334,
-          "crc32": "f742d545",
-          "fnv1a": "c200dc4f"
-        },
-        "areola_astra_skin": {
-          "length": 27334,
-          "crc32": "940a69fd",
-          "fnv1a": "7b04bb47"
         },
         "areola_gemini_nipple": {
           "length": 27334,
@@ -1774,9 +1570,6 @@ module.exports = {
         "areola_fable_nipple": "areola_nipple",
         "areola_fable_tubercles": "areola_tubercles",
         "areola_fable_skin": "areola_skin",
-        "areola_astra_nipple": "gpt6_areola_nipple",
-        "areola_astra_tubercles": "gpt6_areola_tubercles",
-        "areola_astra_skin": "gpt6_areola_skin",
         "areola_gemini_nipple": "areola_nipple",
         "areola_gemini_tubercles": "areola_tubercles",
         "areola_gemini_skin": "areola_skin"
@@ -1796,21 +1589,6 @@ module.exports = {
           "length": 85224,
           "crc32": "54a11668",
           "fnv1a": "f6519587"
-        },
-        "areola_astra_nipple": {
-          "length": 85224,
-          "crc32": "c3921e08",
-          "fnv1a": "aaa40de0"
-        },
-        "areola_astra_tubercles": {
-          "length": 85224,
-          "crc32": "45eeff3b",
-          "fnv1a": "2246e2db"
-        },
-        "areola_astra_skin": {
-          "length": 85224,
-          "crc32": "d66f9e3c",
-          "fnv1a": "2c2f0082"
         },
         "areola_gemini_nipple": {
           "length": 85224,
@@ -1843,21 +1621,6 @@ module.exports = {
           "length": 85224,
           "crc32": "54a11668",
           "fnv1a": "f6519587"
-        },
-        "areola_astra_nipple": {
-          "length": 85224,
-          "crc32": "c3921e08",
-          "fnv1a": "aaa40de0"
-        },
-        "areola_astra_tubercles": {
-          "length": 85224,
-          "crc32": "45eeff3b",
-          "fnv1a": "2246e2db"
-        },
-        "areola_astra_skin": {
-          "length": 85224,
-          "crc32": "d66f9e3c",
-          "fnv1a": "2c2f0082"
         },
         "areola_gemini_nipple": {
           "length": 85224,

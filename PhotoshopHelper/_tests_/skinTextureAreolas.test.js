@@ -70,9 +70,9 @@ test('areola request: strength, recipe and sources are validated', () => {
     for (const bad of [-1, 21, NaN, '1', null]) {
         refused({ fields: { areolas: [GOOD] }, params: { areolaStrength: bad } }, 'INVALID_PARAMS');
     }
-    refused({ recipe: 'areola_three_v1' }, 'INVALID_FIELDS');
-    refused({ recipe: 'areola_three_v1', fields: { face: FACE } }, 'INVALID_FIELDS');
-    const withFace = refused({ recipe: 'areola_three_v1', fields: { face: FACE, areolas: [GOOD] } }, 'INVALID_FIELDS');
+    refused({ recipe: 'areola_v1' }, 'INVALID_FIELDS');
+    refused({ recipe: 'areola_v1', fields: { face: FACE } }, 'INVALID_FIELDS');
+    const withFace = refused({ recipe: 'areola_v1', fields: { face: FACE, areolas: [GOOD] } }, 'INVALID_FIELDS');
     assert.match(withFace.message, /fields\.face/);
     refused({ fields: { areolas: [GOOD] }, sources: { geometry: { kind: 'guess' } } }, 'INVALID_SOURCES');
     refused({ fields: { areolas: [GOOD] }, sources: { geometry: { kind: 'given', note: 'x'.repeat(301) } } }, 'INVALID_SOURCES');
@@ -85,18 +85,17 @@ test('areola request: strength, recipe and sources are validated', () => {
 test('areola request: accepted values are canonical and carry the areola groups before the skin groups', () => {
     const request = adapter.checkRequestShape({ ...BASE, fields: { areolas: [{ areola: { center: [50, 50], radii: [10, 8] } }] } });
     assert.equal(request.areolaStrength, 1, 'the default strength is the variants\' own');
-    // The record is filled in explicitly, so all three variants receive the same nipple.
+    // The record is filled in explicitly, so both variants receive the same nipple.
     assert.deepEqual(request.fields.areolas, [{ areola: { center: [50, 50], radii: [10, 8], angleDeg: 0 }, nipple: [50, 50], nippleRadiusPx: 3 }]);
     assert.deepEqual(request.outputs, [
         'areola_fable_nipple', 'areola_fable_tubercles', 'areola_fable_skin',
         'areola_gemini_nipple', 'areola_gemini_tubercles', 'areola_gemini_skin',
-        'areola_astra_nipple', 'areola_astra_tubercles', 'areola_astra_skin',
-        'formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows', 'formula_3_dermis',
+        'formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows',
         'areola_cutout'
     ]);
-    const only = adapter.checkRequestShape({ ...BASE, recipe: 'areola_three_v1', fields: { areolas: [GOOD] }, params: { areolaStrength: 20 } });
+    const only = adapter.checkRequestShape({ ...BASE, recipe: 'areola_v1', fields: { areolas: [GOOD] }, params: { areolaStrength: 20 } });
     assert.equal(only.areolaStrength, 20);
-    assert.equal(only.outputs.length, 9, 'areolas only: no skin components and no cut-out');
+    assert.equal(only.outputs.length, 6, 'areolas only: no skin components and no cut-out');
     assert.ok(only.outputs.every(key => key.startsWith('areola_') && key !== 'areola_cutout'));
     // The key is independent of the order of members in the agent's JSON.
     const reordered = { areola: { angleDeg: 5, radii: [10, 8], center: [50, 50] } };
@@ -111,34 +110,34 @@ test('areola request: accepted values are canonical and carry the areola groups 
 test('a request without areolas yields exactly the old key, outputs and parameters', () => {
     const plain = adapter.checkRequestShape({ ...BASE, params: { seed: 7, azimuthDeg: 200, elevationDeg: 30 } });
     // Transcribed by hand from the task15 contract, not produced by the code under test.
-    assert.equal(plain.key, '{"recipe":"skin_three_v2","rect":{"x":0,"y":0,"width":100,"height":100},"pxPerMm":5,'
+    assert.equal(plain.key, '{"recipe":"skin_v2","rect":{"x":0,"y":0,"width":100,"height":100},"pxPerMm":5,'
         + '"params":{"seed":7,"azimuthDeg":200,"elevationDeg":30},"fields":null}');
-    assert.deepEqual(plain.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows', 'formula_3_dermis']);
+    assert.deepEqual(plain.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows']);
     assert.deepEqual(plain.params, { seed: 7, azimuthDeg: 200, elevationDeg: 30 });
     assert.equal(plain.fields, null);
-    assert.equal(plain.recipe, 'skin_three_v2');
+    assert.equal(plain.recipe, 'skin_v2');
     assert.equal('areolaStrength' in plain, false, 'no areolaStrength member');
     assert.equal(plain.layout.areolas, false);
     assert.equal(plain.layout.cutout, false);
-    assert.equal(plain.layout.components.length, 5);
+    assert.equal(plain.layout.components.length, 4);
     assert.doesNotMatch(plain.key, /areola|sources/i);
 
     const withFace = adapter.checkRequestShape({ ...BASE, fields: { face: FACE } });
-    assert.equal(withFace.key, '{"recipe":"skin_three_v2","rect":{"x":0,"y":0,"width":100,"height":100},"pxPerMm":5,'
+    assert.equal(withFace.key, '{"recipe":"skin_v2","rect":{"x":0,"y":0,"width":100,"height":100},"pxPerMm":5,'
         + '"params":{"seed":1,"azimuthDeg":315,"elevationDeg":45},'
         + '"fields":{"face":{"eyes":[[10,10],[30,10]],"noseTip":[20,20],"mouth":[[15,30],[25,30]],"chin":[20,40]}}}');
     assert.deepEqual(Object.keys(withFace.fields), ['face']);
-    assert.equal(withFace.outputs.length, 5);
+    assert.equal(withFace.outputs.length, 4);
 
     // Naming the origin of a parameter is the only thing that adds a member to the key.
     const named = adapter.checkRequestShape({ ...BASE, sources: { scale: { kind: 'given' } } });
     assert.match(named.key, /"sources"/);
-    assert.equal(named.outputs.length, 5);
+    assert.equal(named.outputs.length, 4);
 
     // A face together with areolas keeps the face members exactly as without areolas.
     const both = adapter.checkRequestShape({ ...BASE, fields: { face: FACE, areolas: [GOOD] } });
     assert.deepEqual(both.fields.face, withFace.fields.face);
-    assert.equal(both.recipe, 'skin_three_v2');
+    assert.equal(both.recipe, 'skin_v2');
 });
 
 // ---- 2. Geometry --------------------------------------------------------------------------

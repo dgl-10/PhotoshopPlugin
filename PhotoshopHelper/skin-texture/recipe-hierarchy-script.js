@@ -3,7 +3,7 @@
 /**
  * The small variable portion of the Photoshop apply script.
  * Mask acquisition, exchange verification, rollback and history handling stay in their
- * existing paths. Only the hierarchy is driven by the five pinned component descriptors.
+ * existing paths. Only the hierarchy is driven by the four pinned component descriptors.
  */
 const CREATE_HIERARCHY = `
     // Creation follows Photoshop's active insertion context, which may be a hidden

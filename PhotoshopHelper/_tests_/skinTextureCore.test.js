@@ -14,12 +14,12 @@ const good = { rect: { x: 20, y: 30, width: 24, height: 20 }, px_per_mm: 4 };
 const face = { eyes: [[-10, 20], [80, 20]], noseTip: [35, 65], mouth: [[10, 90], [60, 90]], chin: [35, 125], yawDeg: 12, pitchDeg: -5 };
 
 // Face coordinates remain document-relative even when the patch misses several landmarks.
-test('three-formula defaults, lighting, fields and canonical identity', () => {
+test('two-formula defaults, lighting, fields and canonical identity', () => {
     const implicit = adapter.checkRequestShape(good);
-    const explicit = adapter.checkRequestShape({ ...good, recipe: 'skin_three_v2' });
-    assert.equal(implicit.recipe, 'skin_three_v2');
+    const explicit = adapter.checkRequestShape({ ...good, recipe: 'skin_v2' });
+    assert.equal(implicit.recipe, 'skin_v2');
     assert.equal(implicit.key, explicit.key);
-    assert.deepEqual(implicit.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows', 'formula_3_dermis']);
+    assert.deepEqual(implicit.outputs, ['formula_1_pores', 'formula_1_unevenness', 'formula_2_pores', 'formula_2_furrows']);
     const withFace = adapter.checkRequestShape({ ...good, fields: { face } });
     assert.notEqual(withFace.key, implicit.key);
     const reordered = { chin: face.chin, mouth: face.mouth, noseTip: face.noseTip, eyes: face.eyes, pitchDeg: -5, yawDeg: 12 };
@@ -27,7 +27,7 @@ test('three-formula defaults, lighting, fields and canonical identity', () => {
     const changed = adapter.checkRequestShape({ ...good, fields: { face: { ...face, yawDeg: 13 } } });
     assert.notEqual(changed.key, withFace.key);
     const normalized = adapter.normalizeForDocument(withFace, { width: 120, height: 100 });
-    for (const id of ['formula_1', 'formula_2', 'formula_3']) {
+    for (const id of ['formula_1', 'formula_2']) {
         const request = normalized.coreParams[id];
         assert.equal(request.width, good.rect.width);
         assert.equal(request.height, good.rect.height);
@@ -35,7 +35,7 @@ test('three-formula defaults, lighting, fields and canonical identity', () => {
         assert.deepEqual(request.rect, good.rect);
         assert.equal(request.seed, 1);
         assert.deepEqual(request.lighting, { azimuthDeg: 315, elevationDeg: 45 });
-        // task25: all three v2 formulas receive the same canonical fields.face object.
+        // task25: both v2 formulas receive the same canonical fields.face object.
         assert.deepEqual(request.fields, { face });
     }
     assert.equal(normalized.work.rectPixels, 480);
@@ -45,7 +45,6 @@ test('three-formula defaults, lighting, fields and canonical identity', () => {
     normalized.coreParams.formula_1.fields.face.chin[0] = 999;
     assert.equal(face.chin[0], 35);
     assert.equal(normalized.coreParams.formula_2.fields.face.chin[0], 35);
-    assert.equal(normalized.coreParams.formula_3.fields.face.chin[0], 35);
 });
 
 // Every rejected argument is caught before a Photoshop probe or a Wasm allocation is needed.
@@ -77,21 +76,21 @@ test('main-thread parameter resolution does not compile, instantiate or execute 
         WebAssembly.Instance = function forbiddenInstance() { throw new Error('main-thread instance'); };
         const checked = adapter.checkRequestShape({ ...good, fields: { face } });
         const normalized = adapter.normalizeForDocument(checked, { width: 120, height: 100 });
-        assert.equal(normalized.coreParams.formula_3.pxPerMm, 4);
+        assert.equal(normalized.coreParams.formula_2.pxPerMm, 4);
     } finally {
         WebAssembly.Module = OriginalModule;
         WebAssembly.Instance = OriginalInstance;
     }
 });
 
-test('default and explicit recipes produce the same five outputs and versioned metadata', { skip: missingBinaryReason() }, async () => {
+test('default and explicit recipes produce the same outputs and versioned metadata', { skip: missingBinaryReason() }, async () => {
     const document = { width: 120, height: 100 };
     const normalized = adapter.normalizeForDocument(adapter.checkRequestShape(good), document);
     const [implicit, explicit] = await Promise.all([
         runWorker(normalized.coreParams, good.rect, document, undefined),
-        runWorker(normalized.coreParams, good.rect, document, 'skin_three_v2')
+        runWorker(normalized.coreParams, good.rect, document, 'skin_v2')
     ]);
-    assert.equal(implicit.recipe, 'skin_three_v2');
+    assert.equal(implicit.recipe, 'skin_v2');
     assert.deepEqual(Object.keys(implicit.files), catalog.RECIPE_COMPONENTS.map(layer => layer.componentKey));
     for (const component of catalog.RECIPE_COMPONENTS) {
         const decoded = SkinExchange.decode(implicit.files[component.componentKey]);
@@ -135,7 +134,7 @@ test('cancelling the real coordinator stops its active nested worker tree', { sk
         require(threads.workerData.workerFile);
     `;
     const worker = new Worker(bootstrap, { eval: true, workerData: {
-        counterBuffer, workerFile, recipe: 'skin_three_v2', formulaParams: normalized.coreParams,
+        counterBuffer, workerFile, recipe: 'skin_v2', formulaParams: normalized.coreParams,
         meta: { jobId: 'skt-0123456789ab', taskId: 'task-test', document: { id: 7, ...document }, rect }
     } });
     context.after(() => worker.terminate());
@@ -173,7 +172,7 @@ test('each real formula worker exits before the next formula starts', { skip: mi
         require(threads.workerData.workerFile);
     `;
     const worker = new Worker(bootstrap, { eval: true, workerData: {
-        workerFile, recipe: 'skin_three_v2', formulaParams: normalized.coreParams,
+        workerFile, recipe: 'skin_v2', formulaParams: normalized.coreParams,
         meta: { jobId: 'skt-0123456789ab', taskId: 'task-test', document: { id: 7, width: 120, height: 100 }, rect: good.rect }
     } });
     context.after(() => worker.terminate());
@@ -187,17 +186,16 @@ test('each real formula worker exits before the next formula starts', { skip: mi
     });
     assert.deepEqual(audit.map(event => [event.kind, event.formula, event.active]), [
         ['start', 'formula_1', 1], ['exit', 'formula_1', 0],
-        ['start', 'formula_2', 1], ['exit', 'formula_2', 0],
-        ['start', 'formula_3', 1], ['exit', 'formula_3', 0]
+        ['start', 'formula_2', 1], ['exit', 'formula_2', 0]
     ]);
 });
 
 test('the exchange file round-trips and refuses every kind of damage', () => {
     const rect = { x: 3, y: 4, width: 20, height: 10 };
     const gray = new Uint8Array(200).map((_, i) => (i * 37) & 255);
-    const meta = { jobId: 'skt-0123456789ab', taskId: 'task-1', output: 'formula_3_dermis', document: { id: 5, width: 50, height: 40 }, rect };
+    const meta = { jobId: 'skt-0123456789ab', taskId: 'task-1', output: 'formula_2_furrows', document: { id: 5, width: 50, height: 40 }, rect };
     const bytes = SkinExchange.encode(meta, gray);
-    const expect = { jobId: meta.jobId, taskId: 'task-1', output: 'formula_3_dermis', documentId: 5, document: { width: 50, height: 40 }, rect };
+    const expect = { jobId: meta.jobId, taskId: 'task-1', output: 'formula_2_furrows', documentId: 5, document: { width: 50, height: 40 }, rect };
     assert.deepEqual(Buffer.from(SkinExchange.decode(bytes, expect).payload), Buffer.from(gray));
 
     const cases = {

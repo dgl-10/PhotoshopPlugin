@@ -6,16 +6,15 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildDiagnostics } = require('../skin-texture/recipe-job-view');
 
-/** A finished three-formula job with the given face fit reported the way Fable and Gemini do. */
+/** A finished two-formula job with the given face fit reported the way Fable and Gemini do. */
 function job(pxPerMm, impliedPxPerMm, { fable = true, gemini = true } = {}) {
     const params = { pxPerMm };
     const fit = { yawDeg: 60, impliedPxPerMm };
     return {
-        coreParams: { formula_1: params, formula_2: params, formula_3: params },
+        coreParams: { formula_1: params, formula_2: params },
         stats: {
             formula_1: { layers: {}, diagnostics: fable ? { fields: { mode: 'face', faces: [fit] } } : {} },
-            formula_2: { layers: {}, diagnostics: gemini ? { gemini4_stratum: { fits: [fit] } } : {} },
-            formula_3: { layers: {}, diagnostics: {} }
+            formula_2: { layers: {}, diagnostics: gemini ? { gemini4_stratum: { fits: [fit] } } : {} }
         }
     };
 }

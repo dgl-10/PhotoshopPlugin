@@ -13,7 +13,7 @@ const faceMap = require('../skin-texture/face-map');
 const { FORMULA_DEFINITIONS } = require('../skin-texture/formula-definitions');
 const { missingBinaryReason, runWorker } = require('./skinTextureTestSupport');
 const { FORMULAS, CASES, independentRequest } = require('./skinTextureEquivalenceCases');
-const FIXTURE_FILE = path.join(__dirname, 'fixtures', 'skin-three-v2-checksums.json');
+const FIXTURE_FILE = path.join(__dirname, 'fixtures', 'skin-v2-checksums.json');
 const BENCH_ROOT = process.env.SKINBENCH_ROOT || path.resolve(__dirname, '../../../SkinBench');
 const RUNNER_FILE = path.join(BENCH_ROOT, 'variants', 'runner.js');
 
@@ -33,7 +33,7 @@ test('private formulas stay outside Git and the installer', () => {
     assert.ok(require('../package.json').build.files.includes('!skin-texture/*.wasm'));
 });
 
-test('pinned face fixtures exercise changed bytes across all three formulas', () => {
+test('pinned face fixtures exercise changed bytes across both formulas', () => {
     const fixture = JSON.parse(fs.readFileSync(FIXTURE_FILE, 'utf8'));
     // This runs without binaries or SkinBench and prevents replacing the matrix with
     // neutral or duplicate samples that would no longer detect face-routing regressions.
@@ -46,13 +46,13 @@ test('pinned face fixtures exercise changed bytes across all three formulas', ()
     }
 });
 
-test('all three local cores report pinned provenance', { skip: missingBinaryReason() }, () => {
+test('both local cores report pinned provenance', { skip: missingBinaryReason() }, () => {
     const identity = loader.getWasmCoreIdentity();
-    assert.equal(identity.name, 'skin_three_v2');
+    assert.equal(identity.name, 'skin_v2');
     assert.equal(identity.version, '2.0.0');
     assert.equal(identity.matchesPinned, true);
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
-    assert.equal(identity.formulas.length, 3);
+    assert.equal(identity.formulas.length, 2);
     for (const formula of FORMULAS) {
         const actual = identity.formulas.find(core => core.formulaId === formula.id);
         assert.equal(actual.name, formula.variant);
@@ -130,8 +130,7 @@ test('examples.json frontal and turn match SkinBench v2, v1 without points, and 
         turn: 'efc9dddf9dbe0dc7e4b43739eee60a5b5c7bd77b9b6933aa2f9d1914b8532570'
     };
     const v1Dirs = {
-        formula_2: path.join(BENCH_ROOT, 'variants', 'gemini4_stratum_v1'),
-        formula_3: path.join(BENCH_ROOT, 'variants', 'gpt6_dermis_v1')
+        formula_2: path.join(BENCH_ROOT, 'variants', 'gemini4_stratum_v1')
     };
     const offsetRect = { x: 120, y: 127, width: 163, height: 181 };
 

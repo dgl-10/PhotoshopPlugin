@@ -36,8 +36,8 @@ async function computeFormula(formulaId, request, meta, postProgress) {
     }
 }
 
-/** Run all three formulas sequentially and gather their final transferable buffers. */
-async function computeSkinThreeV2(workerData, postProgress = () => {}) {
+/** Run both formulas sequentially and gather their final transferable buffers. */
+async function computeSkinRecipe(workerData, postProgress = () => {}) {
     if (workerData.recipe !== DEFAULT_RECIPE && workerData.recipe !== AREOLA_RECIPE) throw new Error(`Unsupported recipe: ${workerData.recipe}`);
     const files = {}, checksums = {}, stats = {}, timings = {}, cores = {}, memory = {};
     const transfer = [];
@@ -73,4 +73,4 @@ async function computeSkinThreeV2(workerData, postProgress = () => {}) {
     return { files, checksums, stats, timings, cores, memory, transfer };
 }
 
-module.exports = { computeSkinThreeV2 };
+module.exports = { computeSkinRecipe };

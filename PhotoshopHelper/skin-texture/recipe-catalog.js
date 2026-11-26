@@ -9,7 +9,7 @@ const { DEFAULT_RECIPE, FORMULA_DEFINITIONS, RECIPE_COMPONENTS } = require('./fo
 const { AREOLA_RECIPE, AREOLA_COMPONENTS } = require('./areola-definitions');
 const wasmLoader = require('./wasm-loader');
 
-// task20: areola_three_v1 computes the three areola variants only, without the skin formulas.
+// task20: areola_v1 computes the two areola variants only, without the skin formulas.
 const RECIPES = Object.freeze([DEFAULT_RECIPE, AREOLA_RECIPE]);
 const ALLOWED_RECIPE_PARAMS = Object.freeze(['seed', 'azimuthDeg', 'elevationDeg']);
 const DEFAULT_RECIPE_PARAMS = Object.freeze({ seed: 1, azimuthDeg: 315, elevationDeg: 45 });

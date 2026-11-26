@@ -106,11 +106,11 @@ function normalizeFace(face, fail) {
 function checkRequestShape(args) {
     const rect = checkRectShape(args.rect);
     const pxPerMm = args.px_per_mm;
-    // The three variants support different ranges; this is their common intersection.
+    // The variants support different ranges; this is their common intersection.
     if (typeof pxPerMm !== 'number' || !Number.isFinite(pxPerMm) || pxPerMm < 0.25 || pxPerMm > 400) {
         throw new SkinRequestError('INVALID_SCALE', 'px_per_mm is required: a finite number between 0.25 and 400 document pixels per millimetre of skin.');
     }
-    if (args.outputs !== undefined) throw new SkinRequestError('INVALID_OUTPUTS', 'Omit outputs: the recipe computes all five components of Formula 1, Formula 2 and Formula 3.');
+    if (args.outputs !== undefined) throw new SkinRequestError('INVALID_OUTPUTS', 'Omit outputs: the recipe computes all four components of Formula 1 and Formula 2.');
     const recipe = args.recipe === undefined ? recipeCatalog.DEFAULT_RECIPE : args.recipe;
     if (!recipeCatalog.isRecipe(recipe)) throw new SkinRequestError('INVALID_RECIPE', `Unknown recipe: "${recipe}". Supported recipes: ${recipeCatalog.RECIPES.join(', ')}.`);
     const supplied = args.params === undefined ? {} : args.params;
@@ -142,7 +142,7 @@ function checkRequestShape(args) {
     return out;
 }
 
-/** Build the three small contract requests after Photoshop confirms document dimensions. */
+/** Build the small contract requests after Photoshop confirms document dimensions. */
 function normalizeForDocument(request, document) {
     if (request.rect.x + request.rect.width > document.width || request.rect.y + request.rect.height > document.height) {
         throw new SkinRequestError('RECT_OUTSIDE_DOCUMENT', `rect ${JSON.stringify(request.rect)} does not fit the document, which is ${document.width}x${document.height} pixels.`);

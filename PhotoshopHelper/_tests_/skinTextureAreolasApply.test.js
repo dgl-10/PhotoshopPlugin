@@ -24,7 +24,7 @@ const { AREOLA_VARIANTS, twoAreolas, expectedRegion, to16, fromRelief16 } = supp
 const RECT = { x: 235, y: 195, width: 330, height: 120 };
 // An apply waits for its outcome instead of answering "still writing" when the machine is busy.
 const PATIENT = { responseBudgetMs: 120_000 };
-const FORMULA_GROUP_NAMES = ['Formula 1', 'Formula 2', 'Formula 3'];
+const FORMULA_GROUP_NAMES = ['Formula 1', 'Formula 2'];
 
 /**
  * Start a job, wait until it is ready and return the ready status.
@@ -59,7 +59,7 @@ for (const bits of [8, 16]) {
         const { taskId, jobId, start, ready } = await computeJob(harness);
 
         // Status before the apply: what computed the areolas, where, and where the parameters came from.
-        assert.equal(start.json.recipe_id, 'skin_three_v2');
+        assert.equal(start.json.recipe_id, 'skin_v2');
         assert.equal(ready.areolas.strength, 1);
         assert.deepEqual(ready.areolas.region, region);
         assert.equal(ready.areolas.general_skin_cut_out, true);
@@ -67,7 +67,7 @@ for (const bits of [8, 16]) {
         assert.deepEqual(ready.areolas.records[0].areola, records[0].areola);
         assert.deepEqual(ready.areolas.records[0].nipple, [302, 251]);
         assert.deepEqual(ready.areolas.records[1].nipple, [500, 260], 'a missing nipple is filled in explicitly, with the centre');
-        assert.equal(ready.areolas.variants.length, 3);
+        assert.equal(ready.areolas.variants.length, 2);
         for (const [i, expected] of AREOLA_VARIANTS.entries()) {
             const variant = ready.areolas.variants[i];
             assert.equal(variant.id, expected.id);
@@ -105,7 +105,7 @@ for (const bits of [8, 16]) {
         assert.ok(root, 'the outer group is "Skin [marker]"');
         assert.equal(fake.doc.layers.filter(layer => layer.id === root.id).length, 1);
         assert.deepEqual(namesOf(root), [...AREOLA_VARIANTS.map(v => v.group), ...FORMULA_GROUP_NAMES]);
-        assert.deepEqual(root.layers.map(group => group.visible), [true, false, false, true, false, false]);
+        assert.deepEqual(root.layers.map(group => group.visible), [true, false, true, false]);
         assert.ok(root.layers.every(group => group.kind === 'group'));
         assert.equal(root.layerSectionExpanded, true, 'outer Skin group stays expanded');
         assert.ok(root.layers.every(group => group.layerSectionExpanded === false), 'all areola and skin formula folders start collapsed');
@@ -132,7 +132,7 @@ for (const bits of [8, 16]) {
             }
         }
 
-        // The common mask is on the outer group; the cut-out is on exactly the three formula groups.
+        // The common mask is on the outer group; the cut-out is on exactly the two formula groups.
         assert.ok(root.mask, 'Skin keeps the common mask from mask_source');
         const withMask = support.flattenLayers(fake.doc.layers).filter(layer => layer.mask && layer.id !== root.id);
         assert.deepEqual(withMask.map(layer => layer.name).sort(), [...FORMULA_GROUP_NAMES].sort());
@@ -175,10 +175,10 @@ for (const bits of [8, 16]) {
 
         // What the apply reports.
         const structure = applied.json.apply.structure;
-        assert.equal(structure.subgroups.length, 6);
-        assert.equal(structure.cutout.groups.length, 3);
-        assert.equal(applied.json.apply.layers.length, 14);
-        assert.match(applied.json.next_step, /"Areola Formula 1" \(visible\), "Areola Formula 2" \(hidden\), "Areola Formula 3" \(hidden\)/);
+        assert.equal(structure.subgroups.length, 4);
+        assert.equal(structure.cutout.groups.length, 2);
+        assert.equal(applied.json.apply.layers.length, 10);
+        assert.match(applied.json.next_step, /"Areola Formula 1" \(visible\), "Areola Formula 2" \(hidden\)/);
 
         // The old scene is untouched: the Background is where it was, and nothing else was added at root.
         const after = support.snapshotLayerTree(fake.doc.layers).filter(layer => layer.id !== root.id);
@@ -192,18 +192,18 @@ for (const bits of [8, 16]) {
     });
 }
 
-test('areola_three_v1: an "Areolas" root with the three areola groups only, no formula groups, no cut-out', async t => {
+test('areola_v1: an "Areolas" root with the two areola groups only, no formula groups, no cut-out', async t => {
     const harness = makeHarness(t, { limits: PATIENT, document: { width: 800, height: 600 } });
     const { fake } = harness;
     const exchangeFiles = support.captureExchangeFiles(fake, harness.dataFolder);
     const sources = { geometry: { kind: 'measured', note: 'by Helper' }, scale: { kind: 'estimated' } };
     const { taskId, jobId, start, ready } = await computeJob(harness, {
-        recipe: 'areola_three_v1', params: { areolaStrength: 3 }, sources
+        recipe: 'areola_v1', params: { areolaStrength: 3 }, sources
     });
-    assert.equal(start.json.recipe_id, 'areola_three_v1');
+    assert.equal(start.json.recipe_id, 'areola_v1');
     assert.equal(ready.areolas.strength, 3);
     assert.equal(ready.areolas.general_skin_cut_out, false);
-    assert.equal(ready.outputs.length, 9);
+    assert.equal(ready.outputs.length, 6);
     assert.ok(!ready.formulas, 'no skin formula is computed or listed');
     assert.deepEqual(ready.sources, { ...sources, light: { kind: 'default', note: 'Helper default: azimuth 315, elevation 45' } });
     assert.equal(ready.sources.light.kind, 'default');
@@ -216,7 +216,7 @@ test('areola_three_v1: an "Areolas" root with the three areola groups only, no f
     assert.ok(root, 'the outer group is "Areolas [marker]"');
     assert.equal(fake.findLayerByName(`Skin [${jobId}]`), null);
     assert.deepEqual(namesOf(root), AREOLA_VARIANTS.map(v => v.group));
-    assert.deepEqual(root.layers.map(group => group.visible), [true, false, false]);
+    assert.deepEqual(root.layers.map(group => group.visible), [true, false]);
     assert.equal(root.layerSectionExpanded, true, 'outer Areolas group stays expanded');
     assert.ok(root.layers.every(group => group.layerSectionExpanded === false), 'all areola folders start collapsed');
     for (const name of FORMULA_GROUP_NAMES) assert.equal(fake.findLayerByName(name), null, `${name} must not exist`);
@@ -232,7 +232,7 @@ test('areola_three_v1: an "Areolas" root with the three areola groups only, no f
     const masked = support.flattenLayers(fake.doc.layers).filter(layer => layer.mask).map(layer => layer.name);
     assert.deepEqual(masked, [root.name]);
     assert.equal(exchangeFiles.has('areola_cutout'), false);
-    assert.equal(exchangeFiles.size, 9);
+    assert.equal(exchangeFiles.size, 6);
     assert.equal(fake.state.historySteps.length, 1);
     assert.ok(!applied.json.apply.structure.cutout, 'no cut-out is reported');
 });
@@ -241,7 +241,7 @@ test('areolas partly outside the document are computed and written inside the do
     const harness = makeHarness(t, { limits: PATIENT, document: { width: 300, height: 300 } });
     const taskId = await harness.startTask();
     const start = await harness.call('ps_skin_texture_start', {
-        task_id: taskId, request_id: 'edge', recipe: 'areola_three_v1', px_per_mm: 4,
+        task_id: taskId, request_id: 'edge', recipe: 'areola_v1', px_per_mm: 4,
         rect: { x: 0, y: 0, width: 300, height: 300 },
         fields: { areolas: [{ areola: { center: [8, 150], radii: [30, 22], angleDeg: 0 }, nipple: [14, 150], nippleRadiusPx: 7 }] }
     });
@@ -314,7 +314,7 @@ test('a missing areola binary refuses only the request with areolas, naming vari
     assert.equal(harness.ownFiles().length, 0, 'no exchange file');
     // The same refusal for the areolas-only recipe.
     const only = await harness.call('ps_skin_texture_start', {
-        task_id: taskId, request_id: 'only-areolas', recipe: 'areola_three_v1', rect: RECT, px_per_mm: 4, fields: { areolas: twoAreolas() }
+        task_id: taskId, request_id: 'only-areolas', recipe: 'areola_v1', rect: RECT, px_per_mm: 4, fields: { areolas: twoAreolas() }
     });
     assert.equal(only.json.error.code, 'AREOLA_CORE_UNAVAILABLE');
     assert.equal(fake.state.scripts.length, scriptsBefore);
@@ -371,7 +371,7 @@ for (const historyAvailable of [false, true]) {
         const sceneBefore = support.snapshotLayerTree(fake.doc.layers);
         const { taskId, jobId } = await computeJob(harness);
 
-        // The common mask is call 1 and the cut-outs are calls 2, 3 and 4: fail the second cut-out.
+        // The common mask is call 1 and the cut-outs are calls 2 and 3: fail the second cut-out.
         fake.state.failPutLayerMaskOnLayerName = 'Formula 2';
         const failed = await harness.call('ps_skin_texture_apply', applyArgs(taskId, jobId));
         fake.state.failPutLayerMaskOnLayerName = null;

@@ -938,7 +938,7 @@ function createSkinTextureJobs({
     async function runApply(job, attempt, transport) {
         const recipe = (job.request && job.request.recipe) || recipeCatalog.DEFAULT_RECIPE;
         // task20: the files follow the job's layout (areola layers and the cut-out, if any);
-        // a skin job without areolas has exactly the five task15 outputs here.
+        // a skin job without areolas has exactly the four skin outputs here.
         const outputs = areolaJob.fileOutputs(job);
         if (hasFaceMap(job)) outputs.push(faceMap.OUTPUT);
         const names = outputs.map(output => exchangeFiles.fileNameFor(job.id, attempt.number, output));
@@ -1409,7 +1409,7 @@ function createSkinTextureJobs({
                 const map = hasFaceMap(job)
                     ? ` The hidden ${faceMap.LAYER_NAME} layer is inside Skin above the formula groups.` : '';
                 if (job.request.layout && job.request.layout.areolas) return `Skin texture recipe applied. ${areolaJob.appliedText(job)}${map}`;
-                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness), hidden Formula 2 (Pores, Furrows) and hidden Formula 3 (Dermis), with one common mask. All five layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. ' + postApplyComparisonGuidance() + map;
+                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness) and hidden Formula 2 (Pores, Furrows), with one common mask. All four layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. ' + postApplyComparisonGuidance() + map;
             }
             case 'apply_unknown':
                 return `The outcome of the write is unknown. Before anything else look at the document (ps_get_document) `

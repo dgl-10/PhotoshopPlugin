@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Describe the three independent variants without inventing shared kernel diagnostics.
+ * Describe the independent variants without inventing shared kernel diagnostics.
  * Startup identities are verified on disk; completed job identities come from the actual
  * formula workers and must match those pins before the job becomes ready.
  */

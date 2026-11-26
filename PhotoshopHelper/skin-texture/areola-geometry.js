@@ -15,7 +15,7 @@
  * Coordinates: pixel (x, y) covers [x, x + 1) x [y, y + 1); its centre is (x + 0.5, y + 0.5).
  */
 
-/** At most this many areolas per request: the GPT-6 variant documents one or two. */
+/** At most this many areolas per request: the tool contract accepts one or two records. */
 const MAX_AREOLAS = 2;
 
 /**
@@ -44,9 +44,9 @@ const isFiniteNumber = value => typeof value === 'number' && Number.isFinite(val
 
 /**
  * Canonicalize the areola records of a request without moving or clipping them.
- * Missing optional members are filled with explicit values, so the three variants receive the
+ * Missing optional members are filled with explicit values, so both variants receive the
  * same geometry: each variant has its own default nipple radius, and leaving it out would let
- * the three comparisons draw different nipples.
+ * the two comparisons draw different nipples.
  *
  * @param {*} raw - fields.areolas as the agent sent it.
  * @returns {{ areolas: object[], defaulted: object[] }} Canonical contract records, and per
@@ -143,7 +143,7 @@ function outlineBox(record, scale = AREOLA_BOX_SCALE) {
 const toRect = box => ({ x: box.x0, y: box.y0, width: box.x1 - box.x0, height: box.y1 - box.y0 });
 
 /**
- * The single sub-rectangle all three variants are computed on, and the rule that the areolas lie
+ * The single sub-rectangle both variants are computed on, and the rule that the areolas lie
  * inside the job's rect. The rect is the area the job may write, for the skin formulas and for the
  * areolas alike: an areola cut by the rect inside the document would end in a straight seam, so
  * it is refused with the rectangle that would contain it. The document edge cuts nothing that
@@ -243,9 +243,9 @@ function findNeutralViolation(gray, rect, areolas, transitions) {
  *
  * Each variant fades its own relief in over the band it reports: whole inside innerScale, zero
  * outside outerScale. The general texture has to fade out over the same band, so the two cross
- * over instead of overlapping (double texture) or leaving a ring with no texture. The three
+ * over instead of overlapping (double texture) or leaving a ring with no texture. The two
  * variants report slightly different bands and the person switches between them with the group
- * eyes, without a recomputation, so one mask has to serve all three. It follows whichever variant
+ * eyes, without a recomputation, so one mask has to serve both. It follows whichever variant
  * is strongest at each point: weight = max over variants and areolas of that variant's areola
  * weight 1 - smoothstep((rho - inner) / (outer - inner)), mask = 255 * (1 - weight). Inside every
  * band's inner edge the general texture is gone; beyond every band's outer edge the mask is 255,

@@ -5,9 +5,9 @@
  * (worker.js) before the skin formulas: it is fast (seconds), so a broken areola request fails
  * before minutes of skin computation are spent.
  *
- * The three variants run one after another, each in its own disposable worker, on the same
+ * The two variants run one after another, each in its own disposable worker, on the same
  * request. When the job also computes the general skin, the coordinator then builds the soft
- * cut-out mask from the three reported transition bands (areola-geometry.js buildCutout) and
+ * cut-out mask from the two reported transition bands (areola-geometry.js buildCutout) and
  * encodes it in the same exchange format as the layers.
  */
 const { Worker } = require('node:worker_threads');
@@ -42,7 +42,7 @@ async function computeVariant(variantId, request, meta, postProgress) {
 }
 
 /**
- * Compute the three areola variants and, when asked, the cut-out.
+ * Compute the two areola variants and, when asked, the cut-out.
  *
  * @param {{requests: object, region: object, cutout: boolean}} areola - From the request adapter.
  * @param {object} meta - Exchange identity of the job (jobId, taskId, document, recipe_id).

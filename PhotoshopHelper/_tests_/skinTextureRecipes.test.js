@@ -85,11 +85,11 @@ function flattenLayers(layers) {
     return result;
 }
 
-test('recipe skin_three_v2 rejects conflicting outputs and unauthorized parameters', () => {
+test('recipe skin_v2 rejects conflicting outputs and unauthorized parameters', () => {
     // Conflicting outputs rejected
     assert.throws(
         () => adapter.checkRequestShape({
-            recipe: 'skin_three_v2',
+            recipe: 'skin_v2',
             request_id: 'req-1',
             rect: { x: 0, y: 0, width: 100, height: 100 },
             px_per_mm: 5,
@@ -101,7 +101,7 @@ test('recipe skin_three_v2 rejects conflicting outputs and unauthorized paramete
     // Unknown parameter rejected
     assert.throws(
         () => adapter.checkRequestShape({
-            recipe: 'skin_three_v2',
+            recipe: 'skin_v2',
             request_id: 'req-1',
             rect: { x: 0, y: 0, width: 100, height: 100 },
             px_per_mm: 5,
@@ -110,31 +110,33 @@ test('recipe skin_three_v2 rejects conflicting outputs and unauthorized paramete
         error => error.code === 'INVALID_PARAMS'
     );
 
-    // Unsupported recipe rejected
-    assert.throws(
-        () => adapter.checkRequestShape({
-            recipe: 'unknown_recipe',
-            request_id: 'req-1',
-            rect: { x: 0, y: 0, width: 100, height: 100 },
-            px_per_mm: 5
-        }),
-        error => error.code === 'INVALID_RECIPE'
-    );
+    // Unsupported and retired recipe names rejected
+    for (const badRecipe of ['unknown_recipe', 'skin_three_v2', 'areola_three_v1']) {
+        assert.throws(
+            () => adapter.checkRequestShape({
+                recipe: badRecipe,
+                request_id: 'req-1',
+                rect: { x: 0, y: 0, width: 100, height: 100 },
+                px_per_mm: 5
+            }),
+            error => error.code === 'INVALID_RECIPE'
+        );
+    }
 
     // Valid parameters accepted
     const valid = adapter.checkRequestShape({
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         request_id: 'req-1',
         rect: { x: 0, y: 0, width: 100, height: 100 },
         px_per_mm: 5,
         params: { seed: 7, azimuthDeg: 315, elevationDeg: 45 }
     });
-    assert.equal(valid.recipe, 'skin_three_v2');
-    assert.equal(valid.outputs.length, 5);
-    assert.ok(valid.key.includes('skin_three_v2'));
+    assert.equal(valid.recipe, 'skin_v2');
+    assert.equal(valid.outputs.length, 4);
+    assert.ok(valid.key.includes('skin_v2'));
 });
 
-test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
+test('recipe skin_v2 end-to-end with selection mask source', async t => {
     const harness = makeHarness(t, {
         document: {
             width: 800,
@@ -150,27 +152,27 @@ test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
     const startAns = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'recipe-test-1',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 100, y: 100, width: 120, height: 120 },
         px_per_mm: 4.49,
         params: { seed: 1, azimuthDeg: 315, elevationDeg: 45 }
     });
     assert.equal(startAns.isError, false, startAns.text);
     const jobId = startAns.json.job_id;
-    assert.equal(startAns.json.recipe_id, 'skin_three_v2');
+    assert.equal(startAns.json.recipe_id, 'skin_v2');
     assert.ok(startAns.json.formulas.formula_1);
     assert.ok(startAns.json.formulas.formula_2);
-    assert.ok(startAns.json.formulas.formula_3);
+    assert.equal(startAns.json.formulas.formula_3, undefined, 'Formula 3 (Astra) is no longer part of the recipe');
 
     // Wait for ready
     const readyStatus = await harness.waitForPhase(taskId, jobId, 'ready');
     assert.equal(readyStatus.phase, 'ready');
-    assert.equal(readyStatus.recipe_id, 'skin_three_v2');
+    assert.equal(readyStatus.recipe_id, 'skin_v2');
     assert.ok(readyStatus.result.checksums.formula_1_pores);
     assert.ok(readyStatus.result.checksums.formula_1_unevenness);
     assert.ok(readyStatus.result.checksums.formula_2_pores);
     assert.ok(readyStatus.result.checksums.formula_2_furrows);
-    assert.ok(readyStatus.result.checksums.formula_3_dermis);
+    assert.equal(readyStatus.result.checksums.formula_3_dermis, undefined);
 
     // Verify before apply that no layers were added to the document
     assert.equal(harness.fake.doc.layers.length, 1); // Background only
@@ -189,7 +191,7 @@ test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
     assert.ok(structure, 'Expected structure in apply result');
     assert.equal(structure.mainGroup.hasUserMask, true);
     assert.equal(structure.faceMap, undefined);
-    assert.equal(structure.subgroups.length, 3);
+    assert.equal(structure.subgroups.length, 2);
 
     const f2Group = structure.subgroups.find(g => g.name === 'Formula 2');
     const f1Group = structure.subgroups.find(g => g.name === 'Formula 1');
@@ -197,19 +199,17 @@ test('recipe skin_three_v2 end-to-end with selection mask source', async t => {
     assert.ok(f1Group);
     assert.equal(f2Group.visible, false);
     assert.equal(f1Group.visible, true);
-    const f3Group = structure.subgroups.find(g => g.name === 'Formula 3');
-    assert.equal(f3Group.visible, false);
+    assert.equal(structure.subgroups.find(g => g.name === 'Formula 3'), undefined);
 
     // Inspect actual DOM order and per-formula layer names, independently of the report.
     const docSkinGroup = harness.fake.findLayerById(structure.mainGroup.id);
     assert.equal(docSkinGroup.layerSectionExpanded, true);
-    assert.deepEqual(docSkinGroup.layers.map(group => group.name), ['Formula 1', 'Formula 2', 'Formula 3']);
-    assert.deepEqual(docSkinGroup.layers.map(group => group.layerSectionExpanded), [false, false, false]);
+    assert.deepEqual(docSkinGroup.layers.map(group => group.name), ['Formula 1', 'Formula 2']);
+    assert.deepEqual(docSkinGroup.layers.map(group => group.layerSectionExpanded), [false, false]);
     assert.deepEqual(harness.fake.findLayerById(f1Group.id).layers.map(layer => layer.name), ['Pores', 'Unevenness']);
     assert.deepEqual(harness.fake.findLayerById(f2Group.id).layers.map(layer => layer.name), ['Pores', 'Furrows']);
-    assert.deepEqual(harness.fake.findLayerById(f3Group.id).layers.map(layer => layer.name), ['Dermis']);
 
-    assert.equal(applyAns.json.apply.layers.length, 5);
+    assert.equal(applyAns.json.apply.layers.length, 4);
     for (const layer of applyAns.json.apply.layers) {
         const docLayer = harness.fake.findLayerById(layer.id);
         assert.ok(docLayer, `Layer ${layer.id} must exist in document`);
@@ -265,12 +265,12 @@ for (const depth of [8, 16]) {
         });
         assert.equal(applied.json.phase, 'applied', applied.text);
         const { structure, layers } = applied.json.apply;
-        assert.equal(layers.length, 5);
+        assert.equal(layers.length, 4);
         assert.equal(structure.mainGroup.hasUserMask, true);
         const skin = harness.fake.findLayerById(structure.mainGroup.id);
         const map = harness.fake.findLayerById(structure.faceMap.id);
         assert.equal(skin.layers[0], map);
-        assert.deepEqual(skin.layers.map(layer => layer.name), ['Face Map', 'Formula 1', 'Formula 2', 'Formula 3']);
+        assert.deepEqual(skin.layers.map(layer => layer.name), ['Face Map', 'Formula 1', 'Formula 2']);
         assert.equal(map.visible, false);
         assert.equal(map.blendMode, 'normal');
         const { data, width, left, top, componentSize } = map.pixels;
@@ -284,7 +284,7 @@ for (const depth of [8, 16]) {
     });
 }
 
-test('recipe skin_three_v2 explicitly builds at the root without changing a hidden existing group', async t => {
+test('recipe skin_v2 explicitly builds at the root without changing a hidden existing group', async t => {
     const harness = makeHarness(t, { document: protectedSceneDocument() });
     const originalLayers = flattenLayers(harness.fake.doc.layers);
     const originalScene = snapshotLayerTree(harness.fake.doc.layers);
@@ -302,7 +302,7 @@ test('recipe skin_three_v2 explicitly builds at the root without changing a hidd
     const start = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'root-hierarchy-protected-scene',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 20, y: 20, width: 50, height: 50 },
         px_per_mm: 4.0
     });
@@ -333,14 +333,13 @@ test('recipe skin_three_v2 explicitly builds at the root without changing a hidd
     assert.equal(harness.fake.findLayerById(protectedGroup.id), protectedGroup);
     assert.equal(harness.fake.findLayerById(selectedBase.id), selectedBase);
 
-    // The real script must end with exactly three formula groups and five component layers,
+    // The real script must end with exactly two formula groups and four component layers,
     // with no texture object nested under the original hidden group.
-    assert.deepEqual(skin.layers.map(group => group.name), ['Formula 1', 'Formula 2', 'Formula 3']);
+    assert.deepEqual(skin.layers.map(group => group.name), ['Formula 1', 'Formula 2']);
     assert.deepEqual(skin.layers[0].layers.map(layer => layer.name), ['Pores', 'Unevenness']);
     assert.deepEqual(skin.layers[1].layers.map(layer => layer.name), ['Pores', 'Furrows']);
-    assert.deepEqual(skin.layers[2].layers.map(layer => layer.name), ['Dermis']);
-    assert.equal(skin.layers.length, 3);
-    assert.equal(skin.layers.reduce((total, group) => total + group.layers.length, 0), 5);
+    assert.equal(skin.layers.length, 2);
+    assert.equal(skin.layers.reduce((total, group) => total + group.layers.length, 0), 4);
     assert.equal(harness.fake.doc.activeLayers[0], skin);
 });
 
@@ -354,7 +353,7 @@ test('recipe scene guard rejects indirect old-layer changes and history rollback
     const start = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'scene-guard-history-rollback',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 20, y: 20, width: 50, height: 50 },
         px_per_mm: 4.0
     });
@@ -391,7 +390,7 @@ test('recipe scene guard rejects indirect old-layer changes and history rollback
     assert.equal(harness.fake.findLayerByName('Skin ' + start.json.job_id), null);
 });
 
-test('recipe skin_three_v2 end-to-end with layer_mask source', async t => {
+test('recipe skin_v2 end-to-end with layer_mask source', async t => {
     const harness = makeHarness(t, {
         document: {
             width: 600,
@@ -415,7 +414,7 @@ test('recipe skin_three_v2 end-to-end with layer_mask source', async t => {
     const startAns = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'recipe-test-layer-mask',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 50, y: 50, width: 100, height: 100 },
         px_per_mm: 4.0
     });
@@ -438,7 +437,7 @@ test('recipe skin_three_v2 end-to-end with layer_mask source', async t => {
     assert.equal(structure.mainGroup.mask.source.layer_id, sourceLayer.id);
 });
 
-test('recipe skin_three_v2 enforces mask_source requirements and pre-creation refusals', async t => {
+test('recipe skin_v2 enforces mask_source requirements and pre-creation refusals', async t => {
     const harness = makeHarness(t, {
         document: {
             width: 500,
@@ -452,7 +451,7 @@ test('recipe skin_three_v2 enforces mask_source requirements and pre-creation re
     const startAns = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'recipe-mask-checks',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 50, y: 50, width: 80, height: 80 },
         px_per_mm: 4.0
     });
@@ -504,7 +503,7 @@ test('recipe skin_three_v2 enforces mask_source requirements and pre-creation re
     assert.equal(retryApply.json.apply.state, 'applied');
 });
 
-test('default contract: calls without recipe run skin_three_v2 by default and reject legacy outputs', async t => {
+test('default contract: calls without recipe run skin_v2 by default and reject legacy outputs', async t => {
     const harness = makeHarness(t, {
         document: {
             width: 400,
@@ -527,7 +526,7 @@ test('default contract: calls without recipe run skin_three_v2 by default and re
     assert.equal(refusedOutputs.isError, true);
     assert.equal(refusedOutputs.json.error.code, 'INVALID_OUTPUTS');
 
-    // Standard start with NO recipe defaults to skin_three_v2
+    // Standard start with NO recipe defaults to skin_v2
     const startAns = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'standard-default-1',
@@ -535,7 +534,7 @@ test('default contract: calls without recipe run skin_three_v2 by default and re
         px_per_mm: 5.0
     });
     assert.equal(startAns.isError, false, startAns.text);
-    assert.equal(startAns.json.recipe_id, 'skin_three_v2');
+    assert.equal(startAns.json.recipe_id, 'skin_v2');
     assert.equal(startAns.json.core.sha256, recipeCatalog.getFormulasCoreIdentity().sha256);
     assert.ok(startAns.json.formulas.formula_1);
     assert.ok(startAns.json.formulas.formula_2);
@@ -560,7 +559,7 @@ test('default contract: calls without recipe run skin_three_v2 by default and re
     assert.equal(applyAns.isError, false, applyAns.text);
     assert.equal(applyAns.json.phase, 'applied');
     assert.equal(applyAns.json.apply.structure.mainGroup.name.startsWith('Skin'), true);
-    assert.equal(applyAns.json.apply.layers.length, 5);
+    assert.equal(applyAns.json.apply.layers.length, 4);
 
     // Idempotency: repeating start with identical arguments returns the same job
     const repeatAns = await harness.call('ps_skin_texture_start', {
@@ -573,11 +572,11 @@ test('default contract: calls without recipe run skin_three_v2 by default and re
     assert.equal(repeatAns.json.job_id, jobId);
     assert.equal(repeatAns.json.repeated_request, true);
 
-    // Repeating start with explicit recipe: 'skin_three_v2' and same request_id also normalizes to same job
+    // Repeating start with explicit recipe: 'skin_v2' and same request_id also normalizes to same job
     const repeatExplicit = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'standard-default-1',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 10, y: 10, width: 50, height: 50 },
         px_per_mm: 5.0
     });
@@ -598,7 +597,7 @@ test('R1: source layer mask properties (missing mask, disabled, non-100 density,
     const startAns = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r1-mask-props-1',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 40, y: 40, width: 80, height: 80 },
         px_per_mm: 4.0
     });
@@ -688,7 +687,7 @@ test('R1: post-write mask verification failures trigger clean rollback without l
     const start1 = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r1-post-verify-silent',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 20, y: 20, width: 50, height: 50 },
         px_per_mm: 4.0
     });
@@ -710,7 +709,7 @@ test('R1: post-write mask verification failures trigger clean rollback without l
     const start2 = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r1-post-verify-bounds',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 20, y: 20, width: 50, height: 50 },
         px_per_mm: 4.0
     });
@@ -731,7 +730,7 @@ test('R1: post-write mask verification failures trigger clean rollback without l
     const start3 = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r1-post-verify-empty',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 20, y: 20, width: 50, height: 50 },
         px_per_mm: 4.0
     });
@@ -752,7 +751,7 @@ test('R1: post-write mask verification failures trigger clean rollback without l
     const start4 = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r1-post-verify-data-mismatch',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 20, y: 20, width: 50, height: 50 },
         px_per_mm: 4.0
     });
@@ -773,7 +772,7 @@ test('R1: post-write mask verification failures trigger clean rollback without l
     const start5 = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r1-post-verify-child-mask',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 20, y: 20, width: 50, height: 50 },
         px_per_mm: 4.0
     });
@@ -805,7 +804,7 @@ test('R2: individual component header mismatches and swapped components are reje
         });
         harness.fake.state.beforeScript = async payload => {
             if (!payload.code.includes('Skin texture: write recipe')) return;
-            const name = harness.ownFiles().find(n => n.endsWith('-formula_3_dermis.sktx'));
+            const name = harness.ownFiles().find(n => n.endsWith('-formula_2_furrows.sktx'));
             const file = path.join(harness.dataFolder, name);
             const decoded = X.decode(new Uint8Array(fs.readFileSync(file)));
             fs.writeFileSync(file, X.encode({
@@ -817,7 +816,7 @@ test('R2: individual component header mismatches and swapped components are reje
         const startAns = await harness.call('ps_skin_texture_start', {
             task_id: taskId,
             request_id: 'r2-tamp-' + Math.random().toString(36).slice(2, 7),
-            recipe: 'skin_three_v2',
+            recipe: 'skin_v2',
             rect: { x: 10, y: 10, width: 40, height: 40 },
             px_per_mm: 4.0
         });
@@ -859,20 +858,20 @@ test('R2: individual component header mismatches and swapped components are reje
         harness.fake.state.beforeScript = async payload => {
             if (!payload.code.includes('Skin texture: write recipe')) return;
             const f1PoresName = harness.ownFiles().find(n => n.endsWith('-formula_1_pores.sktx'));
-            const f3DermisName = harness.ownFiles().find(n => n.endsWith('-formula_3_dermis.sktx'));
+            const f2FurrowsName = harness.ownFiles().find(n => n.endsWith('-formula_2_furrows.sktx'));
             const f1File = path.join(harness.dataFolder, f1PoresName);
-            const f3File = path.join(harness.dataFolder, f3DermisName);
+            const f2File = path.join(harness.dataFolder, f2FurrowsName);
             const f1Bytes = fs.readFileSync(f1File);
-            const f3Bytes = fs.readFileSync(f3File);
+            const f2Bytes = fs.readFileSync(f2File);
             // Actually swap component files on disk
-            fs.writeFileSync(f1File, f3Bytes);
-            fs.writeFileSync(f3File, f1Bytes);
+            fs.writeFileSync(f1File, f2Bytes);
+            fs.writeFileSync(f2File, f1Bytes);
         };
         const taskId = await harness.startTask();
         const startAns = await harness.call('ps_skin_texture_start', {
             task_id: taskId,
             request_id: 'r2-swap-1',
-            recipe: 'skin_three_v2',
+            recipe: 'skin_v2',
             rect: { x: 10, y: 10, width: 40, height: 40 },
             px_per_mm: 4.0
         });
@@ -889,7 +888,7 @@ test('R2: individual component header mismatches and swapped components are reje
     }
 });
 
-test('R3: next_step messages for ready and applied skin_three_v2 include Undo and idempotency guidance', async t => {
+test('R3: next_step messages for ready and applied skin_v2 include Undo and idempotency guidance', async t => {
     const harness = makeHarness(t, {
         document: {
             width: 400,
@@ -923,21 +922,20 @@ test('R3: next_step messages for ready and applied skin_three_v2 include Undo an
     assert.ok(nextStep.includes('Skin texture recipe applied'));
     assert.match(nextStep, /visible Formula 1 \(Pores, Unevenness\)/);
     assert.match(nextStep, /hidden Formula 2 \(Pores, Furrows\)/);
-    assert.match(nextStep, /hidden Formula 3 \(Dermis\)/);
-    assert.match(nextStep, /All five layers use Linear Light at 50% opacity/);
+    assert.match(nextStep, /All four layers use Linear Light at 50% opacity/);
     assert.match(nextStep, /One Undo removes the complete History step/);
     assert.match(nextStep, /Repeated apply never writes again/);
     const { ALLOW_AGENT_FORMULA_COMPARISON } = require('../skin-texture/recipe-tool-contract');
     if (ALLOW_AGENT_FORMULA_COMPARISON) {
         assert.match(nextStep, /adjust strength with layer opacity using the returned IDs/);
     } else {
-        assert.match(nextStep, /Leave Formula 1 visible and Formula 2 and Formula 3 hidden as created/);
+        assert.match(nextStep, /Leave Formula 1 visible and Formula 2 hidden as created/);
         assert.match(nextStep, /do not toggle, compare, or choose between formula variants yourself/);
     }
 
 });
 
-test('R4: unknown outcome keeps all 5 exchange files for grace period, then cleans them up', async t => {
+test('R4: unknown outcome keeps all 4 exchange files for grace period, then cleans them up', async t => {
     const harness = makeHarness(t, {
         limits: {
             applyStartDeadlineMs: 20,
@@ -956,7 +954,7 @@ test('R4: unknown outcome keeps all 5 exchange files for grace period, then clea
     const startAns = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r4-unknown-outcome-1',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 10, y: 10, width: 40, height: 40 },
         px_per_mm: 4.0
     });
@@ -976,9 +974,9 @@ test('R4: unknown outcome keeps all 5 exchange files for grace period, then clea
     assert.equal(applyAns.isError, true);
     assert.equal(applyAns.json.phase, 'apply_unknown');
 
-    // 1. Immediately during grace period, all 5 component files exist on disk
+    // 1. Immediately during grace period, all 4 component files exist on disk
     let files = harness.ownFiles().filter(f => f.includes(jobId));
-    assert.equal(files.length, 5, 'All 5 component exchange files must be preserved during grace period');
+    assert.equal(files.length, 4, 'All 4 component exchange files must be preserved during grace period');
 
     // 2. Wait past deadline + fileGraceMs
     await new Promise(r => setTimeout(r, 120));
@@ -996,7 +994,7 @@ test('R4: cancelling job while computing terminates worker cleanly and leaves no
     const startAns = await harness.call('ps_skin_texture_start', {
         task_id: taskId,
         request_id: 'r4-cancel-clean-1',
-        recipe: 'skin_three_v2',
+        recipe: 'skin_v2',
         rect: { x: 10, y: 10, width: 350, height: 350 },
         px_per_mm: 4.0
     });
@@ -1030,7 +1028,7 @@ test('R4: finish task or AI line pause before sending apply script stops write w
         const startAns = await harness.call('ps_skin_texture_start', {
             task_id: taskId,
             request_id: 'r4-stop-finish-1',
-            recipe: 'skin_three_v2',
+            recipe: 'skin_v2',
             rect: { x: 10, y: 10, width: 40, height: 40 },
             px_per_mm: 4.0
         });
@@ -1065,7 +1063,7 @@ test('R4: finish task or AI line pause before sending apply script stops write w
         const startAns = await harness.call('ps_skin_texture_start', {
             task_id: taskId,
             request_id: 'r4-stop-pause-1',
-            recipe: 'skin_three_v2',
+            recipe: 'skin_v2',
             rect: { x: 10, y: 10, width: 40, height: 40 },
             px_per_mm: 4.0
         });
@@ -1102,7 +1100,7 @@ test('R1: where the texture rect lies outside the selection, the Skin mask must 
         if (c.knob) harness.fake.state[c.knob] = true;
         const taskId = await harness.startTask();
         const start = await harness.call('ps_skin_texture_start', {
-            task_id: taskId, request_id: 'r1-outside-' + (c.knob || 'ok'), recipe: 'skin_three_v2',
+            task_id: taskId, request_id: 'r1-outside-' + (c.knob || 'ok'), recipe: 'skin_v2',
             rect: { x: 20, y: 20, width: 40, height: 40 }, px_per_mm: 4.0
         });
         await harness.waitForPhase(taskId, start.json.job_id, 'ready');

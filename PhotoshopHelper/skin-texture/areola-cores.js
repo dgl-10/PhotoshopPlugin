@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Identity and availability of the three private areola binaries (task20).
+ * Identity and availability of the two private areola binaries (task20).
  *
  * The check is separate from availability.js on purpose: the skin recipe keeps working when an
  * areola binary is missing, and only a request with areolas is refused, naming the variant and
@@ -29,7 +29,7 @@ function areolaCoreIdentity(id) {
 }
 
 /**
- * Check all three binaries without compiling or running them.
+ * Check both binaries without compiling or running them.
  *
  * @returns {string|null} null when all are usable, otherwise one sentence per unusable variant.
  */

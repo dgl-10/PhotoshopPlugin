@@ -434,7 +434,7 @@ test('find -> start -> apply: fields and sources from the image search are used 
     assert.ok(fields && fields.areolas.length === 1);
 
     const start = await harness.call('ps_skin_texture_start', {
-        task_id: taskId, request_id: 'from-find', recipe: 'areola_three_v1',
+        task_id: taskId, request_id: 'from-find', recipe: 'areola_v1',
         rect: { x: 300, y: 200, width: 600, height: 500 }, px_per_mm: scale.px_per_mm, fields, sources
     });
     assert.equal(start.isError, false, start.text);

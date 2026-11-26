@@ -2,7 +2,7 @@
 
 /**
  * The areola part of a skin texture request (task20): validation on Helper's main thread,
- * the three contract requests, and the list of components a job writes.
+ * the contract requests, and the list of components a job writes.
  *
  * Only small JSON structures are handled here; the variants run in disposable workers
  * (areola-engine.js). Every variant receives the same geometry, scale, light, seed and strength,
@@ -71,13 +71,13 @@ function checkAreolaStrength(params, hasAreolas, fail) {
 
 /**
  * Components a job computes and writes, top to bottom in the Photoshop panel.
- * Skin recipe without areolas: exactly the five components of skin_three_v2, unchanged.
- * With areolas: the three areola groups first, then the skin formulas, plus the cut-out mask.
- * Areola recipe: the three areola groups only.
+ * Skin recipe without areolas: exactly the four components of skin_v2, unchanged.
+ * With areolas: the two areola groups first, then the skin formulas, plus the cut-out mask.
+ * Areola recipe: the two areola groups only.
  *
  * @param {string} recipe
  * @param {boolean} hasAreolas
- * @param {object[]} skinComponents - RECIPE_COMPONENTS of skin_three_v2.
+ * @param {object[]} skinComponents - RECIPE_COMPONENTS of skin_v2.
  * @returns {{ components: object[], cutout: boolean, skin: boolean, areolas: boolean }}
  */
 function layoutFor(recipe, hasAreolas, skinComponents) {
@@ -94,7 +94,7 @@ function outputsOf(layout) {
 }
 
 /**
- * Build the three contract requests on the shared sub-rectangle once the document is known.
+ * Build the contract requests on the shared sub-rectangle once the document is known.
  *
  * @param {object[]} areolas - Canonical records.
  * @param {{width: number, height: number}} document

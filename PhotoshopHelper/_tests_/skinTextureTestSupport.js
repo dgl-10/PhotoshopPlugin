@@ -18,7 +18,7 @@ function missingBinaryReason() {
 }
 
 /** Run the public product worker and wait for its exit, so tests also catch leaked children. */
-function runWorker(formulaParams, rect, document, recipe = 'skin_three_v2') {
+function runWorker(formulaParams, rect, document, recipe = 'skin_v2') {
     return new Promise((resolve, reject) => {
         const worker = new Worker(require('../skin-texture/job-manager').WORKER_FILE, {
             workerData: { recipe, formulaParams, outputs: Object.values(FORMULA_DEFINITIONS)

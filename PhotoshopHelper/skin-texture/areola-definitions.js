@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Public metadata for the three nipple and areola micro-relief variants (task20).
+ * Public metadata for the two nipple and areola micro-relief variants (task20; the GPT-6 variant was removed in task28).
  *
  * The binaries are private local assets, exactly like the skin formulas: they are not kept in
  * git and not packed into the installer. This module contains no formula mathematics, only the
@@ -13,14 +13,14 @@
  * never a silent replacement: a different file on disk is refused by its SHA-256.
  *
  * Group names follow the face formulas, updated by the author's decision of 22 November 2026:
- * "Areola Formula 1/2/3" in the same order and with the same authors as Formula 1/2/3 of the skin
- * recipe (formula-definitions.js): 1 is Fable (Claude), 2 is Gemini 4, 3 is GPT-6 ("Astra" to the author).
+ * "Areola Formula 1/2" in the same order and with the same authors as Formula 1/2 of the skin
+ * recipe (formula-definitions.js): 1 is Fable (Claude), 2 is Gemini 4.
  * Variant, version and SHA-256 of each group are in the job result and the job log. Labels name the
  * models in messages, in Latin letters like the layer names.
  */
 
 /** Recipe id of a job that computes areolas only, without the general skin formulas. */
-const AREOLA_RECIPE = 'areola_three_v1';
+const AREOLA_RECIPE = 'areola_v1';
 
 /**
  * Generation of the areola groups in the product, independent of each variant's own version.
@@ -53,20 +53,10 @@ const AREOLA_DEFINITIONS = Object.freeze({
         // place of the task19.01 build 6b51977f.... The manifest still says 1.0.0.
         sha256: 'ff544bfe40dc2899a2fbfbc177ed668cc5088c0cacd28f09bd3600f74cfb7085',
         layers: STANDARD_LAYERS
-    }),
-    areola_astra: Object.freeze({
-        id: 'areola_astra', version: AREOLA_GENERATION, name: 'Areola Formula 3', label: 'Astra', visible: false,
-        variant: 'gpt6_areola_v1', variantVersion: '1.0.0', fileName: 'gpt6_areola.wasm',
-        sha256: '169179c3f435debc8d1b6eeb98c6da9feff8c52ae12a3893b1d2218866878d0e',
-        layers: Object.freeze([
-            Object.freeze({ output: 'nipple', sourceLayerId: 'gpt6_areola_nipple', layerName: 'Nipple Microrelief', blendMode: 'linear_light', opacity: 0.5 }),
-            Object.freeze({ output: 'tubercles', sourceLayerId: 'gpt6_areola_tubercles', layerName: 'Montgomery Tubercles', blendMode: 'linear_light', opacity: 0.5 }),
-            Object.freeze({ output: 'skin', sourceLayerId: 'gpt6_areola_skin', layerName: 'Areola Folds', blendMode: 'linear_light', opacity: 0.5 })
-        ])
     })
 });
 
-/** Photoshop group name, the same pattern as the face formulas' "Formula 1/2/3". */
+/** Photoshop group name, the same pattern as the face formulas' "Formula 1/2". */
 function groupNameOf(definition) {
     return definition.name;
 }

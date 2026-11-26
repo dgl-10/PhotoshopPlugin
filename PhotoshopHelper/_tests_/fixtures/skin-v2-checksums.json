@@ -22,16 +22,6 @@
         "formula_2_pores": "gemini4_stratum_pores",
         "formula_2_furrows": "gemini4_stratum_furrows"
       }
-    },
-    {
-      "id": "formula_3",
-      "variant": "gpt6_dermis_v2",
-      "fileName": "dermis.wasm",
-      "version": "2.0.1",
-      "sha256": "7ad7e2c9d2497513a0a07636ac2c3345deda7b410d90de055a2ed59d518394e7",
-      "layers": {
-        "formula_3_dermis": "gpt6_dermis_texture"
-      }
     }
   ],
   "cases": [
@@ -75,11 +65,6 @@
           "length": 1280,
           "crc32": "68098741",
           "fnv1a": "a29758d1"
-        },
-        "formula_3_dermis": {
-          "length": 1280,
-          "crc32": "4e9b7140",
-          "fnv1a": "d5bc796e"
         }
       }
     },
@@ -157,11 +142,6 @@
           "length": 1280,
           "crc32": "a00e5365",
           "fnv1a": "67d8744d"
-        },
-        "formula_3_dermis": {
-          "length": 1280,
-          "crc32": "1d8358ea",
-          "fnv1a": "ed3a4552"
         }
       }
     },
@@ -205,11 +185,6 @@
           "length": 1280,
           "crc32": "733c04ef",
           "fnv1a": "3c483217"
-        },
-        "formula_3_dermis": {
-          "length": 1280,
-          "crc32": "036c37ac",
-          "fnv1a": "baa17851"
         }
       }
     },
@@ -287,11 +262,6 @@
           "length": 1280,
           "crc32": "1f90c7c4",
           "fnv1a": "f18e2275"
-        },
-        "formula_3_dermis": {
-          "length": 1280,
-          "crc32": "417df9ad",
-          "fnv1a": "e185c2d8"
         }
       }
     },
@@ -335,11 +305,6 @@
           "length": 1280,
           "crc32": "3e69a247",
           "fnv1a": "a2022ee1"
-        },
-        "formula_3_dermis": {
-          "length": 1280,
-          "crc32": "a1f2a334",
-          "fnv1a": "1b1c8ef5"
         }
       }
     },
@@ -417,11 +382,6 @@
           "length": 1280,
           "crc32": "fa12b119",
           "fnv1a": "1b3342eb"
-        },
-        "formula_3_dermis": {
-          "length": 1280,
-          "crc32": "67404a62",
-          "fnv1a": "de60c238"
         }
       }
     },
@@ -465,11 +425,6 @@
           "length": 1280,
           "crc32": "3dd8641c",
           "fnv1a": "3c1fb179"
-        },
-        "formula_3_dermis": {
-          "length": 1280,
-          "crc32": "522869c3",
-          "fnv1a": "d2a4a164"
         }
       }
     },
@@ -547,11 +502,6 @@
           "length": 1280,
           "crc32": "9076ddac",
           "fnv1a": "ba817f02"
-        },
-        "formula_3_dermis": {
-          "length": 1280,
-          "crc32": "a0eca10a",
-          "fnv1a": "49986b69"
         }
       }
     }
