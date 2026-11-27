@@ -48,6 +48,8 @@ function createRefusingJobs({ code, message, limits = {} }) {
         cancel: async () => refuse(),
         // task20: the areola measurement tool is refused together with the others.
         findAreolas: async () => refuse(),
+        // task31: the body part guide is refused together with the others.
+        bodyPartsGuide: () => refuse(),
         dispose: () => Promise.resolve()
     };
 }

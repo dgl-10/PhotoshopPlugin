@@ -22,6 +22,8 @@ const { RECIPES, DEFAULT_RECIPE } = require('../skin-texture/recipe-catalog');
 const { buildToolDescriptions, buildFaceFieldsSchema } = require('../skin-texture/recipe-tool-contract');
 // task20: areolas extend the start schema and add ps_skin_texture_find_areolas.
 const areolaContract = require('../skin-texture/areola-tool-contract');
+// task31: body part folders extend start and apply and add ps_skin_texture_body_parts.
+const bodyPartContract = require('../skin-texture/body-part-tool-contract');
 
 /**
  * @param {string} text - Text for the agent.
@@ -68,7 +70,8 @@ function createSkinTextureTools({
     refuseWhileDialogPending,
     markers
 }) {
-    const descriptions = areolaContract.extendDescriptions(buildToolDescriptions(jobs.options));
+    const descriptions = bodyPartContract.extendDescriptions(
+        areolaContract.extendDescriptions(buildToolDescriptions(jobs.options)), jobs.options);
 
     const definitions = [
         {
@@ -111,7 +114,8 @@ function createSkinTextureTools({
                     },
                     fields: areolaContract.buildFieldsSchema(descriptions, buildFaceFieldsSchema(descriptions)),
                     sources: areolaContract.SOURCES_SCHEMA,
-                    recipe: { type: 'string', enum: [...RECIPES], description: descriptions.recipe }
+                    recipe: { type: 'string', enum: [...RECIPES], description: descriptions.recipe },
+                    ...bodyPartContract.buildStartProperties(jobs.options)
                 },
                 required: ['task_id', 'request_id', 'rect', 'px_per_mm'],
                 additionalProperties: false
@@ -143,14 +147,16 @@ function createSkinTextureTools({
                         description: 'Source for the single common Skin group mask (required for the first apply of a job). '
                             + 'Evaluated in the document at the time ps_skin_texture_apply is called, not at start. Either '
                             + '{ "kind": "selection" } (active document selection) or { "kind": "layer_mask", "layer_id": <id> } '
-                            + '(existing pixel mask of a layer/group in this document).',
+                            + '(existing pixel mask of a layer/group in this document). For a body part it is the mask of that part folder.',
                         properties: {
                             kind: { type: 'string', enum: ['selection', 'layer_mask'] },
                             layer_id: { type: 'integer' }
                         },
                         required: ['kind'],
                         additionalProperties: false
-                    }
+                    },
+                    skin_group_id: bodyPartContract.SKIN_GROUP_ID_SCHEMA,
+                    seed_change_confirmed: bodyPartContract.SEED_CHANGE_CONFIRMED_SCHEMA
                 },
                 required: ['task_id', 'job_id'],
                 additionalProperties: false
@@ -176,7 +182,8 @@ function createSkinTextureTools({
                 additionalProperties: false
             }
         },
-        areolaContract.buildFindTool(descriptions.find)
+        areolaContract.buildFindTool(descriptions.find),
+        bodyPartContract.buildGuideTool(descriptions.bodyParts)
     ];
 
     /**
@@ -284,7 +291,8 @@ function createSkinTextureTools({
                 const writingDesc = `recipe ${(job.request && job.request.recipe) || DEFAULT_RECIPE}`;
                 note(task.id, `skin texture: writing ${writingDesc}`, 'ps_skin_texture_apply');
             }
-            outcome = await jobs.apply(task, args.job_id, transportFor(task), args.mask_source);
+            outcome = await jobs.apply(task, args.job_id, transportFor(task), args.mask_source,
+                { skinGroupId: args.skin_group_id, seedChangeConfirmed: args.seed_change_confirmed });
         } catch (error) {
             if (error instanceof SkinRequestError) return refusal(error);
             throw error;
@@ -329,6 +337,17 @@ function createSkinTextureTools({
         }
     }
 
+    /** task31: the body part guide; remembered for the task, nothing touches the document. */
+    async function bodyPartsGuide(args) {
+        const task = tasks.require(args.task_id);
+        try {
+            return jsonResult(jobs.bodyPartsGuide(task));
+        } catch (error) {
+            if (error instanceof SkinRequestError) return refusal(error);
+            throw error;
+        }
+    }
+
     return {
         definitions,
         handlers: {
@@ -336,7 +355,8 @@ function createSkinTextureTools({
             ps_skin_texture_status: status,
             ps_skin_texture_apply: apply,
             ps_skin_texture_cancel: cancel,
-            ps_skin_texture_find_areolas: findAreolas
+            ps_skin_texture_find_areolas: findAreolas,
+            ps_skin_texture_body_parts: bodyPartsGuide
         }
     };
 }

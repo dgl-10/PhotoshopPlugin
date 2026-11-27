@@ -8,6 +8,7 @@
 const recipeCatalog = require('./recipe-catalog');
 const areolaRequest = require('./areola-request');
 const areolaGeometry = require('./areola-geometry');
+const bodyParts = require('./body-parts');
 const MAX_RECT_PIXELS = 4096 * 4096;
 const MAX_RECT_SIDE = 8192;
 const OUTPUTS = Object.freeze(recipeCatalog.RECIPE_COMPONENTS.map(c => c.componentKey));
@@ -102,8 +103,15 @@ function normalizeFace(face, fail) {
     return { face: canonical };
 }
 
-/** Validate the independent request and construct its canonical idempotency key. */
-function checkRequestShape(args) {
+/**
+ * Validate the independent request and construct its canonical idempotency key.
+ *
+ * @param {object} args - Tool arguments.
+ * @param {object} [defaults]
+ * @param {number} [defaults.seed] - Seed for a request that names none (task31: the job manager
+ *   passes the task's random seed). Left out, the recipe default applies.
+ */
+function checkRequestShape(args, { seed: defaultSeed } = {}) {
     const rect = checkRectShape(args.rect);
     const pxPerMm = args.px_per_mm;
     // The variants support different ranges; this is their common intersection.
@@ -118,7 +126,8 @@ function checkRequestShape(args) {
     const allowedParams = [...recipeCatalog.ALLOWED_RECIPE_PARAMS, 'areolaStrength'];
     checkKeys(supplied, allowedParams, 'INVALID_PARAMS', `params (allowed: ${allowedParams.join(', ')})`);
     const { areolaStrength: suppliedAreolaStrength, ...recipeParams } = supplied;
-    const params = { ...recipeCatalog.DEFAULT_RECIPE_PARAMS, ...recipeParams };
+    const params = { ...recipeCatalog.DEFAULT_RECIPE_PARAMS, ...(defaultSeed === undefined ? {} : { seed: defaultSeed }), ...recipeParams };
+    const seedGiven = recipeParams.seed !== undefined;
     if (!Number.isInteger(params.seed) || params.seed < 0 || params.seed > 0xffffffff) throw new SkinRequestError('INVALID_PARAMS', 'params.seed must be an unsigned 32-bit integer (0..4294967295).');
     if (typeof params.azimuthDeg !== 'number' || !Number.isFinite(params.azimuthDeg)) throw new SkinRequestError('INVALID_PARAMS', 'params.azimuthDeg must be a finite number.');
     if (typeof params.elevationDeg !== 'number' || !Number.isFinite(params.elevationDeg) || params.elevationDeg < 5 || params.elevationDeg > 90) throw new SkinRequestError('INVALID_PARAMS', 'params.elevationDeg must be between 5 and 90 degrees.');
@@ -132,13 +141,22 @@ function checkRequestShape(args) {
     const areolaStrength = areolaRequest.checkAreolaStrength({ areolaStrength: suppliedAreolaStrength }, hasAreolas, fail);
     const sources = areolaRequest.normalizeSources(args.sources, supplied, fail, hasAreolas);
     const layout = areolaRequest.layoutFor(recipe, hasAreolas, recipeCatalog.RECIPE_COMPONENTS);
+    // task31: the body part and its folder name. The person's yes for a small scale is not part
+    // of the key: it does not change what is computed. Without body_part the key is unchanged.
+    const { bodyPart, smallScaleConfirmed } = bodyParts.normalizeBodyPart(args,
+        { recipe, areolaRecipe: areolaRequest.AREOLA_RECIPE, fields }, fail);
     const keyParts = { recipe, rect, pxPerMm, params, fields };
     if (hasAreolas) keyParts.areolaStrength = areolaStrength;
     if (args.sources !== undefined) keyParts.sources = sources;
+    if (bodyPart) keyParts.bodyPart = bodyPart;
     const key = JSON.stringify(keyParts);
-    const out = { recipe, rect, pxPerMm, params, fields, outputs: areolaRequest.outputsOf(layout), key, layout };
+    const out = { recipe, rect, pxPerMm, params, fields, outputs: areolaRequest.outputsOf(layout), key, layout, seedGiven };
     if (hasAreolas) out.areolaStrength = areolaStrength;
     if (sources) out.sources = sources;
+    if (bodyPart) {
+        out.bodyPart = bodyPart;
+        out.smallScaleConfirmed = smallScaleConfirmed;
+    }
     return out;
 }
 
@@ -151,7 +169,8 @@ function normalizeForDocument(request, document) {
     const layout = request.layout || areolaRequest.layoutFor(request.recipe, false, recipeCatalog.RECIPE_COMPONENTS);
     if (layout.skin) {
         for (const id of Object.keys(recipeCatalog.FORMULA_DEFINITIONS)) {
-            coreParams[id] = recipeCatalog.resolveFormulaParams(id, document, request.rect, request.pxPerMm, request.params, request.fields);
+            coreParams[id] = recipeCatalog.resolveFormulaParams(id, document, request.rect, request.pxPerMm, request.params, request.fields,
+                request.bodyPart ? request.bodyPart.code : null);
         }
     }
     const rectPixels = request.rect.width * request.rect.height;

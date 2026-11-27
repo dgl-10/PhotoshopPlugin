@@ -1022,7 +1022,7 @@ function makeHarness(context, { document, limits = {}, createWorker, taskOptions
         logger: silent,
         createWorker,
         now,
-        limits: { responseBudgetMs: 5000, ...limits }
+        limits: { responseBudgetMs: 5000, defaultSeed: 1, ...limits }
     });
     const tools = createAgentTools({
         getBridge: () => fake.bridge,

@@ -449,7 +449,7 @@ test('find -> start -> apply: fields and sources from the image search are used 
     });
     assert.equal(applied.isError, false, applied.text);
     assert.equal(applied.json.phase, 'applied');
-    const root = harness.fake.findLayerByName(`Areolas [${start.json.job_id}]`);
+    const root = harness.fake.findLayerByName(`Areolas [${start.json.job_id}] seed 1`);
     assert.ok(root);
     assert.deepEqual(root.layers.map(group => group.name), support.AREOLA_VARIANTS.map(v => v.group));
     // The areola layers cover the areola that was found (its centre lies inside their bounds).

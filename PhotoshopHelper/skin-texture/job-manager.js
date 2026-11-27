@@ -86,6 +86,9 @@ const faceMap = require('./face-map');
 const areolaCores = require('./areola-cores');
 const areolaJob = require('./areola-job');
 const areolaFind = require('./areola-find');
+// task31: body part folders inside one common Skin; a job without body_part is unchanged.
+const bodyParts = require('./body-parts');
+const bodyPartJob = require('./body-part-job');
 
 const WORKER_FILE = path.join(__dirname, 'worker.js');
 
@@ -116,6 +119,17 @@ const DEFAULT_OPTIONS = {
     // refuses and the agent finishes the task and starts a new one.
     maxRequestsPerTask: 100,
     maxReadyResults: 2,
+    // task31: a body part below this scale (pores smaller than a pixel) is computed only after
+    // the agent has asked the person and passes small_scale_confirmed.
+    minBodyPxPerMm: bodyParts.DEFAULT_MIN_BODY_PX_PER_MM,
+    // task31: the seed of a request that names none. null: a random seed chosen once per task, so
+    // all parts of one picture share it and different pictures differ. A number: always that seed.
+    defaultSeed: null,
+    // task31: the margin Helper adds on every side of a body part's rect, so the person can widen
+    // a mask the agent drew too tight and still find texture under it: this many millimetres of
+    // skin at px_per_mm, and never fewer pixels than the minimum. A first try, checked on one case.
+    bodyRectMarginMm: 40,
+    bodyRectMinMarginPx: 32,
     sweepIntervalMs: 30_000,
     // The next run removes our leftover files only when they are at least this old. It must
     // stay well above applyStartDeadlineMs + fileGraceMs (3 minutes by default), the time a
@@ -321,7 +335,9 @@ function createSkinTextureJobs({
 
     function historyNameOf(job) {
         const areolas = job.request.layout && job.request.layout.areolas && job.request.layout.skin ? ' with areolas' : '';
-        return `skin texture ${job.id}: recipe ${job.request.recipe || recipeCatalog.DEFAULT_RECIPE}${areolas}`;
+        // task31: a History step per body part says which part it wrote.
+        const part = job.request.bodyPart ? `, ${job.request.bodyPart.name}` : '';
+        return `skin texture ${job.id}: recipe ${job.request.recipe || recipeCatalog.DEFAULT_RECIPE}${areolas}${part}`;
     }
 
     function dropResult(job) {
@@ -408,7 +424,7 @@ function createSkinTextureJobs({
         const startedAt = now();
         if (disposed) throw new adapter.SkinRequestError('SHUTTING_DOWN', 'Helper is quitting.');
         const requestId = checkRequestId(args.request_id);
-        const request = adapter.checkRequestShape(args);
+        const request = adapter.checkRequestShape(args, { seed: taskSeedFor(task.id) });
         if (request.layout.areolas) {
             // A missing or different areola binary refuses this request only, naming the variant;
             // nothing is computed and no other variant takes its place.
@@ -416,6 +432,8 @@ function createSkinTextureJobs({
             if (problem) throw new adapter.SkinRequestError('AREOLA_CORE_UNAVAILABLE', `${problem} Nothing was computed.`);
         }
         const store = storeFor(task.id, true);
+        // task31: a body part needs the guide read in this task and, below the scale limit, the person's yes.
+        bodyPartJob.checkStart(request, store, options.minBodyPxPerMm);
         const keyHash = keyHashOf(request.key);
 
         let job = null;
@@ -508,6 +526,19 @@ function createSkinTextureJobs({
         beginProbe(job, task, transport);
         await waitAtMost(job.probePromise, options.responseBudgetMs - (now() - startedAt));
         return { job, repeated: false };
+    }
+
+    /**
+     * task31: the seed a request of this task gets when it names none. Chosen at random once per
+     * task (an agent cannot be trusted to pick a random number itself); a fixed defaultSeed option
+     * replaces it.
+     */
+    function taskSeedFor(taskId) {
+        if (Number.isInteger(options.defaultSeed)) return options.defaultSeed;
+        const store = storeFor(taskId, true);
+        // Up to six digits: short enough for a person to read in a folder name and say back.
+        if (!Number.isInteger(store.seed)) store.seed = crypto.randomInt(1, 1_000_000);
+        return store.seed;
     }
 
     function checkRequestId(value) {
@@ -618,6 +649,9 @@ function createSkinTextureJobs({
 
         let normalized;
         try {
+            // task31: a body part's rect gets its margin now that the document size is known.
+            bodyPartJob.widenRect(job.request, { width: d.width, height: d.height },
+                { marginMm: options.bodyRectMarginMm, minMarginPx: options.bodyRectMinMarginPx });
             normalized = adapter.normalizeForDocument(job.request, { width: d.width, height: d.height });
         } catch (error) {
             failJob(job, error.code || 'INVALID_REQUEST', error.message, false);
@@ -772,9 +806,11 @@ function createSkinTextureJobs({
      * @param {string} jobId - Job id.
      * @param {object} transport - See start().
      * @param {object} maskSource - Selection or existing pixel mask for the Skin group.
+     * @param {object} [placement] - task31: { skinGroupId } of the common Skin group a body part
+     *   folder goes into; left out, the write creates its own groups.
      * @returns {Promise<{job: object, refusal?: object}>}
      */
-    async function apply(task, jobId, transport, maskSource) {
+    async function apply(task, jobId, transport, maskSource, placement = {}) {
         const startedAt = now();
         const job = findJob(task.id, jobId);
 
@@ -798,6 +834,8 @@ function createSkinTextureJobs({
         if (maskSource.kind === 'layer_mask' && !Number.isInteger(maskSource.layer_id)) {
             throw new adapter.SkinRequestError('INVALID_MASK_SOURCE', 'mask_source.layer_id must be an integer layer ID.');
         }
+        const skinGroupId = bodyPartJob.checkPlacement(job, placement && placement.skinGroupId);
+        const seedChangeConfirmed = bodyPartJob.checkSeedChange(placement && placement.seedChangeConfirmed);
 
         if (job.phase !== 'ready') {
             return { job, refusal: refusalForPhase(job) };
@@ -827,6 +865,8 @@ function createSkinTextureJobs({
             startedAt: now(),
             files: [],
             maskSource: maskSource || null,
+            skinGroupId,
+            seedChangeConfirmed,
             historyName: historyNameOf(job),
             // Set when the task is paused while this attempt is still being prepared.
             interruption: null,
@@ -1007,6 +1047,9 @@ function createSkinTextureJobs({
             masks: expectation.masks,
             faceMap: mapExpectation,
             rootName: expectation.rootName,
+            part: bodyPartJob.applyPart(job, attempt),
+            // task31: every group this write names carries the seed after the job marker.
+            seedLabel: bodyPartJob.seedLabel(job),
             dataFolder: job.dataFolderNative,
             deadlineEpochMs: attempt.deadlineEpochMs
         });
@@ -1058,7 +1101,8 @@ function createSkinTextureJobs({
             const mapMatches = hasFaceMap(job)
                 ? map && Number.isInteger(map.id) && map.name === faceMap.LAYER_NAME && map.visible === false
                 : !map;
-            const consistent = mapMatches && areolaJob.writeIsConsistent(job, structure, layers);
+            const consistent = mapMatches && areolaJob.writeIsConsistent(job, structure, layers)
+                && bodyPartJob.writeIsConsistent(job, job.apply, structure);
             if (!consistent) {
                 return { state: 'unknown', code: 'ANSWER_INCONSISTENT', message: 'Photoshop reported a recipe write whose structure does not match the request.', structure, layers };
             }
@@ -1084,7 +1128,14 @@ function createSkinTextureJobs({
                 'INVALID_MASK_SOURCE',
                 'MASK_NOT_FOUND',
                 'UNSUPPORTED_MASK',
-                'UNSUPPORTED_MASK_PROPERTIES'
+                'UNSUPPORTED_MASK_PROPERTIES',
+                // task31: a wrong skin_group_id; apply again with the right one.
+                'SKIN_GROUP_NOT_FOUND',
+                'SKIN_GROUP_NOT_A_GROUP',
+                'SKIN_GROUP_READ_FAILED',
+                'SKIN_GROUP_HAS_MASK',
+                // task31: the part's seed differs from the common Skin's; apply again only with the person's yes.
+                'SEED_MISMATCH'
             ].includes(r.code);
             return { state: 'not_applied', retryable, code: r.code || 'WRITE_REFUSED', message };
         }
@@ -1398,7 +1449,7 @@ function createSkinTextureJobs({
             case 'computing':
                 return 'Computing. Call ps_skin_texture_status again in 5-10 seconds; large areas can take a minute or more. Nothing is written until you call ps_skin_texture_apply.';
             case 'ready':
-                return `Call ps_skin_texture_apply with job_id "${job.id}" and mask_source ({ kind: "selection" } or { kind: "layer_mask", layer_id: <id> }) to write the Skin group. The result is kept until ${iso(job.times.expiresAt)}.`;
+                return `Call ps_skin_texture_apply with job_id "${job.id}" and mask_source ({ kind: "selection" } or { kind: "layer_mask", layer_id: <id> }) to write the Skin group. The result is kept until ${iso(job.times.expiresAt)}.${bodyPartJob.readyText(job)}`;
             case 'preparing_write':
                 return 'Helper is handing the texture file over; the write has NOT been sent to Photoshop yet. '
                     + 'ps_skin_texture_cancel now still stops it with no change to the document. Call '
@@ -1408,8 +1459,10 @@ function createSkinTextureJobs({
             case 'applied': {
                 const map = hasFaceMap(job)
                     ? ` The hidden ${faceMap.LAYER_NAME} layer is inside Skin above the formula groups.` : '';
-                if (job.request.layout && job.request.layout.areolas) return `Skin texture recipe applied. ${areolaJob.appliedText(job)}${map}`;
-                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness) and hidden Formula 2 (Pores, Furrows), with one common mask. All four layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. ' + postApplyComparisonGuidance() + map;
+                // task31: where a body part folder went and which skin_group_id the next part takes.
+                const part = bodyPartJob.appliedText(job);
+                if (job.request.layout && job.request.layout.areolas) return `Skin texture recipe applied. ${areolaJob.appliedText(job)}${map}${part}`;
+                return 'Skin texture recipe applied. Skin contains visible Formula 1 (Pores, Unevenness) and hidden Formula 2 (Pores, Furrows), with one common mask. All four layers use Linear Light at 50% opacity. One Undo removes the complete History step. Repeated apply never writes again. ' + postApplyComparisonGuidance() + map + part;
             }
             case 'apply_unknown':
                 return `The outcome of the write is unknown. Before anything else look at the document (ps_get_document) `
@@ -1476,8 +1529,14 @@ function createSkinTextureJobs({
         const areolas = areolaJob.describeAreolas(job);
         if (areolas) out.areolas = areolas;
         if (job.request.sources) out.sources = job.request.sources;
+        const part = bodyPartJob.describe(job);
+        if (part) out.body_part = part;
         if (job.request.fields) out.fields = job.request.fields;
         if (job.request.params) out.recipe_params = job.request.params;
+        // task31: whether the seed came with the request or is this task's random one.
+        if (job.request.params && typeof job.request.seedGiven === 'boolean') {
+            out.seed_source = job.request.seedGiven ? 'request' : 'chosen by Helper for this task';
+        }
 
         if (job.phase === 'computing' && job.progress) {
             out.progress = { stage: job.progress.stage, elapsed_ms: now() - job.times.computeStartedAt };
@@ -1511,6 +1570,8 @@ function createSkinTextureJobs({
             if (typeof a.retryable === 'boolean') applyView.retryable = a.retryable;
             if (a.structure) applyView.structure = a.structure;
             if (a.maskSource) applyView.mask_source = a.maskSource;
+            if (Number.isInteger(a.skinGroupId)) applyView.skin_group_id = a.skinGroupId;
+            if (a.seedChangeConfirmed) applyView.seed_change_confirmed = true;
             if (a.layers) applyView.layers = a.layers.map(layer => ({
                 output: layer.output, id: layer.id, name: layer.name, bounds: layer.bounds,
                 parent: layer.parent || null, formulaId: layer.formulaId,
@@ -1542,12 +1603,23 @@ function createSkinTextureJobs({
         return areolaFind.findAreolas(transport, args);
     }
 
+    /**
+     * task31: the body part guide (ps_skin_texture_body_parts). Reading it is remembered for the
+     * task: a start with body_part is refused until then. Writes nothing, computes nothing.
+     */
+    function bodyPartsGuide(task) {
+        if (disposed) throw new adapter.SkinRequestError('SHUTTING_DOWN', 'Helper is quitting.');
+        storeFor(task.id, true).bodyGuideReadAt = now();
+        return bodyParts.buildGuide(options.minBodyPxPerMm);
+    }
+
     return {
         start,
         status,
         apply,
         cancel,
         findAreolas,
+        bodyPartsGuide,
         dispose,
         describe,
         options,

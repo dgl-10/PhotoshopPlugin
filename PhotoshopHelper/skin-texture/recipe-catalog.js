@@ -21,11 +21,20 @@ function getRecipeComponents(recipe) {
 }
 
 /**
+ * task31: the zone a formula receives for a body part, by the SkinBench rule (bench/README.md,
+ * "The zone rule"): a formula whose definition lists `zones` gets the body part word when it
+ * is in that list; every other formula gets "cheek", as before. No formula lists zones yet.
+ */
+function zoneFor(formula, bodyPart = null) {
+    return bodyPart && Array.isArray(formula.zones) && formula.zones.includes(bodyPart) ? bodyPart : 'cheek';
+}
+
+/**
  * Build one SkinBench VariantRequest without invoking the formula.
  * Face coordinates describe the document and are copied unchanged for every patch.
  * Only a formula declaring face fields receives them (contract 1.3).
  */
-function resolveFormulaParams(formulaId, document, rect, pxPerMm, commonParams = {}, fields = null) {
+function resolveFormulaParams(formulaId, document, rect, pxPerMm, commonParams = {}, fields = null, bodyPart = null) {
     const formula = FORMULA_DEFINITIONS[formulaId];
     if (!formula) throw new Error(`Unknown formulaId: ${formulaId}`);
     const params = { ...DEFAULT_RECIPE_PARAMS, ...commonParams };
@@ -34,7 +43,7 @@ function resolveFormulaParams(formulaId, document, rect, pxPerMm, commonParams =
         document: { width: document.width, height: document.height }, rect: { ...rect },
         pxPerMm, seed: params.seed,
         lighting: { azimuthDeg: params.azimuthDeg, elevationDeg: params.elevationDeg },
-        zone: 'cheek'
+        zone: zoneFor(formula, bodyPart)
     };
     // Only the member the formula declared: a face formula never sees fields.areolas (task20),
     // and a request with a face alone gives the same { face } object as before.
@@ -46,7 +55,7 @@ function resolveFormulaParams(formulaId, document, rect, pxPerMm, commonParams =
 
 module.exports = {
     RECIPES, DEFAULT_RECIPE, ALLOWED_RECIPE_PARAMS, DEFAULT_RECIPE_PARAMS,
-    FORMULA_DEFINITIONS, RECIPE_COMPONENTS, getRecipeComponents, resolveFormulaParams,
+    FORMULA_DEFINITIONS, RECIPE_COMPONENTS, getRecipeComponents, resolveFormulaParams, zoneFor,
     isRecipe: recipe => RECIPES.includes(recipe),
     getFormulasCoreIdentity: wasmLoader.getWasmCoreIdentity
 };

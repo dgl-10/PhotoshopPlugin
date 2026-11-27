@@ -101,8 +101,8 @@ for (const bits of [8, 16]) {
         assert.match(fake.state.historySteps[0], /with areolas/);
 
         // Structure, in the Layers panel order.
-        const root = fake.findLayerByName(`Skin [${jobId}]`);
-        assert.ok(root, 'the outer group is "Skin [marker]"');
+        const root = fake.findLayerByName(`Skin [${jobId}] seed 1`);
+        assert.ok(root, 'the outer group is "Skin [marker] seed 1"');
         assert.equal(fake.doc.layers.filter(layer => layer.id === root.id).length, 1);
         assert.deepEqual(namesOf(root), [...AREOLA_VARIANTS.map(v => v.group), ...FORMULA_GROUP_NAMES]);
         assert.deepEqual(root.layers.map(group => group.visible), [true, false, true, false]);
@@ -212,9 +212,9 @@ test('areola_v1: an "Areolas" root with the two areola groups only, no formula g
     const applied = await harness.call('ps_skin_texture_apply', applyArgs(taskId, jobId));
     assert.equal(applied.isError, false, applied.text);
     assert.equal(applied.json.phase, 'applied');
-    const root = fake.findLayerByName(`Areolas [${jobId}]`);
-    assert.ok(root, 'the outer group is "Areolas [marker]"');
-    assert.equal(fake.findLayerByName(`Skin [${jobId}]`), null);
+    const root = fake.findLayerByName(`Areolas [${jobId}] seed 1`);
+    assert.ok(root, 'the outer group is "Areolas [marker] seed 1"');
+    assert.equal(fake.findLayerByName(`Skin [${jobId}] seed 1`), null);
     assert.deepEqual(namesOf(root), AREOLA_VARIANTS.map(v => v.group));
     assert.deepEqual(root.layers.map(group => group.visible), [true, false]);
     assert.equal(root.layerSectionExpanded, true, 'outer Areolas group stays expanded');
@@ -329,7 +329,7 @@ test('a missing areola binary refuses only the request with areolas, naming vari
     const applied = await harness.call('ps_skin_texture_apply', applyArgs(taskId, plain.json.job_id));
     assert.equal(applied.isError, false, applied.text);
     assert.equal(applied.json.phase, 'applied');
-    assert.deepEqual(namesOf(fake.findLayerByName(`Skin [${plain.json.job_id}]`)), FORMULA_GROUP_NAMES);
+    assert.deepEqual(namesOf(fake.findLayerByName(`Skin [${plain.json.job_id}] seed 1`)), FORMULA_GROUP_NAMES);
     restore();
 });
 
@@ -386,7 +386,7 @@ for (const historyAvailable of [false, true]) {
         assert.equal(now.length, originals.length, `layers left: ${now.map(l => l.name).join(', ')}`);
         for (const layer of originals) assert.ok(now.includes(layer), `${layer.name} must still be the same object`);
         assert.deepEqual(support.snapshotLayerTree(fake.doc.layers), sceneBefore);
-        assert.equal(fake.findLayerByName(`Skin [${jobId}]`), null);
+        assert.equal(fake.findLayerByName(`Skin [${jobId}] seed 1`), null);
         for (const variant of AREOLA_VARIANTS) assert.equal(fake.findLayerByName(variant.group), null);
         for (const name of FORMULA_GROUP_NAMES) assert.equal(fake.findLayerByName(name), null);
 

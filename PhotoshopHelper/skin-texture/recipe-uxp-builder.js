@@ -11,6 +11,7 @@ const path = require('node:path');
 const { CREATE_HIERARCHY, DESCRIBE_GROUPS } = require('./recipe-hierarchy-script');
 const { SCENE_GUARD } = require('./recipe-scene-guard-script');
 const { CUTOUT_MASKS } = require('./areola-uxp-script');
+const { FIND_SKIN_GROUP } = require('./body-part-uxp-script');
 
 const EXCHANGE_SOURCE_FILE = path.join(__dirname, 'exchange.js');
 const FACE_MAP_SOURCE_FILE = path.join(__dirname, 'face-map.js');
@@ -130,6 +131,9 @@ try {
     if (existing.length) {
         return skinRefuse('ALREADY_PRESENT', 'Objects of this job are already in the document. Nothing was changed.', { existingLayers: existing.map(layer => ({ id: layer.id, name: layer.name })) });
     }
+
+    // 3a. task31: the common Skin group named by skin_group_id, checked before anything exists.
+${FIND_SKIN_GROUP}
 
     // 4. Data folder check
     const X = new Function('module', EXCHANGE_SOURCE + '\\nreturn SkinExchange;')(undefined);
@@ -570,7 +574,9 @@ ${CUTOUT_MASKS}
             },
             subgroups: ${DESCRIBE_GROUPS},
             cutout: (EXPECT.masks || []).length ? { groups: cutoutGroups, rect: EXPECT.masks[0].rect } : null,
-            ...(faceMapLayer ? { faceMap: faceMapLayer } : {})
+            ...(faceMapLayer ? { faceMap: faceMapLayer } : {}),
+            // task31: the common Skin group that holds this part folder (mainGroup).
+            ...(partParent ? { skinGroup: { id: partParent.id, name: partParent.name, created: !skinTargetGroup } } : {})
         },
         layers: written,
         timings

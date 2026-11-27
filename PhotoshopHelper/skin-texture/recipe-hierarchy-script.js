@@ -10,12 +10,37 @@ const CREATE_HIERARCHY = `
     // existing group. Own a root container before creating any texture components,
     // then place every new object explicitly rather than relying on that context.
     const rootAnchor = doc.layers.length ? doc.layers[0] : null;
+    // task31: a body part folder goes inside the common Skin group, either the one checked by
+    // FIND_SKIN_GROUP (skin_group_id) or a new root group created here without a mask.
+    let partParent = null;
+    if (EXPECT.part) {
+        partParent = skinTargetGroup;
+        if (!partParent) {
+            partParent = await doc.createLayerGroup({ name: EXPECT.part.skinName });
+            created.push(partParent.id);
+            if (rootAnchor) await partParent.move(rootAnchor, C.ElementPlacement.PLACEBEFORE);
+            if (!Array.from(doc.layers).some(layer => layer.id === partParent.id)) {
+                throw new Error('HIERARCHY_MISMATCH: the common Skin must be a root group');
+            }
+            partParent.blendMode = C.BlendMode.PASSTHROUGH;
+            partParent.opacity = 100;
+        }
+    }
     // task20: an areola-only job names its outer group "Areolas"; every other job keeps "Skin".
-    const skinGroup = await doc.createLayerGroup({ name: (EXPECT.rootName || 'Skin') + ' ' + EXPECT.marker });
+    // task31: a part folder is named by the body part. The masked group is skinGroup either way.
+    // Its name ends with the job marker and the seed (" seed 48213"), so the pattern can be redone.
+    const skinGroup = await doc.createLayerGroup({ name: (EXPECT.part ? EXPECT.part.folderName : (EXPECT.rootName || 'Skin')) + ' ' + EXPECT.marker + (EXPECT.seedLabel || '') });
     created.push(skinGroup.id);
-    if (rootAnchor) await skinGroup.move(rootAnchor, C.ElementPlacement.PLACEBEFORE);
-    if (!Array.from(doc.layers).some(layer => layer.id === skinGroup.id)) {
-        throw new Error('HIERARCHY_MISMATCH: Skin must be a root group');
+    if (partParent) {
+        await skinGroup.move(partParent, C.ElementPlacement.PLACEINSIDE);
+        if (!Array.from(partParent.layers || []).some(layer => layer.id === skinGroup.id)) {
+            throw new Error('HIERARCHY_MISMATCH: the part folder must be inside the common Skin');
+        }
+    } else {
+        if (rootAnchor) await skinGroup.move(rootAnchor, C.ElementPlacement.PLACEBEFORE);
+        if (!Array.from(doc.layers).some(layer => layer.id === skinGroup.id)) {
+            throw new Error('HIERARCHY_MISMATCH: Skin must be a root group');
+        }
     }
     skinGroup.blendMode = C.BlendMode.PASSTHROUGH;
     skinGroup.opacity = 100;

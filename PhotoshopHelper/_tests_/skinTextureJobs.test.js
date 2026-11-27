@@ -209,7 +209,7 @@ test('a full cycle: quick start, background computation, one exact write', async
     const formulaOfGroup = Object.fromEntries(Object.values(recipeCatalog.FORMULA_DEFINITIONS)
         .map(formula => [formula.name, { formulaId: formula.id, visible: formula.visible, layers: formula.layers }]));
     const outputOfLayer = { Pores: 'pores', Unevenness: 'unevenness', Furrows: 'furrows' };
-    const skinGroup = h.fake.doc.layers.find(layer => layer.kind === 'group' && layer.name === `Skin [${ready.job_id}]`);
+    const skinGroup = h.fake.doc.layers.find(layer => layer.kind === 'group' && layer.name === `Skin [${ready.job_id}] seed 2`);
     assert.ok(skinGroup, 'the Skin group is in the task document');
     assert.deepEqual(skinGroup.layers.map(group => group.name), ['Formula 1', 'Formula 2']);
     const treeLayerIds = [];
